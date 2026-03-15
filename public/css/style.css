@@ -60,7 +60,6 @@ a { color: inherit; text-decoration: none; }
   display: block;
   object-fit: contain;
   object-position: top center;
-  transform: translateY(-4px);
 }
 .brand-mark::before {
   content: '';
