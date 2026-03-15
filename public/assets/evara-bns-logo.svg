@@ -1,0 +1,23 @@
+<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gold" x1="18" y1="18" x2="142" y2="142" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4D687"/>
+      <stop offset="1" stop-color="#C48A31"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="160" height="160" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="10"/>
+      <feGaussianBlur stdDeviation="8"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.560784 0 0 0 0 0.364706 0 0 0 0 0.0980392 0 0 0 0.22 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <rect x="18" y="18" width="124" height="124" rx="34" fill="url(#gold)"/>
+    <path d="M53 48C53 44.6863 55.6863 42 59 42H88C91.3137 42 94 44.6863 94 48C94 51.3137 91.3137 54 88 54H65V73H84C87.3137 73 90 75.6863 90 79C90 82.3137 87.3137 85 84 85H65V106H88C91.3137 106 94 108.686 94 112C94 115.314 91.3137 118 88 118H59C55.6863 118 53 115.314 53 112V48Z" fill="#1F2430"/>
+    <path d="M107.8 56.2C111.168 52.8325 116.632 52.8325 120 56.2C123.368 59.5675 123.368 65.0325 120 68.4L88.7 99.7C87.0826 101.317 84.889 102.226 82.6 102.226C80.311 102.226 78.1174 101.317 76.5 99.7L67 90.2C63.6325 86.8325 63.6325 81.3675 67 78C70.3675 74.6325 75.8325 74.6325 79.2 78L82.6 81.4L107.8 56.2Z" fill="#FFF8EA"/>
+  </g>
+</svg>
