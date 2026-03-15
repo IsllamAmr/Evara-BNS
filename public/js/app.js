@@ -142,10 +142,9 @@ function showLogin(message = '') {
   elements.app.classList.add('hidden');
   elements.loginScreen.classList.remove('hidden');
   setLoginError(message);
-  const nextTarget = new URLSearchParams(window.location.search).get('next');
-  elements.loginHint.textContent = nextTarget === 'checkin'
-    ? 'Sign in to continue directly to the attendance check-in route.'
-    : 'Use your EVARA BNS account to continue.';
+  if (elements.loginHint) {
+    elements.loginHint.textContent = '';
+  }
 }
 
 function showAppShell() {
