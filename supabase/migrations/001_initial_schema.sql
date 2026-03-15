@@ -249,7 +249,7 @@ as $$
 declare
   current_user_id uuid := auth.uid();
   current_row public.attendance;
-  current_time timestamptz := timezone('utc', now());
+  current_timestamp_utc timestamptz := timezone('utc', now());
   business_date date := timezone('Africa/Cairo', now())::date;
   computed_status text := case
     when timezone('Africa/Cairo', now())::time > time '09:15' then 'late'
@@ -277,7 +277,7 @@ begin
 
   if found then
     update public.attendance
-       set check_in_time = current_time,
+       set check_in_time = current_timestamp_utc,
            attendance_status = computed_status,
            ip_address = coalesce(p_ip_address, ip_address),
            device_info = coalesce(p_device_info, device_info),
@@ -296,7 +296,7 @@ begin
     values (
       current_user_id,
       business_date,
-      current_time,
+      current_timestamp_utc,
       computed_status,
       p_ip_address,
       p_device_info
@@ -317,7 +317,7 @@ as $$
 declare
   current_user_id uuid := auth.uid();
   current_row public.attendance;
-  current_time timestamptz := timezone('utc', now());
+  current_timestamp_utc timestamptz := timezone('utc', now());
   business_date date := timezone('Africa/Cairo', now())::date;
 begin
   if current_user_id is null then
@@ -344,7 +344,7 @@ begin
   end if;
 
   update public.attendance
-     set check_out_time = current_time,
+     set check_out_time = current_timestamp_utc,
          attendance_status = 'checked_out',
          ip_address = coalesce(p_ip_address, ip_address),
          device_info = coalesce(p_device_info, device_info),
