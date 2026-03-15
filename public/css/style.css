@@ -44,20 +44,53 @@ a { color: inherit; text-decoration: none; }
   color: var(--brand-deep);
 }
 .brand-mark {
-  width: 76px;
-  height: 76px;
-  display: grid;
-  place-items: center;
+  width: 164px;
+  height: 56px;
+  display: block;
+  position: relative;
+  overflow: hidden;
 }
 .brand-mark.small {
-  width: 52px;
-  height: 52px;
+  width: 118px;
+  height: 40px;
 }
 .brand-logo {
   width: 100%;
   height: 100%;
   display: block;
   object-fit: contain;
+  object-position: top center;
+  transform: translateY(-4px);
+}
+.brand-mark::before {
+  content: '';
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: 0;
+  height: 13px;
+  background: rgba(255, 250, 240, 0.98);
+  border-radius: 999px;
+}
+.brand-mark::after {
+  content: 'BNS';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: #0c7c72;
+  line-height: 1;
+}
+.brand-mark.small::before {
+  left: 20%;
+  right: 20%;
+  height: 11px;
+}
+.brand-mark.small::after {
+  font-size: 0.65rem;
 }
 .login-screen {
   min-height: 100vh;
