@@ -1,0 +1,128 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EVARA BNS | Attendance System</title>
+  <meta name="description" content="EVARA BNS attendance and employee operations powered by Supabase." />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <section id="loginScreen" class="login-screen">
+    <div class="login-layout">
+      <div class="login-story">
+        <div class="brand-mark">E</div>
+        <p class="eyebrow">EVARA BNS</p>
+        <h1>Attendance and employee operations in one secure workspace.</h1>
+        <p class="story-copy">Role-aware access, live attendance, and employee lifecycle management powered by Supabase.</p>
+        <div class="story-grid">
+          <div class="story-card">
+            <span class="story-label">Live Attendance</span>
+            <strong>Check in, check out, and QR access</strong>
+          </div>
+          <div class="story-card">
+            <span class="story-label">Admin Control</span>
+            <strong>Create accounts and manage workforce access</strong>
+          </div>
+          <div class="story-card">
+            <span class="story-label">Secure Roles</span>
+            <strong>Supabase Auth and row-level security</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="login-card">
+        <div class="login-card-header">
+          <div class="brand-mark small">E</div>
+          <div>
+            <p class="eyebrow">Sign In</p>
+            <h2>Welcome back</h2>
+          </div>
+        </div>
+        <p id="loginHint" class="login-hint">Use your EVARA BNS account to continue.</p>
+        <form id="loginForm" class="stack-form">
+          <div class="form-group">
+            <label for="loginEmail">Email Address</label>
+            <input id="loginEmail" type="email" autocomplete="email" placeholder="name@company.com" required />
+          </div>
+          <div class="form-group">
+            <label for="loginPassword">Password</label>
+            <div class="input-with-action">
+              <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Enter your password" required />
+              <button id="togglePasswordBtn" type="button" class="ghost-inline">Show</button>
+            </div>
+          </div>
+          <div id="loginError" class="form-alert error hidden"></div>
+          <button id="loginBtn" type="submit" class="btn btn-primary btn-block">Sign In</button>
+        </form>
+        <p class="login-footer">EVARA BNS secure attendance workspace.</p>
+      </div>
+    </div>
+  </section>
+
+  <div id="app" class="app-shell hidden">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-branding">
+        <div class="brand-mark small">E</div>
+        <div>
+          <strong>EVARA BNS</strong>
+          <span>Attendance System</span>
+        </div>
+      </div>
+
+      <nav id="sidebarNav" class="sidebar-nav">
+        <button type="button" class="nav-item active" data-page="dashboard">Dashboard</button>
+        <button type="button" class="nav-item" data-page="employees">Employees</button>
+        <button type="button" class="nav-item" data-page="attendance">Attendance</button>
+        <button type="button" class="nav-item" data-page="history">History</button>
+        <button type="button" class="nav-item" data-page="qr">QR Access</button>
+      </nav>
+
+      <div class="sidebar-user">
+        <div id="sidebarAvatar" class="avatar-badge">EV</div>
+        <div class="sidebar-user-copy">
+          <strong id="sidebarName">EVARA User</strong>
+          <span id="sidebarRole">Employee</span>
+        </div>
+        <button id="logoutBtn" type="button" class="ghost-inline danger">Log out</button>
+      </div>
+    </aside>
+
+    <main class="app-main">
+      <header class="topbar">
+        <div class="topbar-start">
+          <button id="menuToggle" type="button" class="ghost-inline mobile-only">Menu</button>
+          <div>
+            <p id="topbarEyebrow" class="eyebrow">Workspace</p>
+            <h2 id="topbarTitle">Dashboard</h2>
+          </div>
+        </div>
+        <div class="topbar-meta">
+          <div>
+            <strong id="topbarClock">--:--</strong>
+            <span id="topbarDate">-- --- ----</span>
+          </div>
+        </div>
+      </header>
+
+      <section id="page-dashboard" class="page-panel active"></section>
+      <section id="page-employees" class="page-panel"></section>
+      <section id="page-attendance" class="page-panel"></section>
+      <section id="page-history" class="page-panel"></section>
+      <section id="page-qr" class="page-panel"></section>
+    </main>
+  </div>
+
+  <div id="modal" class="modal-shell hidden">
+    <div id="modalBackdrop" class="modal-backdrop"></div>
+    <div id="modalPanel" class="modal-panel"></div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="vendor/supabase.js"></script>
+  <script src="env.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
+

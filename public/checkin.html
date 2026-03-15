@@ -1,0 +1,51 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EVARA BNS | Check In</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="checkin-body">
+  <main class="checkin-shell">
+    <section class="checkin-card">
+      <div class="brand-mark">E</div>
+      <p class="eyebrow">Quick Attendance</p>
+      <h1>Check in from your phone in seconds.</h1>
+      <p class="checkin-copy">If you are not signed in, we will send you to the secure login page first and bring you right back.</p>
+
+      <div id="checkinNotice" class="form-alert info hidden"></div>
+      <div id="checkinError" class="form-alert error hidden"></div>
+
+      <div id="checkinStatus" class="status-card compact">
+        <div>
+          <span class="status-label">Attendance status</span>
+          <strong id="checkinStatusTitle">Checking your session</strong>
+          <p id="checkinStatusText">Please wait while we load your attendance state.</p>
+        </div>
+      </div>
+
+      <div class="checkin-actions">
+        <button id="checkinActionBtn" type="button" class="btn btn-primary btn-block" disabled>Loading</button>
+        <a href="/" class="btn btn-secondary btn-block">Open Dashboard</a>
+      </div>
+
+      <div class="checkin-meta">
+        <div>
+          <span class="meta-label">Today</span>
+          <strong id="checkinToday">--</strong>
+        </div>
+        <div>
+          <span class="meta-label">Current time</span>
+          <strong id="checkinClock">--:--</strong>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="vendor/supabase.js"></script>
+  <script src="env.js"></script>
+  <script type="module" src="js/checkin.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,32 @@
+﻿services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: evara_backend
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5000/api/health').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: evara_frontend
+    restart: unless-stopped
+    environment:
+      API_BASE_URL: /api
+      BACKEND_UPSTREAM: backend:5000
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
