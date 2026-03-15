@@ -113,22 +113,28 @@ app.get('*', (req, res, next) => {
 app.use(notFound);
 app.use(errorHandler);
 
-async function startServer() {
-  if (isSupabaseConfigured()) {
-    try {
-      const bootstrapResult = await bootstrapInitialAdmin();
-      if (bootstrapResult.created) {
-        console.log(`Initial admin created for ${bootstrapResult.email}`);
-      }
-    } catch (error) {
-      console.error('Initial admin bootstrap failed:', error.message);
-    }
+function runBootstrapInBackground() {
+  if (!isSupabaseConfigured()) {
+    return;
   }
 
+  bootstrapInitialAdmin()
+    .then((bootstrapResult) => {
+      if (bootstrapResult?.created) {
+        console.log(`Initial admin created for ${bootstrapResult.email}`);
+      }
+    })
+    .catch((error) => {
+      console.error('Initial admin bootstrap failed:', error.message);
+    });
+}
+
+async function startServer() {
   app.listen(PORT, HOST, () => {
     const lanAddress = getLanAddress();
     console.log(`EVARA BNS running at http://localhost:${PORT}`);
     console.log(`EVARA BNS LAN URL: http://${lanAddress}:${PORT}`);
+    runBootstrapInBackground();
   });
 }
 
