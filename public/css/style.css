@@ -26,9 +26,8 @@ body {
   min-height: 100vh;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.05), transparent 26%),
-    radial-gradient(circle at bottom right, rgba(126, 141, 158, 0.08), transparent 32%),
-    linear-gradient(160deg, #2b3036 0%, #343a42 50%, #2e343b 100%);
+    linear-gradient(rgba(23, 28, 34, 0.82), rgba(23, 28, 34, 0.88)),
+    url('assets/evara_bns_background_1773549442878.png') center center / cover no-repeat fixed;
   color: var(--ink);
 }
 button, input, select, textarea { font: inherit; }
