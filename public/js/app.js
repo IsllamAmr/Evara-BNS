@@ -788,6 +788,108 @@ function exportAttendanceCsv(records) {
   );
 }
 
+function exportReportsCsv(report, filters) {
+  const monthToken = (filters.month || currentMonthInput()).replace('-', '_');
+  const departmentToken = filters.department && filters.department !== 'all'
+    ? filters.department.toLowerCase().replace(/\s+/g, '-')
+    : 'all-departments';
+  const employeeToken = filters.employeeId && filters.employeeId !== 'all'
+    ? 'single-employee'
+    : 'all-employees';
+
+  downloadCsvFile(
+    `reports-${monthToken}-${departmentToken}-${employeeToken}.csv`,
+    [
+      'Employee Name',
+      'Employee Code',
+      'Email',
+      'Department',
+      'Position',
+      'Days Present',
+      'Days Absent',
+      'Late Arrivals',
+      'Total Hours',
+      'Expected Hours',
+      'Overtime',
+      'Shortfall',
+      'Attendance Rate (%)',
+      'On-Time Arrival (%)',
+      'Average Check In',
+      'Average Check Out',
+      'Complete Shifts',
+      'Trend',
+      'Trend Note',
+    ],
+    report.byEmployee.map((item) => [
+      item.employee.full_name,
+      item.employee.employee_code || '',
+      item.employee.email || '',
+      departmentLabel(item.employee.department),
+      item.employee.position || '',
+      item.presentDays,
+      item.absentDays,
+      item.lateArrivals,
+      formatDuration(item.workedMinutes),
+      formatDuration(item.expectedMinutes),
+      formatDuration(item.overtimeMinutes),
+      formatDuration(item.shortfallMinutes),
+      item.attendanceRate,
+      item.onTimeArrivalRate,
+      formatAverageTime(item.averageCheckIn),
+      formatAverageTime(item.averageCheckOut),
+      item.detailedRows.filter((entry) => entry.metrics.isCompleteShift).length,
+      item.trend.label,
+      item.trend.note,
+    ])
+  );
+}
+
+function exportEmployeeTimesheetCsv(employeeReport, filters) {
+  if (!employeeReport) {
+    return;
+  }
+
+  const monthToken = (filters.month || currentMonthInput()).replace('-', '_');
+  const employeeToken = (employeeReport.employee.full_name || 'employee')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'employee';
+
+  downloadCsvFile(
+    `timesheet-${employeeToken}-${monthToken}.csv`,
+    [
+      'Employee Name',
+      'Employee Code',
+      'Department',
+      'Date',
+      'Arrival',
+      'Check In',
+      'Check Out',
+      'Total Hours',
+      'Expected Hours',
+      'Overtime',
+      'Shortfall',
+      'Shift Result',
+      'Attendance Status',
+    ],
+    employeeReport.detailedRows.map((entry) => [
+      employeeReport.employee.full_name,
+      employeeReport.employee.employee_code || '',
+      departmentLabel(employeeReport.employee.department),
+      formatDate(entry.row.attendance_date),
+      entry.metrics.isPresent ? (entry.metrics.isLateArrival ? 'Late' : 'On Time') : 'No Check-in',
+      formatTime(entry.row.check_in_time),
+      formatTime(entry.row.check_out_time),
+      formatDuration(entry.metrics.workedMinutes),
+      formatDuration(FULL_SHIFT_MINUTES),
+      formatDuration(entry.metrics.overtimeMinutes),
+      formatDuration(entry.metrics.shortfallMinutes),
+      attendanceOutcome(entry.metrics),
+      statusLabel(entry.row.attendance_status),
+    ])
+  );
+}
+
 function confirmAction({ eyebrow = 'Please confirm', title, message, confirmLabel = 'Confirm', tone = 'danger' }) {
   return new Promise((resolve) => {
     openModal(`
@@ -1738,6 +1840,10 @@ async function renderReportsPage() {
             <h1>Reports & Analytics</h1>
             <p>Track worked hours, overtime, shortfall, punctuality, and department-level performance from one control page.</p>
           </div>
+          <div class="inline-actions">
+            <button id="reportsExportBtn" type="button" class="btn btn-secondary">Export Report CSV</button>
+            ${selectedEmployee ? '<button id="reportsTimesheetExportBtn" type="button" class="btn btn-primary">Export Timesheet CSV</button>' : ''}
+          </div>
         </div>
         <section class="card-block">
           <div class="toolbar toolbar-wide">
@@ -1957,6 +2063,17 @@ async function renderReportsPage() {
     });
     container.querySelector('#reportsRefreshBtn')?.addEventListener('click', () => {
       renderReportsPage().catch((error) => setPageError(container, error.message));
+    });
+    container.querySelector('#reportsExportBtn')?.addEventListener('click', () => {
+      exportReportsCsv(report, state.reportsFilters);
+      showToast('Reports CSV exported successfully.', 'success');
+    });
+    container.querySelector('#reportsTimesheetExportBtn')?.addEventListener('click', () => {
+      if (!selectedEmployee) {
+        return;
+      }
+      exportEmployeeTimesheetCsv(selectedEmployee, state.reportsFilters);
+      showToast('Employee timesheet CSV exported successfully.', 'success');
     });
     drawWorkingHoursTrend(container.querySelector('#reportsHoursCanvas'), report.dailyTrend);
     drawDepartmentHoursChart(container.querySelector('#reportsDepartmentCanvas'), report.departmentHours);
