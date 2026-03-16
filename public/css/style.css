@@ -422,34 +422,12 @@ html[dir='rtl'] .input-with-action {
   align-self: flex-end;
 }
 .login-contact {
-  position: relative;
+  margin-top: auto;
   display: inline-flex;
   align-items: center;
+  align-self: flex-end;
+  justify-content: flex-end;
   text-decoration: none;
-  transition: color 0.18s ease;
-}
-.login-contact:hover,
-.login-contact:focus-visible {
-  color: #dbeafe;
-}
-.login-contact::after {
-  content: attr(data-phone);
-  position: absolute;
-  right: 0;
-  top: calc(100% + 0.2rem);
-  font-size: 0.72rem;
-  letter-spacing: 0.02em;
-  color: var(--accent);
-  white-space: nowrap;
-  opacity: 0;
-  transform: translateY(-3px);
-  transition: opacity 0.18s ease, transform 0.18s ease;
-  pointer-events: none;
-}
-.login-contact:hover::after,
-.login-contact:focus-visible::after {
-  opacity: 1;
-  transform: translateY(0);
 }
 .app-shell {
   min-height: 100vh;
