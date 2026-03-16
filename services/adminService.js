@@ -62,6 +62,36 @@ async function findProfileById(id) {
   return data;
 }
 
+async function countActiveAdmins() {
+  const supabaseAdmin = getSupabaseAdmin();
+  const { count, error } = await supabaseAdmin
+    .from('profiles')
+    .select('id', { count: 'exact', head: true })
+    .eq('role', 'admin')
+    .eq('is_active', true);
+
+  if (error) {
+    throw new AppError(error.message, 500);
+  }
+
+  return count || 0;
+}
+
+async function assertActiveAdminWillRemain(existingProfile, nextProfile = null) {
+  if (existingProfile.role !== 'admin' || !existingProfile.is_active) {
+    return;
+  }
+
+  if (nextProfile && nextProfile.role === 'admin' && nextProfile.is_active && nextProfile.status !== 'inactive') {
+    return;
+  }
+
+  const activeAdminCount = await countActiveAdmins();
+  if (activeAdminCount <= 1) {
+    throw new AppError('At least one active admin account must remain in the system', 400);
+  }
+}
+
 async function assertUniqueProfileFields({ email, employee_code, excludeId = null }) {
   const supabaseAdmin = getSupabaseAdmin();
 
@@ -207,6 +237,8 @@ async function updateEmployee(id, payload, actorProfile) {
     status: nextStatus,
   }, existingProfile);
 
+  await assertActiveAdminWillRemain(existingProfile, profilePayload);
+
   const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
     email: profilePayload.email,
     user_metadata: mapAdminMetadata(profilePayload),
@@ -259,6 +291,12 @@ async function toggleEmployeeStatus(id, actorProfile) {
   const nextIsActive = !existingProfile.is_active;
   const nextStatus = nextIsActive ? 'active' : 'inactive';
 
+  await assertActiveAdminWillRemain(existingProfile, {
+    ...existingProfile,
+    is_active: nextIsActive,
+    status: nextStatus,
+  });
+
   const { error: profileError } = await supabaseAdmin
     .from('profiles')
     .update({
@@ -299,6 +337,8 @@ async function deleteEmployee(id, actorProfile) {
   if (actorProfile.id === id) {
     throw new AppError('You cannot delete your own account', 400);
   }
+
+  await assertActiveAdminWillRemain(existingProfile);
 
   const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
   if (error) {

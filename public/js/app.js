@@ -17,11 +17,30 @@ const PROFILE_SELECT = 'id, full_name, email, role, is_active, employee_code, ph
 const ATTENDANCE_SELECT = 'id, user_id, attendance_date, check_in_time, check_out_time, attendance_status, ip_address, device_info, created_at, updated_at';
 const PAGE_TITLES = {
   dashboard: ['Workspace', 'Dashboard'],
+  profile: ['Workspace', 'My Profile'],
   employees: ['Administration', 'Employee Management'],
   attendance: ['Operations', 'Attendance'],
   history: ['Operations', 'Attendance History'],
+  reports: ['Insights', 'Reports & Analytics'],
   qr: ['Administration', 'QR Access'],
 };
+const DEPARTMENT_OPTIONS = [
+  'Administration',
+  'Business Development',
+  'Customer Support',
+  'Finance',
+  'Human Resources',
+  'Information Technology',
+  'Legal',
+  'Marketing',
+  'Operations',
+  'Procurement',
+  'Quality Assurance',
+  'Sales',
+  'Warehouse',
+];
+const EMPLOYEE_PAGE_SIZE = 10;
+const HISTORY_PAGE_SIZE = 12;
 const state = {
   session: null,
   profile: null,
@@ -33,11 +52,23 @@ const state = {
     department: 'all',
     status: 'all',
   },
+  employeePagination: {
+    page: 1,
+    pageSize: EMPLOYEE_PAGE_SIZE,
+  },
   historyFilters: {
     from: offsetDate(-14),
     to: todayIso(),
     status: 'all',
   },
+  historyPagination: {
+    page: 1,
+    pageSize: HISTORY_PAGE_SIZE,
+  },
+  reportsFilters: {
+    month: currentMonthInput(),
+  },
+  liveRefreshTimer: null,
 };
 const elements = {
   loginScreen: document.getElementById('loginScreen'),
@@ -63,26 +94,59 @@ const elements = {
   modal: document.getElementById('modal'),
   modalBackdrop: document.getElementById('modalBackdrop'),
   modalPanel: document.getElementById('modalPanel'),
-  toast: document.getElementById('toast'),
+  toastViewport: document.getElementById('toastViewport'),
   pages: {
     dashboard: document.getElementById('page-dashboard'),
+    profile: document.getElementById('page-profile'),
     employees: document.getElementById('page-employees'),
     attendance: document.getElementById('page-attendance'),
     history: document.getElementById('page-history'),
+    reports: document.getElementById('page-reports'),
     qr: document.getElementById('page-qr'),
   },
 };
 
+let modalCloseHandler = null;
+let realtimeChannels = [];
+
 boot();
 
+function formatDateInput(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function todayIso() {
-  return new Date().toISOString().split('T')[0];
+  return formatDateInput(new Date());
+}
+
+function currentMonthInput() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
 }
 
 function offsetDate(days) {
   const value = new Date();
+  value.setHours(12, 0, 0, 0);
   value.setDate(value.getDate() + days);
-  return value.toISOString().split('T')[0];
+  return formatDateInput(value);
+}
+
+function toIsoFromDateTimeLocal(value) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toISOString();
 }
 
 function isAdmin() {
@@ -90,7 +154,9 @@ function isAdmin() {
 }
 
 function allowedPages() {
-  return isAdmin() ? ['dashboard', 'employees', 'attendance', 'history', 'qr'] : ['dashboard', 'attendance', 'history'];
+  return isAdmin()
+    ? ['dashboard', 'profile', 'employees', 'attendance', 'history', 'reports', 'qr']
+    : ['dashboard', 'profile', 'attendance', 'history'];
 }
 
 function pageFromHash() {
@@ -106,24 +172,48 @@ function setPageError(container, message) {
   container.innerHTML = `<div class="empty-state"><strong>Unable to load this section.</strong><p class="empty-note">${escapeHtml(message)}</p></div>`;
 }
 
-function showToast(message, type = 'info') {
-  elements.toast.textContent = message;
-  elements.toast.className = `toast ${type}`;
-  elements.toast.classList.remove('hidden');
-  clearTimeout(window.__evaraToastTimer);
-  window.__evaraToastTimer = window.setTimeout(() => {
-    elements.toast.classList.add('hidden');
-  }, 3500);
+function dismissToast(toast) {
+  if (!toast || !toast.parentElement) {
+    return;
+  }
+
+  toast.classList.remove('visible');
+  window.setTimeout(() => {
+    toast.remove();
+  }, 180);
 }
 
-function openModal(content) {
+function showToast(message, type = 'info') {
+  const toast = document.createElement('article');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `
+    <div class="toast-copy">
+      <strong>${escapeHtml(type === 'success' ? 'Success' : type === 'error' ? 'Action needed' : 'Notice')}</strong>
+      <p>${escapeHtml(message)}</p>
+    </div>
+    <button type="button" class="toast-close" aria-label="Close message">Close</button>
+  `;
+
+  toast.querySelector('.toast-close')?.addEventListener('click', () => dismissToast(toast));
+  elements.toastViewport.appendChild(toast);
+  window.requestAnimationFrame(() => toast.classList.add('visible'));
+  window.setTimeout(() => dismissToast(toast), 4200);
+}
+
+function openModal(content, options = {}) {
+  modalCloseHandler = typeof options.onClose === 'function' ? options.onClose : null;
   elements.modalPanel.innerHTML = content;
   elements.modal.classList.remove('hidden');
 }
 
-function closeModal() {
+function closeModal(payload = null) {
+  const handler = modalCloseHandler;
+  modalCloseHandler = null;
   elements.modal.classList.add('hidden');
   elements.modalPanel.innerHTML = '';
+  if (handler) {
+    handler(payload);
+  }
 }
 
 function setLoginError(message = '') {
@@ -131,11 +221,26 @@ function setLoginError(message = '') {
   elements.loginError.classList.toggle('hidden', !message);
 }
 
+function clearRealtimeSubscriptions() {
+  realtimeChannels.forEach((channel) => {
+    supabase?.removeChannel(channel);
+  });
+  realtimeChannels = [];
+
+  if (state.liveRefreshTimer) {
+    window.clearTimeout(state.liveRefreshTimer);
+    state.liveRefreshTimer = null;
+  }
+}
+
 function resetSessionState() {
+  clearRealtimeSubscriptions();
   state.session = null;
   state.profile = null;
   state.employees = [];
   state.profileMap = new Map();
+  state.employeePagination.page = 1;
+  state.historyPagination.page = 1;
 }
 
 function showLogin(message = '') {
@@ -240,6 +345,9 @@ async function fetchAttendance(filters = {}) {
     .order('attendance_date', { ascending: false })
     .order('check_in_time', { ascending: false });
 
+  if (filters.userId) {
+    query = query.eq('user_id', filters.userId);
+  }
   if (filters.date) {
     query = query.eq('attendance_date', filters.date);
   }
@@ -287,6 +395,15 @@ async function ensureProfileDirectory(records = []) {
 function employeeById(id) {
   return state.profileMap.get(id) || state.employees.find((item) => item.id === id) || null;
 }
+
+function departmentOptions(selected = '') {
+  return [...new Set([
+    ...DEPARTMENT_OPTIONS,
+    ...state.employees.map((employee) => employee.department).filter(Boolean),
+    state.profile?.department,
+    selected,
+  ].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
 function syncShell() {
   elements.sidebarName.textContent = state.profile?.full_name || 'EVARA User';
   elements.sidebarRole.textContent = roleLabel(state.profile?.role || 'employee');
@@ -322,7 +439,12 @@ function bindStaticEvents() {
   elements.menuToggle.addEventListener('click', () => {
     elements.sidebar.classList.toggle('open');
   });
-  elements.modalBackdrop.addEventListener('click', closeModal);
+  elements.modalBackdrop.addEventListener('click', () => closeModal(false));
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !elements.modal.classList.contains('hidden')) {
+      closeModal(false);
+    }
+  });
   elements.sidebarNav.addEventListener('click', (event) => {
     const trigger = event.target.closest('[data-page]');
     if (!trigger) {
@@ -336,6 +458,39 @@ function bindStaticEvents() {
       showToast(error.message, 'error');
     });
   });
+}
+
+function scheduleLiveRefresh() {
+  if (!state.profile) {
+    return;
+  }
+
+  window.clearTimeout(state.liveRefreshTimer);
+  state.liveRefreshTimer = window.setTimeout(() => {
+    renderRoute().catch((error) => showToast(error.message, 'error'));
+  }, 450);
+}
+
+function setupRealtimeSubscriptions() {
+  clearRealtimeSubscriptions();
+
+  if (!supabase || !state.profile) {
+    return;
+  }
+
+  const attendanceChannel = supabase
+    .channel(`attendance-feed-${state.profile.id}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, scheduleLiveRefresh)
+    .subscribe();
+
+  realtimeChannels.push(attendanceChannel);
+
+  const profileChannel = supabase
+    .channel(`profiles-feed-${state.profile.id}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, scheduleLiveRefresh)
+    .subscribe();
+
+  realtimeChannels.push(profileChannel);
 }
 
 async function boot() {
@@ -390,6 +545,7 @@ async function handleAuthenticatedSession(session) {
   state.profileMap.set(profile.id, profile);
   syncShell();
   showAppShell();
+  setupRealtimeSubscriptions();
 
   const nextTarget = new URLSearchParams(window.location.search).get('next');
   if (nextTarget === 'checkin') {
@@ -426,6 +582,7 @@ async function handleLogin(event) {
 }
 
 async function handleLogout() {
+  clearRealtimeSubscriptions();
   await supabase.auth.signOut();
   resetSessionState();
   showLogin();
@@ -463,6 +620,10 @@ async function renderRoute() {
     await renderDashboardPage();
     return;
   }
+  if (page === 'profile') {
+    await renderProfilePage();
+    return;
+  }
   if (page === 'employees') {
     await renderEmployeesPage();
     return;
@@ -473,6 +634,10 @@ async function renderRoute() {
   }
   if (page === 'history') {
     await renderHistoryPage();
+    return;
+  }
+  if (page === 'reports') {
+    await renderReportsPage();
     return;
   }
   if (page === 'qr') {
@@ -504,6 +669,387 @@ function buildUserCell(profile) {
 
 function badgeMarkup(type, value) {
   return `<span class="badge ${escapeHtml(type)}">${escapeHtml(statusLabel(value))}</span>`;
+}
+
+function paginateItems(items, paginationState) {
+  const totalItems = items.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / paginationState.pageSize));
+  const currentPage = Math.min(Math.max(paginationState.page, 1), totalPages);
+  paginationState.page = currentPage;
+
+  const startIndex = (currentPage - 1) * paginationState.pageSize;
+  const endIndex = startIndex + paginationState.pageSize;
+
+  return {
+    items: items.slice(startIndex, endIndex),
+    totalItems,
+    totalPages,
+    currentPage,
+    pageSize: paginationState.pageSize,
+    startItem: totalItems ? startIndex + 1 : 0,
+    endItem: totalItems ? Math.min(endIndex, totalItems) : 0,
+  };
+}
+
+function buildPaginationMarkup(id, meta) {
+  if (meta.totalItems <= meta.pageSize) {
+    return `
+      <div class="pagination compact">
+        <span class="pagination-summary">Showing ${escapeHtml(String(meta.totalItems))} record(s)</span>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="pagination" data-pagination="${escapeHtml(id)}">
+      <span class="pagination-summary">Showing ${escapeHtml(String(meta.startItem))}-${escapeHtml(String(meta.endItem))} of ${escapeHtml(String(meta.totalItems))}</span>
+      <div class="inline-actions">
+        <button type="button" class="btn btn-secondary" data-page-action="prev" ${meta.currentPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="pagination-pill">Page ${escapeHtml(String(meta.currentPage))} / ${escapeHtml(String(meta.totalPages))}</span>
+        <button type="button" class="btn btn-secondary" data-page-action="next" ${meta.currentPage === meta.totalPages ? 'disabled' : ''}>Next</button>
+      </div>
+    </div>
+  `;
+}
+
+function bindPagination(container, paginationId, paginationState, rerender) {
+  container.querySelector(`[data-pagination="${paginationId}"]`)?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-page-action]');
+    if (!button) {
+      return;
+    }
+
+    if (button.dataset.pageAction === 'prev') {
+      paginationState.page = Math.max(1, paginationState.page - 1);
+    }
+    if (button.dataset.pageAction === 'next') {
+      paginationState.page += 1;
+    }
+
+    rerender();
+  });
+}
+
+function csvValue(value) {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`;
+}
+
+function downloadCsvFile(filename, headers, rows) {
+  const content = ['\uFEFF' + headers.map(csvValue).join(','), ...rows.map((row) => row.map(csvValue).join(','))].join('\r\n');
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportEmployeesCsv(list) {
+  downloadCsvFile(
+    `employees-${todayIso()}.csv`,
+    ['Employee Code', 'Full Name', 'Email', 'Phone', 'Department', 'Position', 'Status', 'Role', 'Access'],
+    list.map((employee) => [
+      employee.employee_code || '',
+      employee.full_name,
+      employee.email,
+      employee.phone || '',
+      departmentLabel(employee.department),
+      employee.position || '',
+      statusLabel(employee.status),
+      roleLabel(employee.role),
+      employee.is_active ? 'Active' : 'Inactive',
+    ])
+  );
+}
+
+function exportAttendanceCsv(records) {
+  downloadCsvFile(
+    `attendance-${todayIso()}.csv`,
+    ['Employee', 'Email', 'Date', 'Check In', 'Check Out', 'Status', 'IP Address', 'Device Info'],
+    records.map((row) => {
+      const profile = employeeById(row.user_id) || state.profile;
+      return [
+        profile?.full_name || '',
+        profile?.email || '',
+        formatDate(row.attendance_date),
+        formatTime(row.check_in_time),
+        formatTime(row.check_out_time),
+        statusLabel(row.attendance_status),
+        row.ip_address || '',
+        row.device_info || '',
+      ];
+    })
+  );
+}
+
+function confirmAction({ eyebrow = 'Please confirm', title, message, confirmLabel = 'Confirm', tone = 'danger' }) {
+  return new Promise((resolve) => {
+    openModal(`
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">${escapeHtml(eyebrow)}</p>
+          <h2>${escapeHtml(title)}</h2>
+        </div>
+        <button id="closeModalBtn" type="button" class="ghost-inline">Close</button>
+      </div>
+      <div class="form-alert info">${escapeHtml(message)}</div>
+      <div class="modal-footer">
+        <div></div>
+        <div class="inline-actions">
+          <button id="cancelConfirmBtn" type="button" class="btn btn-secondary">Cancel</button>
+          <button id="submitConfirmBtn" type="button" class="btn ${tone === 'danger' ? 'btn-danger' : 'btn-primary'}">${escapeHtml(confirmLabel)}</button>
+        </div>
+      </div>
+    `, {
+      onClose: (payload) => resolve(Boolean(payload)),
+    });
+
+    document.getElementById('closeModalBtn')?.addEventListener('click', () => closeModal(false));
+    document.getElementById('cancelConfirmBtn')?.addEventListener('click', () => closeModal(false));
+    document.getElementById('submitConfirmBtn')?.addEventListener('click', () => closeModal(true));
+  });
+}
+
+function monthRange(monthValue) {
+  const [yearValue, monthValuePart] = String(monthValue || currentMonthInput()).split('-');
+  const year = Number(yearValue);
+  const month = Number(monthValuePart);
+  const now = new Date();
+  const startDate = new Date(year, month - 1, 1, 12, 0, 0, 0);
+  const endDate = new Date(year, month, 0, 12, 0, 0, 0);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
+  const boundedEnd = endDate > today ? today : endDate;
+
+  return {
+    startDate,
+    endDate: boundedEnd,
+    from: formatDateInput(startDate),
+    to: formatDateInput(boundedEnd),
+    label: startDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
+  };
+}
+
+function isWorkday(date) {
+  const day = date.getDay();
+  return day !== 5 && day !== 6;
+}
+
+function enumerateDates(startDate, endDate) {
+  const dates = [];
+  const cursor = new Date(startDate);
+  cursor.setHours(12, 0, 0, 0);
+  const finalDate = new Date(endDate);
+  finalDate.setHours(12, 0, 0, 0);
+
+  while (cursor <= finalDate) {
+    dates.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return dates;
+}
+
+function minutesFromTimestamp(value) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return (date.getHours() * 60) + date.getMinutes();
+}
+
+function average(values) {
+  const valid = values.filter((value) => Number.isFinite(value));
+  if (!valid.length) {
+    return null;
+  }
+
+  return Math.round(valid.reduce((sum, value) => sum + value, 0) / valid.length);
+}
+
+function formatAverageTime(minutes) {
+  if (!Number.isFinite(minutes)) {
+    return '-';
+  }
+
+  const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
+  const mins = String(minutes % 60).padStart(2, '0');
+  return `${hours}:${mins}`;
+}
+
+function buildReportsDataset(employees, attendanceRows, monthValue) {
+  const range = monthRange(monthValue);
+  const workdays = enumerateDates(range.startDate, range.endDate).filter(isWorkday);
+  const eligibleEmployees = employees.filter((employee) => employee.is_active && employee.status !== 'inactive');
+  const employeeIds = new Set(eligibleEmployees.map((employee) => employee.id));
+  const relevantRows = attendanceRows.filter((row) => employeeIds.has(row.user_id));
+
+  const byEmployee = eligibleEmployees.map((employee) => {
+    const rows = relevantRows.filter((row) => row.user_id === employee.id);
+    const presentDays = new Set(rows.filter((row) => row.check_in_time).map((row) => row.attendance_date)).size;
+    const lateDays = rows.filter((row) => row.attendance_status === 'late').length;
+    const averageCheckIn = average(rows.map((row) => minutesFromTimestamp(row.check_in_time)));
+    const averageCheckOut = average(rows.map((row) => minutesFromTimestamp(row.check_out_time)));
+    const attendanceRatio = workdays.length ? Math.round((presentDays / workdays.length) * 100) : 0;
+
+    return {
+      employee,
+      rows,
+      presentDays,
+      lateDays,
+      attendanceRatio,
+      averageCheckIn,
+      averageCheckOut,
+    };
+  }).sort((left, right) => {
+    if (right.attendanceRatio !== left.attendanceRatio) {
+      return right.attendanceRatio - left.attendanceRatio;
+    }
+    return right.presentDays - left.presentDays;
+  });
+
+  const weekdayTotals = enumerateDates(range.startDate, range.endDate)
+    .filter(isWorkday)
+    .map((date) => {
+      const isoDate = formatDateInput(date);
+      const presentCount = new Set(
+        relevantRows
+          .filter((row) => row.attendance_date === isoDate && row.check_in_time)
+          .map((row) => row.user_id)
+      ).size;
+
+      return {
+        weekday: date.toLocaleDateString('en-GB', { weekday: 'long' }),
+        absentCount: Math.max(eligibleEmployees.length - presentCount, 0),
+        dateLabel: formatDate(date),
+      };
+    })
+    .reduce((accumulator, item) => {
+      const existing = accumulator.get(item.weekday) || { weekday: item.weekday, absentCount: 0, occurrences: 0 };
+      existing.absentCount += item.absentCount;
+      existing.occurrences += 1;
+      accumulator.set(item.weekday, existing);
+      return accumulator;
+    }, new Map());
+
+  const weekdayRows = [...weekdayTotals.values()].sort((left, right) => right.absentCount - left.absentCount);
+  const averageRatio = byEmployee.length ? Math.round(byEmployee.reduce((sum, item) => sum + item.attendanceRatio, 0) / byEmployee.length) : 0;
+  const dailyTrend = workdays.map((date) => {
+    const isoDate = formatDateInput(date);
+    const presentCount = new Set(
+      relevantRows
+        .filter((row) => row.attendance_date === isoDate && row.check_in_time)
+        .map((row) => row.user_id)
+    ).size;
+
+    return {
+      label: date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+      presentCount,
+      absentCount: Math.max(eligibleEmployees.length - presentCount, 0),
+    };
+  });
+
+  return {
+    range,
+    workdays,
+    eligibleEmployees,
+    attendanceRows: relevantRows,
+    byEmployee,
+    weekdayRows,
+    averageRatio,
+    topPerformers: byEmployee.slice(0, 5),
+    dailyTrend,
+  };
+}
+
+function drawAttendanceTrend(canvas, points) {
+  if (!canvas || !points.length) {
+    return;
+  }
+
+  const context = canvas.getContext('2d');
+  const width = canvas.clientWidth || 720;
+  const height = 260;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = width * ratio;
+  canvas.height = height * ratio;
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, width, height);
+
+  const padding = { top: 20, right: 16, bottom: 42, left: 42 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const maxValue = Math.max(...points.map((point) => point.presentCount), 1);
+
+  context.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  context.lineWidth = 1;
+
+  for (let step = 0; step <= 4; step += 1) {
+    const y = padding.top + (chartHeight * step / 4);
+    context.beginPath();
+    context.moveTo(padding.left, y);
+    context.lineTo(width - padding.right, y);
+    context.stroke();
+
+    const labelValue = Math.round(maxValue - (maxValue * step / 4));
+    context.fillStyle = 'rgba(238, 242, 246, 0.7)';
+    context.font = '12px Inter, sans-serif';
+    context.fillText(String(labelValue), 8, y + 4);
+  }
+
+  const stepX = points.length > 1 ? chartWidth / (points.length - 1) : chartWidth;
+  const yForValue = (value) => padding.top + chartHeight - ((value / maxValue) * chartHeight);
+
+  context.beginPath();
+  points.forEach((point, index) => {
+    const x = padding.left + (stepX * index);
+    const y = yForValue(point.presentCount);
+    if (index === 0) {
+      context.moveTo(x, y);
+    } else {
+      context.lineTo(x, y);
+    }
+  });
+  context.strokeStyle = '#d9e3ee';
+  context.lineWidth = 3;
+  context.stroke();
+
+  context.fillStyle = 'rgba(159, 176, 195, 0.18)';
+  context.beginPath();
+  points.forEach((point, index) => {
+    const x = padding.left + (stepX * index);
+    const y = yForValue(point.presentCount);
+    if (index === 0) {
+      context.moveTo(x, height - padding.bottom);
+      context.lineTo(x, y);
+    } else {
+      context.lineTo(x, y);
+    }
+  });
+  context.lineTo(padding.left + (stepX * (points.length - 1)), height - padding.bottom);
+  context.closePath();
+  context.fill();
+
+  context.fillStyle = '#eef2f6';
+  points.forEach((point, index) => {
+    const x = padding.left + (stepX * index);
+    const y = yForValue(point.presentCount);
+    context.beginPath();
+    context.arc(x, y, 4, 0, Math.PI * 2);
+    context.fill();
+
+    if (index === 0 || index === points.length - 1 || index % Math.max(Math.round(points.length / 6), 2) === 0) {
+      context.fillStyle = 'rgba(238, 242, 246, 0.72)';
+      context.font = '12px Inter, sans-serif';
+      context.fillText(point.label, x - 18, height - 16);
+      context.fillStyle = '#eef2f6';
+    }
+  });
 }
 
 async function renderDashboardPage() {
@@ -697,12 +1243,292 @@ async function renderEmployeesPage() {
   }
 }
 
+async function renderProfilePage() {
+  const container = elements.pages.profile;
+  setPageLoading(container, 'Loading profile');
+
+  try {
+    const records = await fetchAttendance({
+      userId: state.profile.id,
+      from: offsetDate(-30),
+      to: todayIso(),
+      limit: 30,
+    });
+    const currentMonth = monthRange(currentMonthInput());
+    const monthRecords = records.filter((row) => row.attendance_date >= currentMonth.from && row.attendance_date <= currentMonth.to);
+    const latestRecord = records[0] || null;
+    const checkedDays = records.filter((row) => row.check_in_time).length;
+    const completedDays = records.filter((row) => row.check_out_time).length;
+    const lateDays = records.filter((row) => row.attendance_status === 'late').length;
+    const monthlyPresentDays = new Set(monthRecords.filter((row) => row.check_in_time).map((row) => row.attendance_date)).size;
+    const monthlyRatio = currentMonth ? Math.round((monthlyPresentDays / Math.max(enumerateDates(currentMonth.startDate, currentMonth.endDate).filter(isWorkday).length, 1)) * 100) : 0;
+    const monthlyAverageCheckIn = formatAverageTime(average(monthRecords.map((row) => minutesFromTimestamp(row.check_in_time))));
+
+    container.innerHTML = `
+      <div class="page-shell">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Identity</p>
+            <h1>${escapeHtml(state.profile.full_name)}</h1>
+            <p>Keep your account details, attendance status, and access information in one place.</p>
+          </div>
+          <div class="inline-actions">
+            <button id="openHistoryFromProfileBtn" type="button" class="btn btn-secondary">Open history</button>
+            <button id="openAttendanceFromProfileBtn" type="button" class="btn btn-primary">Open attendance</button>
+          </div>
+        </div>
+        <div class="summary-grid">
+          ${buildSummaryCard('Role', roleLabel(state.profile.role), state.profile.is_active ? 'Access enabled' : 'Access disabled')}
+          ${buildSummaryCard('Department', departmentLabel(state.profile.department), state.profile.position || 'No position assigned')}
+          ${buildSummaryCard('Checked Days', String(checkedDays), 'Last 30 calendar days')}
+          ${buildSummaryCard('Late Days', String(lateDays), latestRecord ? `Latest ${statusLabel(latestRecord.attendance_status)}` : 'No attendance yet')}
+          ${buildSummaryCard('This Month', `${monthlyRatio}%`, `${monthlyPresentDays} present day(s) in ${currentMonth.label}`)}
+          ${buildSummaryCard('Avg Check In', monthlyAverageCheckIn, 'Current month average')}
+        </div>
+        <div class="content-grid">
+          <section class="card-block">
+            <div class="card-head">
+              <div>
+                <h3>Profile details</h3>
+                <p class="card-subtle">Live profile data from Supabase</p>
+              </div>
+            </div>
+            <div class="form-grid profile-grid">
+              <div class="status-card compact"><div><span class="status-label">Employee Code</span><strong>${escapeHtml(state.profile.employee_code || '-')}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">Email</span><strong>${escapeHtml(state.profile.email)}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">Phone</span><strong>${escapeHtml(state.profile.phone || '-')}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">Position</span><strong>${escapeHtml(state.profile.position || '-')}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">Status</span><strong>${escapeHtml(statusLabel(state.profile.status))}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">Account Access</span><strong>${escapeHtml(state.profile.is_active ? 'Active' : 'Inactive')}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">Created</span><strong>${escapeHtml(formatDateTime(state.profile.created_at))}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">Updated</span><strong>${escapeHtml(formatDateTime(state.profile.updated_at))}</strong></div></div>
+            </div>
+          </section>
+          <section class="card-block">
+            <div class="card-head">
+              <div>
+                <h3>Recent attendance snapshot</h3>
+                <p class="card-subtle">Your latest 8 attendance rows</p>
+              </div>
+            </div>
+            <div class="summary-grid compact-grid">
+              ${buildSummaryCard('Completed Days', String(completedDays), 'Rows with check-out time')}
+              ${buildSummaryCard('Latest Check In', latestRecord?.check_in_time ? formatTime(latestRecord.check_in_time) : '-', latestRecord ? formatDate(latestRecord.attendance_date) : 'No row yet')}
+            </div>
+            <div class="table-shell">
+              <table>
+                <thead>
+                  <tr><th>Date</th><th>Check In</th><th>Check Out</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  ${records.slice(0, 8).length ? records.slice(0, 8).map((row) => `
+                    <tr>
+                      <td>${escapeHtml(formatDate(row.attendance_date))}</td>
+                      <td>${escapeHtml(formatTime(row.check_in_time))}</td>
+                      <td>${escapeHtml(formatTime(row.check_out_time))}</td>
+                      <td>${badgeMarkup(row.attendance_status, row.attendance_status)}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="4"><div class="empty-state">Your attendance rows will appear here as soon as they are recorded.</div></td></tr>'}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    `;
+
+    container.querySelector('#openAttendanceFromProfileBtn')?.addEventListener('click', () => navigate('attendance'));
+    container.querySelector('#openHistoryFromProfileBtn')?.addEventListener('click', () => navigate('history'));
+  } catch (error) {
+    setPageError(container, error.message);
+  }
+}
+
+async function renderReportsPage() {
+  const container = elements.pages.reports;
+  if (!isAdmin()) {
+    setPageError(container, 'Only admins can access reports and analytics.');
+    return;
+  }
+
+  setPageLoading(container, 'Loading reports');
+
+  try {
+    if (!state.employees.length) {
+      state.employees = await fetchEmployees();
+      state.profileMap = new Map(state.employees.map((employee) => [employee.id, employee]));
+      state.profileMap.set(state.profile.id, state.profile);
+    }
+
+    const range = monthRange(state.reportsFilters.month);
+    const attendanceRows = await fetchAttendance({
+      from: range.from,
+      to: range.to,
+    });
+    await ensureProfileDirectory(attendanceRows);
+
+    const report = buildReportsDataset(state.employees, attendanceRows, state.reportsFilters.month);
+    const peakWeekday = report.weekdayRows[0];
+
+    container.innerHTML = `
+      <div class="page-shell">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Insights</p>
+            <h1>Reports & Analytics</h1>
+            <p>Track monthly attendance performance, employee punctuality, and absence pressure across the team.</p>
+          </div>
+        </div>
+        <section class="card-block">
+          <div class="toolbar toolbar-wide">
+            <input id="reportsMonth" type="month" value="${escapeHtml(state.reportsFilters.month)}" />
+            <div class="status-card compact">
+              <div>
+                <span class="status-label">Reporting Period</span>
+                <strong>${escapeHtml(report.range.label)}</strong>
+              </div>
+            </div>
+            <button id="reportsApplyBtn" type="button" class="btn btn-secondary">Apply</button>
+            <button id="reportsRefreshBtn" type="button" class="btn btn-secondary">Refresh</button>
+          </div>
+        </section>
+        <div class="summary-grid">
+          ${buildSummaryCard('Employees Measured', String(report.eligibleEmployees.length), 'Active accounts in the selected month')}
+          ${buildSummaryCard('Workdays in Range', String(report.workdays.length), 'Friday and Saturday excluded')}
+          ${buildSummaryCard('Average Attendance', `${report.averageRatio}%`, 'Average monthly attendance ratio')}
+          ${buildSummaryCard('Peak Absence Day', peakWeekday ? peakWeekday.weekday : 'N/A', peakWeekday ? `${peakWeekday.absentCount} total absences` : 'No absence trend yet')}
+        </div>
+        <section class="card-block">
+          <div class="card-head">
+            <div>
+              <h3>Attendance trend</h3>
+              <p class="card-subtle">Daily present headcount across the selected workdays.</p>
+            </div>
+          </div>
+          <div class="chart-shell">
+            <canvas id="reportsTrendCanvas" aria-label="Attendance trend chart"></canvas>
+          </div>
+        </section>
+        <section class="card-block">
+          <div class="card-head">
+            <div>
+              <h3>Monthly attendance ratio per employee</h3>
+              <p class="card-subtle">Attendance ratio is calculated against the workdays in the selected month.</p>
+            </div>
+          </div>
+          <div class="table-shell">
+            <table>
+              <thead>
+                <tr><th>Employee</th><th>Department</th><th>Present Days</th><th>Late Days</th><th>Attendance Ratio</th></tr>
+              </thead>
+              <tbody>
+                ${report.byEmployee.length ? report.byEmployee.map((item) => `
+                  <tr>
+                    <td>${buildUserCell(item.employee)}</td>
+                    <td>${escapeHtml(departmentLabel(item.employee.department))}</td>
+                    <td>${escapeHtml(String(item.presentDays))}</td>
+                    <td>${escapeHtml(String(item.lateDays))}</td>
+                    <td><strong>${escapeHtml(String(item.attendanceRatio))}%</strong></td>
+                  </tr>
+                `).join('') : '<tr><td colspan="5"><div class="empty-state">No employee attendance data is available for this period.</div></td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <div class="content-grid">
+          <section class="card-block">
+            <div class="card-head">
+              <div>
+                <h3>Top attendance ranking</h3>
+                <p class="card-subtle">Employees ranked by monthly attendance ratio.</p>
+              </div>
+            </div>
+            <div class="page-shell">
+              ${report.topPerformers.length ? report.topPerformers.map((item, index) => `
+                <div class="status-card compact">
+                  <div>
+                    <span class="status-label">Rank ${index + 1}</span>
+                    <strong>${escapeHtml(item.employee.full_name)}</strong>
+                    <p class="inline-note">${escapeHtml(String(item.attendanceRatio))}% attendance · ${escapeHtml(String(item.presentDays))} present day(s)</p>
+                  </div>
+                </div>
+              `).join('') : '<div class="empty-state">No ranking is available yet.</div>'}
+            </div>
+          </section>
+          <section class="card-block">
+            <div class="card-head">
+              <div>
+                <h3>Peak absence weekdays</h3>
+                <p class="card-subtle">Total absences grouped by weekday for the selected month.</p>
+              </div>
+            </div>
+            <div class="table-shell">
+              <table>
+                <thead>
+                  <tr><th>Weekday</th><th>Total Absences</th><th>Occurrences</th></tr>
+                </thead>
+                <tbody>
+                  ${report.weekdayRows.length ? report.weekdayRows.map((item) => `
+                    <tr>
+                      <td>${escapeHtml(item.weekday)}</td>
+                      <td>${escapeHtml(String(item.absentCount))}</td>
+                      <td>${escapeHtml(String(item.occurrences))}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="3"><div class="empty-state">No weekday absence trend is available yet.</div></td></tr>'}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+        <section class="card-block">
+          <div class="card-head">
+            <div>
+              <h3>Average check-in and check-out times</h3>
+              <p class="card-subtle">Average times are based on attendance rows with recorded timestamps.</p>
+            </div>
+          </div>
+          <div class="table-shell">
+            <table>
+              <thead>
+                <tr><th>Employee</th><th>Average Check In</th><th>Average Check Out</th><th>Attendance Rows</th></tr>
+              </thead>
+              <tbody>
+                ${report.byEmployee.length ? report.byEmployee.map((item) => `
+                  <tr>
+                    <td>${buildUserCell(item.employee)}</td>
+                    <td>${escapeHtml(formatAverageTime(item.averageCheckIn))}</td>
+                    <td>${escapeHtml(formatAverageTime(item.averageCheckOut))}</td>
+                    <td>${escapeHtml(String(item.rows.length))}</td>
+                  </tr>
+                `).join('') : '<tr><td colspan="4"><div class="empty-state">No time analytics are available for this period.</div></td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    `;
+
+    container.querySelector('#reportsApplyBtn')?.addEventListener('click', () => {
+      state.reportsFilters.month = container.querySelector('#reportsMonth').value || currentMonthInput();
+      renderReportsPage().catch((error) => setPageError(container, error.message));
+    });
+    container.querySelector('#reportsRefreshBtn')?.addEventListener('click', () => {
+      renderReportsPage().catch((error) => setPageError(container, error.message));
+    });
+    drawAttendanceTrend(container.querySelector('#reportsTrendCanvas'), report.dailyTrend);
+  } catch (error) {
+    setPageError(container, error.message);
+  }
+}
+
 function drawEmployeesPage() {
   const container = elements.pages.employees;
   const list = filteredEmployees();
+  const paginated = paginateItems(list, state.employeePagination);
   const departments = [...new Set(state.employees.map((employee) => departmentLabel(employee.department)))].sort();
   const activeCount = state.employees.filter((employee) => employee.is_active).length;
   const onLeaveCount = state.employees.filter((employee) => employee.status === 'on_leave').length;
+  const activeAdminCount = state.employees.filter((employee) => employee.role === 'admin' && employee.is_active).length;
 
   container.innerHTML = `
     <div class="page-shell">
@@ -721,7 +1547,7 @@ function drawEmployeesPage() {
         ${buildSummaryCard('Departments', String(departments.length), 'Distinct departments represented')}
       </div>
       <section class="card-block">
-        <div class="toolbar">
+        <div class="toolbar toolbar-wide">
           <input id="employeeSearch" type="search" placeholder="Search by code, name, email, or department" value="${escapeHtml(state.employeeFilters.search)}" />
           <select id="departmentFilter">
             <option value="all">All Departments</option>
@@ -732,6 +1558,7 @@ function drawEmployeesPage() {
             ${['active', 'inactive', 'on_leave'].map((status) => `<option value="${status}" ${state.employeeFilters.status === status ? 'selected' : ''}>${escapeHtml(statusLabel(status))}</option>`).join('')}
           </select>
           <button id="refreshEmployeesBtn" type="button" class="btn btn-secondary">Refresh</button>
+          <button id="exportEmployeesBtn" type="button" class="btn btn-secondary">Export CSV</button>
         </div>
         <div class="table-shell">
           <table>
@@ -749,7 +1576,16 @@ function drawEmployeesPage() {
               </tr>
             </thead>
             <tbody>
-              ${list.length ? list.map((employee) => `
+              ${paginated.items.length ? paginated.items.map((employee) => {
+                const isSelf = employee.id === state.profile?.id;
+                const isLastActiveAdmin = employee.role === 'admin' && employee.is_active && activeAdminCount <= 1;
+                const protectionReason = isSelf
+                  ? 'You cannot disable or delete your own account.'
+                  : isLastActiveAdmin
+                    ? 'At least one active admin account must remain in the system.'
+                    : '';
+
+                return `
                 <tr>
                   <td>${escapeHtml(employee.employee_code || '-')}</td>
                   <td>${escapeHtml(employee.full_name)}</td>
@@ -763,29 +1599,34 @@ function drawEmployeesPage() {
                     <div class="table-actions">
                       <button class="btn btn-secondary" data-action="view" data-id="${employee.id}">View</button>
                       <button class="btn btn-secondary" data-action="edit" data-id="${employee.id}">Edit</button>
-                      <button class="btn btn-secondary" data-action="toggle" data-id="${employee.id}">${employee.is_active ? 'Deactivate' : 'Activate'}</button>
-                      <button class="btn btn-danger" data-action="delete" data-id="${employee.id}">Delete</button>
+                      <button class="btn btn-secondary" data-action="toggle" data-id="${employee.id}" ${isSelf || isLastActiveAdmin ? 'disabled' : ''} title="${escapeHtml(protectionReason)}">${employee.is_active ? 'Deactivate' : 'Activate'}</button>
+                      <button class="btn btn-danger" data-action="delete" data-id="${employee.id}" ${isSelf || isLastActiveAdmin ? 'disabled' : ''} title="${escapeHtml(protectionReason)}">Delete</button>
                     </div>
                   </td>
                 </tr>
-              `).join('') : '<tr><td colspan="9"><div class="empty-state">No employees match the current filters.</div></td></tr>'}
+              `;
+              }).join('') : '<tr><td colspan="9"><div class="empty-state">No employees match the current filters.</div></td></tr>'}
             </tbody>
           </table>
         </div>
+        ${buildPaginationMarkup('employeesPager', paginated)}
       </section>
     </div>
   `;
 
   container.querySelector('#employeeSearch')?.addEventListener('input', (event) => {
     state.employeeFilters.search = event.target.value;
+    state.employeePagination.page = 1;
     drawEmployeesPage();
   });
   container.querySelector('#departmentFilter')?.addEventListener('change', (event) => {
     state.employeeFilters.department = event.target.value;
+    state.employeePagination.page = 1;
     drawEmployeesPage();
   });
   container.querySelector('#statusFilter')?.addEventListener('change', (event) => {
     state.employeeFilters.status = event.target.value;
+    state.employeePagination.page = 1;
     drawEmployeesPage();
   });
   container.querySelector('#openAddEmployeeBtn')?.addEventListener('click', () => {
@@ -794,6 +1635,11 @@ function drawEmployeesPage() {
   container.querySelector('#refreshEmployeesBtn')?.addEventListener('click', () => {
     renderEmployeesPage().catch((error) => setPageError(container, error.message));
   });
+  container.querySelector('#exportEmployeesBtn')?.addEventListener('click', () => {
+    exportEmployeesCsv(list);
+    showToast('Employees CSV exported successfully.', 'success');
+  });
+  bindPagination(container, 'employeesPager', state.employeePagination, drawEmployeesPage);
   container.querySelector('tbody')?.addEventListener('click', (event) => {
     const action = event.target.closest('[data-action]');
     if (!action) {
@@ -825,6 +1671,7 @@ function drawEmployeesPage() {
 
 function employeeFormMarkup(mode, employee = null) {
   const isEdit = mode === 'edit';
+  const departments = departmentOptions(employee?.department || '');
   return `
     <div class="modal-header">
       <div>
@@ -853,7 +1700,10 @@ function employeeFormMarkup(mode, employee = null) {
         </div>
         <div class="form-group">
           <label for="employee_department">Department</label>
-          <input id="employee_department" name="department" value="${escapeHtml(employee?.department || '')}" />
+          <select id="employee_department" name="department">
+            <option value="">Select Department</option>
+            ${departments.map((department) => `<option value="${escapeHtml(department)}" ${(employee?.department || '') === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
+          </select>
         </div>
         <div class="form-group">
           <label for="employee_position">Position</label>
@@ -1070,8 +1920,129 @@ function openResetPasswordModal(employee) {
   });
 }
 
+function openManualAttendanceForm() {
+  const employees = [...state.employees].sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+  openModal(`
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">Manual attendance</p>
+        <h2>Add attendance record</h2>
+      </div>
+      <button id="closeModalBtn" type="button" class="ghost-inline">Close</button>
+    </div>
+    <form id="manualAttendanceForm" class="stack-form">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label for="manual_user_id">Employee</label>
+          <select id="manual_user_id" name="user_id" required>
+            <option value="">Select employee</option>
+            ${employees.map((employee) => `<option value="${employee.id}">${escapeHtml(employee.full_name)}${employee.employee_code ? ` - ${escapeHtml(employee.employee_code)}` : ''}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="manual_attendance_date">Attendance Date</label>
+          <input id="manual_attendance_date" name="attendance_date" type="date" value="${todayIso()}" required />
+        </div>
+        <div class="form-group">
+          <label for="manual_attendance_status">Status</label>
+          <select id="manual_attendance_status" name="attendance_status">
+            ${['present', 'late', 'checked_out', 'absent'].map((status) => `<option value="${status}">${escapeHtml(statusLabel(status))}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="manual_check_in_time">Check In</label>
+          <input id="manual_check_in_time" name="check_in_time" type="datetime-local" />
+        </div>
+        <div class="form-group">
+          <label for="manual_check_out_time">Check Out</label>
+          <input id="manual_check_out_time" name="check_out_time" type="datetime-local" />
+        </div>
+        <div class="form-group full">
+          <label for="manual_device_info">Notes / Device Info</label>
+          <textarea id="manual_device_info" name="device_info" rows="3" placeholder="Optional note for this manual update"></textarea>
+        </div>
+      </div>
+      <div id="manualAttendanceError" class="form-alert error hidden"></div>
+      <div class="modal-footer">
+        <div></div>
+        <div class="inline-actions">
+          <button id="cancelManualAttendanceBtn" type="button" class="btn btn-secondary">Cancel</button>
+          <button id="submitManualAttendanceBtn" type="submit" class="btn btn-primary">Save Attendance</button>
+        </div>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('closeModalBtn')?.addEventListener('click', () => closeModal(false));
+  document.getElementById('cancelManualAttendanceBtn')?.addEventListener('click', () => closeModal(false));
+  document.getElementById('manualAttendanceForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    showFormError('manualAttendanceError');
+
+    const form = event.currentTarget;
+    const checkInTime = toIsoFromDateTimeLocal(form.check_in_time.value);
+    const checkOutTime = toIsoFromDateTimeLocal(form.check_out_time.value);
+
+    if (!form.user_id.value || !form.attendance_date.value) {
+      showFormError('manualAttendanceError', 'Employee and attendance date are required.');
+      return;
+    }
+    if (checkOutTime && !checkInTime) {
+      showFormError('manualAttendanceError', 'Check-out cannot be saved before check-in.');
+      return;
+    }
+    if (checkInTime && checkOutTime && new Date(checkOutTime) < new Date(checkInTime)) {
+      showFormError('manualAttendanceError', 'Check-out must be later than check-in.');
+      return;
+    }
+
+    const submitButton = document.getElementById('submitManualAttendanceBtn');
+    submitButton.disabled = true;
+    submitButton.textContent = 'Saving';
+
+    try {
+      await apiRequest('/attendance/manual', {
+        method: 'POST',
+        body: {
+          user_id: form.user_id.value,
+          attendance_date: form.attendance_date.value,
+          attendance_status: form.attendance_status.value,
+          check_in_time: checkInTime,
+          check_out_time: checkOutTime,
+          device_info: form.device_info.value.trim(),
+        },
+      });
+      closeModal(true);
+      showToast('Manual attendance saved successfully.', 'success');
+      await renderAttendancePage();
+    } catch (error) {
+      showFormError('manualAttendanceError', error.message);
+      submitButton.disabled = false;
+      submitButton.textContent = 'Save Attendance';
+    }
+  });
+}
+
 async function handleEmployeeToggle(employee) {
-  const confirmed = window.confirm(`Change account access for ${employee.full_name}?`);
+  const activeAdminCount = state.employees.filter((item) => item.role === 'admin' && item.is_active).length;
+  if (employee.id === state.profile?.id) {
+    showToast('You cannot disable your own account.', 'error');
+    return;
+  }
+  if (employee.role === 'admin' && employee.is_active && activeAdminCount <= 1) {
+    showToast('At least one active admin account must remain in the system.', 'error');
+    return;
+  }
+
+  const confirmed = await confirmAction({
+    eyebrow: 'Account access',
+    title: `${employee.is_active ? 'Deactivate' : 'Activate'} ${employee.full_name}?`,
+    message: employee.is_active
+      ? 'This employee will lose access to the system until you reactivate the account.'
+      : 'This employee will regain access and can sign in again.',
+    confirmLabel: employee.is_active ? 'Deactivate account' : 'Activate account',
+  });
   if (!confirmed) {
     return;
   }
@@ -1084,7 +2055,22 @@ async function handleEmployeeToggle(employee) {
 }
 
 async function handleEmployeeDelete(employee) {
-  const confirmed = window.confirm(`Delete ${employee.full_name}? This removes the Supabase Auth account and all linked attendance data.`);
+  const activeAdminCount = state.employees.filter((item) => item.role === 'admin' && item.is_active).length;
+  if (employee.id === state.profile?.id) {
+    showToast('You cannot delete your own account.', 'error');
+    return;
+  }
+  if (employee.role === 'admin' && employee.is_active && activeAdminCount <= 1) {
+    showToast('At least one active admin account must remain in the system.', 'error');
+    return;
+  }
+
+  const confirmed = await confirmAction({
+    eyebrow: 'Delete employee',
+    title: `Delete ${employee.full_name}?`,
+    message: 'This permanently removes the auth account, profile, and linked attendance rows.',
+    confirmLabel: 'Delete permanently',
+  });
   if (!confirmed) {
     return;
   }
@@ -1102,8 +2088,8 @@ async function renderAttendancePage() {
   try {
     const today = todayIso();
     const [todayRecords, recentRecords] = await Promise.all([
-      fetchAttendance({ date: today, limit: 250 }),
-      fetchAttendance({ from: offsetDate(-14), to: today, limit: 14 }),
+      fetchAttendance({ date: today, ...(isAdmin() ? {} : { userId: state.profile.id }) }),
+      fetchAttendance({ from: offsetDate(-14), to: today, limit: 14, ...(isAdmin() ? {} : { userId: state.profile.id }) }),
     ]);
 
     if (isAdmin()) {
@@ -1122,9 +2108,13 @@ async function renderAttendancePage() {
             <div>
               <p class="eyebrow">Live operations</p>
               <h1>Attendance for ${escapeHtml(formatDate(today))}</h1>
-              <p>Monitor check-ins and check-outs as they happen.</p>
+              <p>Monitor check-ins and check-outs as they happen, export records, and add manual entries when needed.</p>
             </div>
-            <button id="attendanceRefreshBtn" type="button" class="btn btn-secondary">Refresh</button>
+            <div class="inline-actions">
+              <button id="manualAttendanceBtn" type="button" class="btn btn-primary">Manual Entry</button>
+              <button id="exportAttendanceBtn" type="button" class="btn btn-secondary">Export CSV</button>
+              <button id="attendanceRefreshBtn" type="button" class="btn btn-secondary">Refresh</button>
+            </div>
           </div>
           <div class="summary-grid">
             ${buildSummaryCard('Present', String(todayRecords.length), 'Attendance rows recorded today')}
@@ -1160,6 +2150,11 @@ async function renderAttendancePage() {
       `;
 
       container.querySelector('#attendanceRefreshBtn')?.addEventListener('click', () => renderAttendancePage().catch((error) => setPageError(container, error.message)));
+      container.querySelector('#manualAttendanceBtn')?.addEventListener('click', openManualAttendanceForm);
+      container.querySelector('#exportAttendanceBtn')?.addEventListener('click', () => {
+        exportAttendanceCsv(todayRecords);
+        showToast('Attendance CSV exported successfully.', 'success');
+      });
       return;
     }
 
@@ -1243,9 +2238,10 @@ async function renderHistoryPage() {
       from: state.historyFilters.from,
       to: state.historyFilters.to,
       status: state.historyFilters.status,
-      limit: 150,
+      ...(isAdmin() ? {} : { userId: state.profile.id }),
     });
     await ensureProfileDirectory(records);
+    const paginated = paginateItems(records, state.historyPagination);
 
     container.innerHTML = `
       <div class="page-shell">
@@ -1257,7 +2253,7 @@ async function renderHistoryPage() {
           </div>
         </div>
         <section class="card-block">
-          <div class="toolbar">
+          <div class="toolbar toolbar-wide">
             <input id="historyFrom" type="date" value="${escapeHtml(state.historyFilters.from)}" />
             <input id="historyTo" type="date" value="${escapeHtml(state.historyFilters.to)}" />
             <select id="historyStatus">
@@ -1265,6 +2261,7 @@ async function renderHistoryPage() {
               ${['present', 'late', 'checked_out', 'absent'].map((status) => `<option value="${status}" ${state.historyFilters.status === status ? 'selected' : ''}>${escapeHtml(statusLabel(status))}</option>`).join('')}
             </select>
             <button id="historySearchBtn" type="button" class="btn btn-secondary">Apply</button>
+            <button id="historyExportBtn" type="button" class="btn btn-secondary">Export CSV</button>
           </div>
           <div class="table-shell">
             <table>
@@ -1272,7 +2269,7 @@ async function renderHistoryPage() {
                 <tr><th>Employee</th><th>Date</th><th>Check In</th><th>Check Out</th><th>Status</th><th>IP Address</th></tr>
               </thead>
               <tbody>
-                ${records.length ? records.map((row) => {
+                ${paginated.items.length ? paginated.items.map((row) => {
                   const profile = employeeById(row.user_id) || state.profile;
                   return `
                     <tr>
@@ -1288,6 +2285,7 @@ async function renderHistoryPage() {
               </tbody>
             </table>
           </div>
+          ${buildPaginationMarkup('historyPager', paginated)}
         </section>
       </div>
     `;
@@ -1296,6 +2294,14 @@ async function renderHistoryPage() {
       state.historyFilters.from = container.querySelector('#historyFrom').value;
       state.historyFilters.to = container.querySelector('#historyTo').value;
       state.historyFilters.status = container.querySelector('#historyStatus').value;
+      state.historyPagination.page = 1;
+      renderHistoryPage().catch((error) => setPageError(container, error.message));
+    });
+    container.querySelector('#historyExportBtn')?.addEventListener('click', () => {
+      exportAttendanceCsv(records);
+      showToast('Attendance history CSV exported successfully.', 'success');
+    });
+    bindPagination(container, 'historyPager', state.historyPagination, () => {
       renderHistoryPage().catch((error) => setPageError(container, error.message));
     });
   } catch (error) {

@@ -1,5 +1,6 @@
 ﻿const asyncHandler = require('../utils/asyncHandler');
 const attendanceWriteService = require('../services/attendanceWriteService');
+const attendanceAdminService = require('../services/attendanceAdminService');
 const qrService = require('../services/qrService');
 const { sendSuccess } = require('../utils/responseHelper');
 
@@ -31,6 +32,19 @@ const checkOut = asyncHandler(async (req, res) => {
   });
 });
 
+const createManualAttendance = asyncHandler(async (req, res) => {
+  const data = await attendanceAdminService.createOrUpdateManualAttendance(req.body, req.user);
+
+  return sendSuccess(
+    res,
+    {
+      message: 'Manual attendance entry saved successfully',
+      data,
+    },
+    201
+  );
+});
+
 const getQrCode = asyncHandler(async (req, res) => {
   const qr = await qrService.generateAttendanceQr(req);
 
@@ -45,8 +59,8 @@ const getQrCode = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  createManualAttendance,
   checkIn,
   checkOut,
   getQrCode,
 };
-

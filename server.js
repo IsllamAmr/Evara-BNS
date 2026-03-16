@@ -2,14 +2,16 @@
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const morgan = require('morgan');
 const os = require('os');
 const path = require('path');
-const rateLimit = require('express-rate-limit');
 const { bootstrapInitialAdmin } = require('./services/bootstrapService');
 const { isSupabaseConfigured, supabaseUrl } = require('./config/supabase');
 const adminRoutes = require('./routes/adminRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
+const { sanitizeRequest } = require('./middlewares/sanitizeMiddleware');
+const { apiLimiter } = require('./middlewares/rateLimiters');
 const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
 
 const app = express();
@@ -47,16 +49,36 @@ function buildAppUrl(req) {
   return `http://localhost:${PORT}`;
 }
 
-const apiLimiter = rateLimit({
-  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: Number(process.env.RATE_LIMIT_MAX_REQUESTS || process.env.RATE_LIMIT_MAX) || 200,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    message: 'Too many requests. Please try again later.',
-  },
-});
+function buildContentSecurityPolicy() {
+  let supabaseOrigin = null;
+
+  try {
+    supabaseOrigin = supabaseUrl ? new URL(supabaseUrl).origin : null;
+  } catch (_error) {
+    supabaseOrigin = null;
+  }
+
+  const connectSources = ["'self'"];
+  if (supabaseOrigin) {
+    connectSources.push(supabaseOrigin);
+    connectSources.push(supabaseOrigin.replace(/^http/, 'ws'));
+  }
+
+  return {
+    directives: {
+      defaultSrc: ["'self'"],
+      baseUri: ["'self'"],
+      connectSrc: connectSources,
+      fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+      objectSrc: ["'none'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      frameAncestors: ["'none'"],
+      upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
+    },
+  };
+}
 
 app.use(
   cors({
@@ -64,9 +86,17 @@ app.use(
     credentials: true,
   })
 );
+app.disable('x-powered-by');
 app.set('trust proxy', Number.isFinite(TRUST_PROXY_HOPS) ? TRUST_PROXY_HOPS : 0);
+app.use(
+  helmet({
+    contentSecurityPolicy: buildContentSecurityPolicy(),
+    crossOriginEmbedderPolicy: false,
+  })
+);
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use(sanitizeRequest);
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use('/api', apiLimiter);
 
@@ -144,4 +174,3 @@ startServer().catch((error) => {
 });
 
 module.exports = app;
-

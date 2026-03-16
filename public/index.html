@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EVARA BNS | Attendance System</title>
   <meta name="description" content="EVARA BNS attendance and employee operations powered by Supabase." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="icon" type="image/png" href="assets/image.png" />
   <link rel="shortcut icon" type="image/png" href="assets/image.png" />
   <link rel="apple-touch-icon" href="assets/image.png" />
@@ -66,9 +69,11 @@
 
       <nav id="sidebarNav" class="sidebar-nav">
         <button type="button" class="nav-item active" data-page="dashboard">Dashboard</button>
+        <button type="button" class="nav-item" data-page="profile">Profile</button>
         <button type="button" class="nav-item" data-page="employees">Employees</button>
         <button type="button" class="nav-item" data-page="attendance">Attendance</button>
         <button type="button" class="nav-item" data-page="history">History</button>
+        <button type="button" class="nav-item" data-page="reports">Reports</button>
         <button type="button" class="nav-item" data-page="qr">QR Access</button>
       </nav>
 
@@ -100,9 +105,11 @@
       </header>
 
       <section id="page-dashboard" class="page-panel active"></section>
+      <section id="page-profile" class="page-panel"></section>
       <section id="page-employees" class="page-panel"></section>
       <section id="page-attendance" class="page-panel"></section>
       <section id="page-history" class="page-panel"></section>
+      <section id="page-reports" class="page-panel"></section>
       <section id="page-qr" class="page-panel"></section>
     </main>
   </div>
@@ -112,7 +119,7 @@
     <div id="modalPanel" class="modal-panel"></div>
   </div>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="toastViewport" class="toast-viewport"></div>
 
   <script src="vendor/supabase.js"></script>
   <script src="env.js"></script>

@@ -9,11 +9,12 @@ const {
 } = require('../controllers/adminController');
 const { protect } = require('../middlewares/authMiddleware');
 const { requireAdmin } = require('../middlewares/roleMiddleware');
+const { adminWriteLimiter } = require('../middlewares/rateLimiters');
 const { handleValidation } = require('../middlewares/validationMiddleware');
 
 const router = express.Router();
 
-router.use(protect, requireAdmin);
+router.use(protect, requireAdmin, adminWriteLimiter);
 
 router.post(
   '/employees',
@@ -82,4 +83,3 @@ router.patch(
 );
 
 module.exports = router;
-

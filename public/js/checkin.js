@@ -14,7 +14,11 @@ const clockLabel = document.getElementById('checkinClock');
 boot();
 
 function todayIso() {
-  return new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function setError(message = '') {
@@ -33,7 +37,7 @@ function updateClock() {
     hour: '2-digit',
     minute: '2-digit',
   });
-  todayLabel.textContent = formatDate(now.toISOString());
+  todayLabel.textContent = formatDate(now);
 }
 
 async function apiRequest(path, session, options = {}) {
