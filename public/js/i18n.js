@@ -1,6 +1,7 @@
 ﻿const LANGUAGE_KEY = 'evara-language';
 const DEFAULT_LANGUAGE = 'en';
 const RTL_LANGUAGES = new Set(['ar']);
+const LANGUAGE_SWITCH_ENABLED = false;
 const subscribers = new Set();
 
 const dictionaries = {
@@ -222,8 +223,7 @@ function interpolate(template, variables = {}) {
 }
 
 export function getCurrentLanguage() {
-  const stored = window.localStorage.getItem(LANGUAGE_KEY);
-  return stored && stored in dictionaries ? stored : DEFAULT_LANGUAGE;
+  return DEFAULT_LANGUAGE;
 }
 
 export function isArabic() {
@@ -241,7 +241,7 @@ export function t(key, variables = {}) {
 }
 
 export function setCurrentLanguage(language) {
-  const nextLanguage = language in dictionaries ? language : DEFAULT_LANGUAGE;
+  const nextLanguage = LANGUAGE_SWITCH_ENABLED && language in dictionaries ? language : DEFAULT_LANGUAGE;
   window.localStorage.setItem(LANGUAGE_KEY, nextLanguage);
   applyDocumentLanguage();
   subscribers.forEach((callback) => callback(nextLanguage));
@@ -249,7 +249,7 @@ export function setCurrentLanguage(language) {
 }
 
 export function toggleLanguage() {
-  return setCurrentLanguage(isArabic() ? 'en' : 'ar');
+  return setCurrentLanguage(DEFAULT_LANGUAGE);
 }
 
 export function onLanguageChange(callback) {
@@ -273,6 +273,9 @@ export function applyTranslations(root = document) {
 
 export function syncLanguageToggleButtons(root = document) {
   root.querySelectorAll('[data-language-toggle]').forEach((button) => {
+    button.hidden = !LANGUAGE_SWITCH_ENABLED;
+    button.disabled = !LANGUAGE_SWITCH_ENABLED;
+    button.setAttribute('aria-hidden', String(!LANGUAGE_SWITCH_ENABLED));
     button.textContent = isArabic() ? t('language.switchToEnglish') : t('language.switchToArabic');
     button.setAttribute('aria-label', t('language.switch'));
     button.setAttribute('title', t('language.switch'));
@@ -280,6 +283,7 @@ export function syncLanguageToggleButtons(root = document) {
 }
 
 export function applyDocumentLanguage() {
+  window.localStorage.setItem(LANGUAGE_KEY, DEFAULT_LANGUAGE);
   const language = getCurrentLanguage();
   const titleKey = window.location.pathname.includes('/checkin') ? 'meta.checkinTitle' : 'meta.appTitle';
   document.documentElement.lang = language;
@@ -294,4 +298,5 @@ export function applyDocumentLanguage() {
   applyTranslations(document);
   syncLanguageToggleButtons(document);
 }
+
 

@@ -35,6 +35,7 @@ a { color: inherit; text-decoration: none; }
 .hidden { display: none !important; }
 .mobile-only { display: none; }
 .language-toggle {
+  display: none !important;
   align-self: flex-start;
   border: 1px solid var(--line);
   background: rgba(59, 130, 246, 0.1);
