@@ -107,13 +107,31 @@ a { color: inherit; text-decoration: none; }
   display: grid;
   place-items: center;
   padding: 2rem;
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(180deg, #1e2329 0%, #252a33 100%);
+}
+.login-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.12), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.08), transparent 28%);
+  pointer-events: none;
+  z-index: -1;
 }
 .login-layout {
   width: min(1180px, 100%);
   display: grid;
   grid-template-columns: 1.15fr 0.85fr;
-  gap: 2rem;
+  gap: 1rem;
   align-items: stretch;
+  padding: 1rem;
+  border-radius: 38px;
+  background: #2a3038;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.12);
 }
 .login-story,
 .login-card,
@@ -126,12 +144,20 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
 }
+.login-screen .login-story,
+.login-screen .login-card {
+  backdrop-filter: none;
+  background: #252a33;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
 .login-story {
   border-radius: 36px;
   padding: 3rem;
   display: flex;
   flex-direction: column;
   gap: 1.2rem;
+  justify-content: center;
 }
 .login-story h1,
 .checkin-card h1 {
@@ -143,6 +169,18 @@ a { color: inherit; text-decoration: none; }
 .hero-line {
   display: block;
   white-space: nowrap;
+}
+.login-screen .hero-line,
+.login-screen .story-copy,
+.login-screen .login-hint,
+.login-screen .login-footer {
+  color: #d8e0ea;
+}
+.login-screen .brand-mark::before {
+  background: #252a33;
+}
+.login-screen .brand-mark::after {
+  color: #3b82f6;
 }
 .story-copy,
 .checkin-copy,
@@ -212,6 +250,9 @@ a { color: inherit; text-decoration: none; }
   font-weight: 700;
   color: var(--ink);
 }
+.login-screen .form-group label {
+  color: #e5edf7;
+}
 input,
 select,
 textarea {
@@ -230,6 +271,25 @@ textarea:focus {
   border-color: rgba(159, 176, 195, 0.75);
   background: rgba(34, 40, 47, 0.96);
   box-shadow: 0 0 0 4px rgba(159, 176, 195, 0.12);
+}
+.login-screen input,
+.login-screen select,
+.login-screen textarea {
+  background: #1e2329;
+  border-color: rgba(148, 163, 184, 0.16);
+  color: #eff6ff;
+  box-shadow: none;
+}
+.login-screen input::placeholder,
+.login-screen textarea::placeholder {
+  color: #8c98aa;
+}
+.login-screen input:focus,
+.login-screen select:focus,
+.login-screen textarea:focus {
+  border-color: rgba(59, 130, 246, 0.9);
+  background: #1e2329;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
 }
 .input-with-action {
   display: grid;
@@ -259,6 +319,12 @@ textarea:focus {
   box-shadow: 0 8px 20px rgba(197, 163, 101, 0.3);
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.2);
 }
+.login-screen .btn-primary {
+  background: #3b82f6;
+  color: #eff6ff;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.16);
+  text-shadow: none;
+}
 .btn-secondary {
   background: rgba(139, 148, 158, 0.15); /* Slightly brighter gray fill */
   color: var(--ink);
@@ -278,6 +344,10 @@ textarea:focus {
   background: linear-gradient(135deg, var(--brand-deep), var(--brand));
   box-shadow: 0 12px 24px rgba(197, 163, 101, 0.5);
 }
+.login-screen .btn-primary:hover {
+  background: #2563eb;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.18);
+}
 .btn-secondary:hover {
   background: rgba(139, 148, 158, 0.25);
   border-color: rgba(139, 148, 158, 0.5);
@@ -291,6 +361,15 @@ textarea:focus {
   padding: 0.65rem 0.9rem;
   font-weight: 700;
   color: var(--accent);
+}
+.login-screen .ghost-inline {
+  color: #93c5fd;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: #252a33;
+}
+.login-screen .ghost-inline:hover {
+  background: #303743;
+  color: #bfdbfe;
 }
 .ghost-inline.danger { color: var(--danger); }
 .form-alert {
@@ -311,7 +390,7 @@ textarea:focus {
 }
 .login-footer {
   margin-top: 1.2rem;
-  color: var(--muted);
+  color: #94a3b8;
   font-size: 0.88rem;
   text-align: right;
   letter-spacing: 0.04em;
