@@ -44,6 +44,7 @@ const HISTORY_PAGE_SIZE = 12;
 const BUSINESS_TIME_ZONE = 'Africa/Cairo';
 const FULL_SHIFT_MINUTES = 8 * 60;
 const ON_TIME_THRESHOLD_MINUTES = (9 * 60) + 15;
+const SHIFT_END_MINUTES = 17 * 60;
 const state = {
   session: null,
   profile: null,
@@ -132,6 +133,22 @@ function currentMonthInput() {
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   return `${year}-${month}`;
+}
+
+function isoDateInTimeZone(value = new Date(), timeZone = BUSINESS_TIME_ZONE) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  return formatter.format(date);
 }
 
 function offsetDate(days) {
@@ -1051,13 +1068,33 @@ function sumBy(items, selector) {
 function buildAttendanceRowMetrics(row) {
   const checkInMinutes = minutesFromTimestamp(row.check_in_time);
   const checkOutMinutes = minutesFromTimestamp(row.check_out_time);
-  const workedMinutes = workingMinutesBetween(row.check_in_time, row.check_out_time);
-  const overtimeMinutes = Math.max(workedMinutes - FULL_SHIFT_MINUTES, 0);
-  const shortfallMinutes = row.check_in_time && row.check_out_time
+  const todayBusinessIso = isoDateInTimeZone(new Date(), BUSINESS_TIME_ZONE);
+  const currentBusinessMinutes = minutesFromTimestamp(new Date(), BUSINESS_TIME_ZONE);
+  let workedMinutes = workingMinutesBetween(row.check_in_time, row.check_out_time);
+  let overtimeMinutes = Math.max(workedMinutes - FULL_SHIFT_MINUTES, 0);
+  let shortfallMinutes = row.check_in_time && row.check_out_time
     ? Math.max(FULL_SHIFT_MINUTES - workedMinutes, 0)
     : 0;
+  let projectedRemainingMinutes = 0;
   const isPresent = Boolean(row.check_in_time);
   const isLateArrival = Number.isFinite(checkInMinutes) && checkInMinutes > ON_TIME_THRESHOLD_MINUTES;
+  const isOpenShift = Boolean(row.check_in_time && !row.check_out_time);
+  let isPastDue = false;
+
+  if (isOpenShift && Number.isFinite(checkInMinutes)) {
+    if (row.attendance_date === todayBusinessIso && Number.isFinite(currentBusinessMinutes) && currentBusinessMinutes < SHIFT_END_MINUTES) {
+      workedMinutes = Math.min(Math.max(currentBusinessMinutes - checkInMinutes, 0), FULL_SHIFT_MINUTES);
+      overtimeMinutes = 0;
+      shortfallMinutes = 0;
+      projectedRemainingMinutes = Math.max(FULL_SHIFT_MINUTES - workedMinutes, 0);
+    } else {
+      workedMinutes = Math.min(Math.max(SHIFT_END_MINUTES - checkInMinutes, 0), FULL_SHIFT_MINUTES);
+      overtimeMinutes = 0;
+      shortfallMinutes = Math.max(FULL_SHIFT_MINUTES - workedMinutes, 0);
+      projectedRemainingMinutes = 0;
+      isPastDue = true;
+    }
+  }
 
   return {
     checkInMinutes,
@@ -1065,10 +1102,13 @@ function buildAttendanceRowMetrics(row) {
     workedMinutes,
     overtimeMinutes,
     shortfallMinutes,
+    projectedRemainingMinutes,
     isPresent,
     isLateArrival,
     isOnTimeArrival: isPresent && !isLateArrival,
     isCompleteShift: Boolean(row.check_in_time && row.check_out_time),
+    isOpenShift,
+    isPastDue,
   };
 }
 
@@ -1077,7 +1117,14 @@ function attendanceOutcome(metrics) {
     return 'No Check-in';
   }
   if (!metrics.isCompleteShift) {
-    return 'Incomplete Shift';
+    if (metrics.isPastDue) {
+      return metrics.shortfallMinutes > 0
+        ? `Incomplete Shift · ${formatDuration(metrics.shortfallMinutes)} short`
+        : 'Incomplete Shift · Review Needed';
+    }
+    return metrics.projectedRemainingMinutes > 0
+      ? `Open Shift · ${formatDuration(metrics.projectedRemainingMinutes)} remaining`
+      : 'Open Shift';
   }
   if (metrics.overtimeMinutes > 0) {
     return `Overtime +${formatDuration(metrics.overtimeMinutes)}`;
