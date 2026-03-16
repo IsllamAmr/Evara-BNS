@@ -13,6 +13,8 @@ const notice = document.getElementById('checkinNotice');
 const errorBox = document.getElementById('checkinError');
 const statePill = document.getElementById('checkinStatePill');
 const identityLabel = document.getElementById('checkinIdentity');
+const heroTitle = document.getElementById('checkinHeroTitle');
+const heroText = document.getElementById('checkinHeroText');
 const statusTitle = document.getElementById('checkinStatusTitle');
 const statusText = document.getElementById('checkinStatusText');
 const statusMeta = document.getElementById('checkinStatusMeta');
@@ -52,6 +54,11 @@ function setIdentity(profile) {
   identityLabel.textContent = profile?.department
     ? `${profile.full_name} • ${profile.department}`
     : (profile?.full_name || '--');
+}
+
+function setHeroCopy(title, text) {
+  heroTitle.textContent = title;
+  heroText.textContent = text;
 }
 
 function renderStatusMeta(items = []) {
@@ -186,6 +193,7 @@ async function renderState(session, profile) {
 
   if (!todayRecord || !todayRecord.check_in_time) {
     setNotice('');
+    setHeroCopy(t('checkin.heroReadyTitle'), t('checkin.heroReadyText'));
     setStatePill(t('checkin.readyBadge'), 'ready');
     statusTitle.textContent = t('checkin.readyTitle');
     statusText.textContent = t('checkin.readyText');
@@ -199,7 +207,8 @@ async function renderState(session, profile) {
   }
 
   if (!todayRecord.check_out_time) {
-    setNotice(t('checkin.afterCheckInNotice'));
+    setNotice('');
+    setHeroCopy(t('checkin.heroCheckedInTitle'), t('checkin.heroCheckedInText'));
     setStatePill(t('checkin.checkedInBadge'), 'progress');
     statusTitle.textContent = t('checkin.checkedInTitle');
     statusText.textContent = t('checkin.checkedInText', { time: formatTime(todayRecord.check_in_time) });
@@ -215,7 +224,8 @@ async function renderState(session, profile) {
     return;
   }
 
-  setNotice(t('checkin.afterCheckOutNotice'));
+  setNotice('');
+  setHeroCopy(t('checkin.heroCompletedTitle'), t('checkin.heroCompletedText'));
   setStatePill(t('checkin.completedBadge'), 'success');
   statusTitle.textContent = t('checkin.completedTitle');
   statusText.textContent = t('checkin.completedText');
@@ -271,6 +281,7 @@ async function boot() {
 
   if (!isSupabaseReady()) {
     setError(t('checkin.configurationMissing'));
+    setHeroCopy(t('checkin.heroUnavailableTitle'), t('checkin.heroUnavailableText'));
     setStatePill(t('common.actionNeeded'), 'warning');
     setIdentity(null);
     renderStatusMeta([]);
@@ -306,6 +317,7 @@ async function boot() {
     await renderState(session, profile);
   } catch (error) {
     setError(error.message);
+    setHeroCopy(t('checkin.heroUnavailableTitle'), t('checkin.heroUnavailableText'));
     setStatePill(t('common.actionNeeded'), 'warning');
     statusTitle.textContent = t('checkin.unableToContinue');
     statusText.textContent = t('checkin.returnDashboard');

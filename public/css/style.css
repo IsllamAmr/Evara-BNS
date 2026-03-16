@@ -1022,9 +1022,14 @@ tr:last-child td { border-bottom: 0; }
   max-width: 11ch;
   font-size: clamp(2.1rem, 7vw, 3.4rem);
 }
+.checkin-hero {
+  display: grid;
+  gap: 0.55rem;
+}
 .checkin-copy {
   max-width: 34ch;
   font-size: 1rem;
+  margin: 0;
 }
 .checkin-status-card {
   display: block;
