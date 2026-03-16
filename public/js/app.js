@@ -61,22 +61,7 @@ const DEPARTMENT_OPTIONS = [
   'Sales',
   'Warehouse',
 ];
-const LEAVE_TYPE_LABELS = {
-  annual_leave: 'Annual Leave',
-  sick_leave: 'Sick Leave',
-  unpaid_leave: 'Unpaid Leave',
-  permission: 'Permission',
-};
-const LEAVE_SCOPE_LABELS = {
-  full_day: 'Full Day',
-  partial_day: 'Partial Day',
-};
-const LEAVE_STATUS_LABELS = {
-  pending: 'Pending',
-  approved: 'Approved',
-  rejected: 'Rejected',
-  cancelled: 'Cancelled',
-};
+
 const EMPLOYEE_PAGE_SIZE = 10;
 const HISTORY_PAGE_SIZE = 12;
 const state = {
@@ -103,13 +88,7 @@ const state = {
     page: 1,
     pageSize: HISTORY_PAGE_SIZE,
   },
-  leaveFilters: {
-    status: 'all',
-    requestType: 'all',
-    from: offsetDate(-30),
-    to: offsetDate(30),
-    userId: 'all',
-  },
+
   reportsFilters: {
     month: currentMonthInput(),
     department: 'all',
@@ -148,7 +127,6 @@ const elements = {
     profile: document.getElementById('page-profile'),
     employees: document.getElementById('page-employees'),
     attendance: document.getElementById('page-attendance'),
-    leave: document.getElementById('page-leave'),
     history: document.getElementById('page-history'),
     reports: document.getElementById('page-reports'),
     qr: document.getElementById('page-qr'),
@@ -296,13 +274,7 @@ function resetSessionState() {
   state.profileMap = new Map();
   state.employeePagination.page = 1;
   state.historyPagination.page = 1;
-  state.leaveFilters = {
-    status: 'all',
-    requestType: 'all',
-    from: offsetDate(-30),
-    to: offsetDate(30),
-    userId: 'all',
-  };
+
   state.attendanceRestrictions = null;
 }
 
@@ -450,101 +422,7 @@ function buildQueryString(params = {}) {
   return serialized ? `?${serialized}` : '';
 }
 
-function leaveTypeLabel(value) {
-  return LEAVE_TYPE_LABELS[value] || value || '-';
-}
 
-function leaveScopeLabel(value) {
-  return LEAVE_SCOPE_LABELS[value] || value || '-';
-}
-
-function leaveStatusLabel(value) {
-  return LEAVE_STATUS_LABELS[value] || value || '-';
-}
-
-function formatLeaveWindow(item) {
-  if (!item) {
-    return '-';
-  }
-
-  const rangeLabel = item.start_date === item.end_date
-    ? formatDate(item.start_date)
-    : `${formatDate(item.start_date)} - ${formatDate(item.end_date)}`;
-
-  if (item.request_scope === 'partial_day' && item.start_time && item.end_time) {
-    return `${rangeLabel} · ${item.start_time.slice(0, 5)}-${item.end_time.slice(0, 5)}`;
-  }
-
-  return rangeLabel;
-}
-
-function leaveReasonPreview(item) {
-  const reason = String(item?.reason || '').trim();
-  return reason.length > 88 ? `${reason.slice(0, 88)}...` : reason || '-';
-}
-
-function isLeaveCoveringDate(item, isoDate) {
-  return Boolean(item?.start_date && item?.end_date && isoDate && item.start_date <= isoDate && item.end_date >= isoDate);
-}
-
-function sumMetrics(items, selector) {
-  return items.reduce((total, item) => total + selector(item), 0);
-}
-
-function approvedLeaveUserIds(leaves, targetDate) {
-  return new Set(
-    leaves
-      .filter((item) => item.status === 'approved' && item.request_scope === 'full_day' && isLeaveCoveringDate(item, targetDate))
-      .map((item) => item.user_id)
-  );
-}
-
-function fetchSystemHealth() {
-  if (state.attendanceRestrictions) {
-    return Promise.resolve(state.attendanceRestrictions);
-  }
-
-  return fetch(`${config.apiBaseUrl}/health`)
-    .then((response) => response.json())
-    .then((payload) => {
-      state.attendanceRestrictions = payload?.attendance_restrictions || null;
-      return state.attendanceRestrictions;
-    })
-    .catch(() => null);
-}
-
-function attendanceRestrictionMessage(summary) {
-  if (!summary || !summary.access_mode || summary.access_mode === 'off') {
-    return '';
-  }
-
-  if (summary.access_mode === 'ip') {
-    return 'Attendance is restricted to the approved company network.';
-  }
-  if (summary.access_mode === 'geo') {
-    return 'Attendance requires your device location inside the approved office boundary.';
-  }
-  if (summary.access_mode === 'either') {
-    return 'Attendance requires either the approved company network or a valid office location.';
-  }
-  if (summary.access_mode === 'both') {
-    return 'Attendance requires both the approved company network and a valid office location.';
-  }
-
-  return '';
-}
-
-async function fetchLeaveRequests(filters = {}) {
-  const query = buildQueryString({
-    status: filters.status,
-    request_type: filters.requestType,
-    from: filters.from,
-    to: filters.to,
-    user_id: filters.userId,
-  });
-  const payload = await apiRequest(`/leaves${query}`);
-  return payload.data || [];
-}
 
 function getCurrentPosition(options = {}) {
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
@@ -920,10 +798,7 @@ async function renderRoute() {
     await renderAttendancePage();
     return;
   }
-  if (page === 'leave') {
-    await renderLeavePage();
-    return;
-  }
+
   if (page === 'history') {
     await renderHistoryPage();
     return;
@@ -1058,35 +933,28 @@ async function renderDashboardPage() {
     const today = todayIso();
 
     if (isAdmin()) {
-      const [employees, todayAttendance, approvedLeaves] = await Promise.all([
+      const [employees, todayAttendance] = await Promise.all([
         fetchEmployees(),
         fetchAttendance({ date: today, limit: 250 }),
-        fetchLeaveRequests({ status: 'approved', from: today, to: today }),
       ]);
       state.employees = employees;
       state.profileMap = new Map(employees.map((employee) => [employee.id, employee]));
 
       const activeEmployees = employees.filter((employee) => employee.is_active);
       const onLeave = employees.filter((employee) => employee.status === 'on_leave').length;
-      const approvedFullDayLeaveIds = approvedLeaveUserIds(approvedLeaves, today);
-      const approvedLeavesToday = approvedLeaves.filter((item) => isLeaveCoveringDate(item, today));
       const todayDetailed = todayAttendance.map((row) => ({
         row,
         profile: employeeById(row.user_id),
         metrics: buildAttendanceRowMetrics(row),
       }));
       const presentToday = todayDetailed.filter((entry) => entry.metrics.isPresent).length;
-      const absentToday = Math.max(
-        activeEmployees.filter((employee) => !approvedFullDayLeaveIds.has(employee.id)).length - presentToday,
-        0
-      );
+      const absentToday = Math.max(activeEmployees.length - presentToday, 0);
       const lateToday = todayDetailed.filter((entry) => entry.metrics.isLateArrival || entry.row.attendance_status === 'late').length;
       const fullShiftCount = todayDetailed.filter((entry) => entry.metrics.isCompleteShift && entry.metrics.shortfallMinutes === 0 && entry.metrics.overtimeMinutes === 0).length;
       const openShiftCount = todayDetailed.filter((entry) => entry.metrics.isOpenShift).length;
       const workedMinutesToday = sumMetrics(todayDetailed, (entry) => entry.metrics.workedMinutes);
       const overtimeMinutesToday = sumMetrics(todayDetailed, (entry) => entry.metrics.overtimeMinutes);
       const shortfallMinutesToday = sumMetrics(todayDetailed, (entry) => entry.metrics.shortfallMinutes);
-      const partialLeavesToday = approvedLeavesToday.filter((item) => item.request_scope === 'partial_day').length;
       const recentRows = todayAttendance.slice(0, 8);
       const accountabilityRows = todayDetailed
         .slice()
@@ -1116,11 +984,10 @@ async function renderDashboardPage() {
             ${buildSummaryCard('Active Employees', String(activeEmployees.length), 'Ready for attendance today')}
             ${buildSummaryCard('On Leave', String(onLeave), 'Employees currently on leave')}
             ${buildSummaryCard('Present Today', String(presentToday), 'Attendance records created today')}
-            ${buildSummaryCard('Absent Today', String(absentToday), 'Excludes approved full-day leave requests')}
+            ${buildSummaryCard('Absent Today', String(absentToday), 'Active employees with no check-in yet')}
             ${buildSummaryCard('Late Today', String(lateToday), 'Computed from check-in time')}
             ${buildSummaryCard('Worked Today', formatDuration(workedMinutesToday), 'Combined completed and open shift minutes')}
             ${buildSummaryCard('8-Hour Actuals', `${fullShiftCount} full / ${openShiftCount} open`, `${formatDuration(overtimeMinutesToday)} overtime · ${formatDuration(shortfallMinutesToday)} shortfall`)}
-            ${buildSummaryCard('Approved Leave Today', String(approvedLeavesToday.length), `${approvedFullDayLeaveIds.size} full-day · ${partialLeavesToday} partial`)}
           </div>
           <section class="card-block">
             <div class="card-head">
@@ -1212,11 +1079,10 @@ async function renderDashboardPage() {
     }
 
     const currentMonth = monthRange(currentMonthInput());
-    const [todayAttendance, recentAttendance, monthAttendance, leaveRequests] = await Promise.all([
+    const [todayAttendance, recentAttendance, monthAttendance] = await Promise.all([
       fetchAttendance({ date: today, limit: 1 }),
       fetchAttendance({ from: offsetDate(-14), to: today, limit: 14 }),
       fetchAttendance({ from: currentMonth.from, to: currentMonth.to, limit: 60 }),
-      fetchLeaveRequests({ from: currentMonth.from, to: currentMonth.to }),
     ]);
     const todayRecord = todayAttendance[0] || null;
     const todayMetrics = todayRecord ? buildAttendanceRowMetrics(todayRecord) : null;
@@ -1229,9 +1095,6 @@ async function renderDashboardPage() {
     const fullShiftDays = monthDetailed.filter((entry) => entry.metrics.isCompleteShift && entry.metrics.shortfallMinutes === 0).length;
     const monthOvertimeMinutes = sumMetrics(monthDetailed, (entry) => entry.metrics.overtimeMinutes);
     const monthShortfallMinutes = sumMetrics(monthDetailed, (entry) => entry.metrics.shortfallMinutes);
-    const approvedLeaveCount = leaveRequests.filter((item) => item.status === 'approved').length;
-    const pendingLeaveCount = leaveRequests.filter((item) => item.status === 'pending').length;
-    const approvedLeaveToday = leaveRequests.find((item) => item.status === 'approved' && isLeaveCoveringDate(item, today)) || null;
     let balanceLabel = '8-hour target waiting to begin';
     let balanceMeta = 'No attendance recorded yet for today.';
 
@@ -1255,29 +1118,19 @@ async function renderDashboardPage() {
           <div>
             <p class="eyebrow">Welcome</p>
             <h1>${escapeHtml(state.profile.full_name)}</h1>
-            <p>Your attendance overview is ready with live 8-hour tracking, attendance actions, and leave visibility.</p>
+            <p>Your attendance overview is ready with live 8-hour tracking and attendance actions.</p>
           </div>
           <div class="inline-actions">
             <button id="employeeAttendanceShortcut" type="button" class="btn btn-secondary">Open attendance</button>
-            <button id="employeeLeaveShortcut" type="button" class="btn btn-primary">Open leave</button>
           </div>
         </div>
         <div class="summary-grid">
-          ${buildSummaryCard(
-            'Today Status',
-            todayRecord ? statusLabel(todayRecord.attendance_status) : approvedLeaveToday ? 'Approved Leave' : 'Pending',
-            todayRecord
-              ? `Checked in ${formatTime(todayRecord.check_in_time)}`
-              : approvedLeaveToday
-                ? `${leaveTypeLabel(approvedLeaveToday.request_type)} · ${leaveScopeLabel(approvedLeaveToday.request_scope)}`
-                : 'No attendance recorded yet'
-          )}
+          ${buildSummaryCard('Today Status', todayRecord ? statusLabel(todayRecord.attendance_status) : 'Pending', todayRecord ? `Checked in ${formatTime(todayRecord.check_in_time)}` : 'No attendance recorded yet')}
           ${buildSummaryCard('Worked Today', formatDuration(todayMetrics?.workedMinutes || 0), todayMetrics ? attendanceOutcome(todayMetrics) : 'No attendance recorded yet')}
           ${buildSummaryCard('Today Balance', balanceLabel, balanceMeta)}
           ${buildSummaryCard('Full Shifts This Month', String(fullShiftDays), `${checkedDays} checked day(s) in your recent history`)}
           ${buildSummaryCard('Overtime This Month', formatDuration(monthOvertimeMinutes), 'Minutes above the daily 8-hour baseline')}
           ${buildSummaryCard('Shortfall This Month', formatDuration(monthShortfallMinutes), `${lateDays} late day(s) in your recent history`)}
-          ${buildSummaryCard('Leave Requests', `${approvedLeaveCount} approved`, `${pendingLeaveCount} pending in ${currentMonth.label}`)}
         </div>
         <section class="card-block">
           <div class="card-head">
@@ -1313,7 +1166,6 @@ async function renderDashboardPage() {
     `;
 
     container.querySelector('#employeeAttendanceShortcut')?.addEventListener('click', () => navigate('attendance'));
-    container.querySelector('#employeeLeaveShortcut')?.addEventListener('click', () => navigate('leave'));
   } catch (error) {
     setPageError(container, error.message);
   }
@@ -1982,223 +1834,7 @@ function showFormError(targetId, message = '') {
   element.classList.toggle('hidden', !message);
 }
 
-function syncLeaveScopeFields(form) {
-  const partial = form.request_scope.value === 'partial_day';
-  const startTimeInput = form.start_time;
-  const endTimeInput = form.end_time;
-  const endDateInput = form.end_date;
 
-  startTimeInput.disabled = !partial;
-  endTimeInput.disabled = !partial;
-  startTimeInput.required = partial;
-  endTimeInput.required = partial;
-
-  if (partial) {
-    endDateInput.value = form.start_date.value;
-    endDateInput.disabled = true;
-  } else {
-    endDateInput.disabled = false;
-  }
-}
-
-function openLeaveRequestForm() {
-  openModal(`
-    <div class="modal-header">
-      <div>
-        <p class="eyebrow">Leave request</p>
-        <h2>Create a leave or permission request</h2>
-      </div>
-      <button id="closeModalBtn" type="button" class="ghost-inline">Close</button>
-    </div>
-    <form id="leaveRequestForm" class="stack-form">
-      <div class="form-grid">
-        <div class="form-group">
-          <label for="leave_request_type">Request Type</label>
-          <select id="leave_request_type" name="request_type" required>
-            ${Object.entries(LEAVE_TYPE_LABELS).map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="leave_request_scope">Scope</label>
-          <select id="leave_request_scope" name="request_scope" required>
-            ${Object.entries(LEAVE_SCOPE_LABELS).map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="leave_start_date">Start Date</label>
-          <input id="leave_start_date" name="start_date" type="date" value="${escapeHtml(todayIso())}" required />
-        </div>
-        <div class="form-group">
-          <label for="leave_end_date">End Date</label>
-          <input id="leave_end_date" name="end_date" type="date" value="${escapeHtml(todayIso())}" required />
-        </div>
-        <div class="form-group">
-          <label for="leave_start_time">Start Time</label>
-          <input id="leave_start_time" name="start_time" type="time" disabled />
-        </div>
-        <div class="form-group">
-          <label for="leave_end_time">End Time</label>
-          <input id="leave_end_time" name="end_time" type="time" disabled />
-        </div>
-        <div class="form-group full">
-          <label for="leave_reason">Reason</label>
-          <textarea id="leave_reason" name="reason" rows="4" placeholder="Provide a clear reason for the leave or permission request." required></textarea>
-        </div>
-      </div>
-      <div id="leaveRequestError" class="form-alert error hidden"></div>
-      <div class="modal-footer">
-        <div></div>
-        <div class="inline-actions">
-          <button id="cancelLeaveRequestBtn" type="button" class="btn btn-secondary">Cancel</button>
-          <button id="submitLeaveRequestBtn" type="submit" class="btn btn-primary">Submit Request</button>
-        </div>
-      </div>
-    </form>
-  `);
-
-  document.getElementById('closeModalBtn')?.addEventListener('click', () => closeModal(false));
-  document.getElementById('cancelLeaveRequestBtn')?.addEventListener('click', () => closeModal(false));
-
-  const form = document.getElementById('leaveRequestForm');
-  form?.addEventListener('change', (event) => {
-    if (event.target.name === 'request_scope' || event.target.name === 'start_date') {
-      syncLeaveScopeFields(form);
-    }
-  });
-  if (form) {
-    syncLeaveScopeFields(form);
-  }
-
-  form?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    showFormError('leaveRequestError');
-
-    const payload = {
-      request_type: form.request_type.value,
-      request_scope: form.request_scope.value,
-      start_date: form.start_date.value,
-      end_date: form.end_date.value || form.start_date.value,
-      start_time: form.request_scope.value === 'partial_day' ? form.start_time.value : null,
-      end_time: form.request_scope.value === 'partial_day' ? form.end_time.value : null,
-      reason: form.reason.value.trim(),
-    };
-
-    if (!payload.reason) {
-      showFormError('leaveRequestError', 'Please add a clear reason for this request.');
-      return;
-    }
-
-    const submitButton = document.getElementById('submitLeaveRequestBtn');
-    submitButton.disabled = true;
-    submitButton.textContent = 'Submitting';
-
-    try {
-      await apiRequest('/leaves', {
-        method: 'POST',
-        body: payload,
-      });
-      closeModal(true);
-      showToast('Leave request submitted successfully.', 'success');
-      await renderLeavePage();
-    } catch (error) {
-      submitButton.disabled = false;
-      submitButton.textContent = 'Submit Request';
-      showFormError('leaveRequestError', error.message);
-    }
-  });
-}
-
-function openLeaveReviewForm(request) {
-  openModal(`
-    <div class="modal-header">
-      <div>
-        <p class="eyebrow">Leave review</p>
-        <h2>${escapeHtml(request.requester?.full_name || 'Employee request')}</h2>
-        <p class="inline-note">${escapeHtml(`${leaveTypeLabel(request.request_type)} · ${formatLeaveWindow(request)}`)}</p>
-      </div>
-      <button id="closeModalBtn" type="button" class="ghost-inline">Close</button>
-    </div>
-    <form id="leaveReviewForm" class="stack-form">
-      <div class="status-card compact">
-        <div>
-          <span class="status-label">Reason</span>
-          <strong>${escapeHtml(request.reason)}</strong>
-        </div>
-      </div>
-      <div class="form-grid">
-        <div class="form-group">
-          <label for="leave_review_status">Decision</label>
-          <select id="leave_review_status" name="status" required>
-            <option value="approved">Approve</option>
-            <option value="rejected">Reject</option>
-          </select>
-        </div>
-        <div class="form-group full">
-          <label for="leave_review_note">Admin Note</label>
-          <textarea id="leave_review_note" name="admin_note" rows="4" placeholder="Optional internal note for the requester."></textarea>
-        </div>
-      </div>
-      <div id="leaveReviewError" class="form-alert error hidden"></div>
-      <div class="modal-footer">
-        <div></div>
-        <div class="inline-actions">
-          <button id="cancelLeaveReviewBtn" type="button" class="btn btn-secondary">Cancel</button>
-          <button id="submitLeaveReviewBtn" type="submit" class="btn btn-primary">Save Decision</button>
-        </div>
-      </div>
-    </form>
-  `);
-
-  document.getElementById('closeModalBtn')?.addEventListener('click', () => closeModal(false));
-  document.getElementById('cancelLeaveReviewBtn')?.addEventListener('click', () => closeModal(false));
-  document.getElementById('leaveReviewForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    showFormError('leaveReviewError');
-
-    const form = event.currentTarget;
-    const submitButton = document.getElementById('submitLeaveReviewBtn');
-    submitButton.disabled = true;
-    submitButton.textContent = 'Saving';
-
-    try {
-      await apiRequest(`/leaves/${request.id}/review`, {
-        method: 'PATCH',
-        body: {
-          status: form.status.value,
-          admin_note: form.admin_note.value.trim(),
-        },
-      });
-      closeModal(true);
-      showToast(`Leave request ${form.status.value} successfully.`, 'success');
-      await renderLeavePage();
-      await renderDashboardPage();
-    } catch (error) {
-      submitButton.disabled = false;
-      submitButton.textContent = 'Save Decision';
-      showFormError('leaveReviewError', error.message);
-    }
-  });
-}
-
-async function handleLeaveCancel(request) {
-  const confirmed = await confirmAction({
-    eyebrow: 'Cancel leave request',
-    title: `Cancel ${leaveTypeLabel(request.request_type)} request?`,
-    message: 'This request will be marked as cancelled and removed from the approval queue.',
-    confirmLabel: 'Cancel request',
-  });
-
-  if (!confirmed) {
-    return;
-  }
-
-  await apiRequest(`/leaves/${request.id}/cancel`, {
-    method: 'PATCH',
-  });
-  showToast('Leave request cancelled successfully.', 'success');
-  await renderLeavePage();
-  await renderDashboardPage();
-}
 
 function openEmployeeView(employee) {
   openModal(`
@@ -2676,220 +2312,6 @@ async function renderAttendancePage() {
   }
 }
 
-async function renderLeavePage() {
-  const container = elements.pages.leave;
-  setPageLoading(container, 'Loading leave requests');
-
-  try {
-    if (isAdmin() && !state.employees.length) {
-      state.employees = await fetchEmployees();
-      state.profileMap = new Map(state.employees.map((employee) => [employee.id, employee]));
-      state.profileMap.set(state.profile.id, state.profile);
-    }
-
-    const leaves = await fetchLeaveRequests(state.leaveFilters);
-    const today = todayIso();
-    const statusOptions = ['all', 'pending', 'approved', 'rejected', 'cancelled'];
-    const requestTypes = ['all', ...Object.keys(LEAVE_TYPE_LABELS)];
-
-    if (isAdmin()) {
-      const pendingCount = leaves.filter((item) => item.status === 'pending').length;
-      const approvedCount = leaves.filter((item) => item.status === 'approved').length;
-      const partialCount = leaves.filter((item) => item.request_scope === 'partial_day').length;
-      const todayApproved = leaves.filter((item) => item.status === 'approved' && isLeaveCoveringDate(item, today)).length;
-
-      container.innerHTML = `
-        <div class="page-shell">
-          <div class="section-header">
-            <div>
-              <p class="eyebrow">Leave workspace</p>
-              <h1>Leave & Permissions</h1>
-              <p>Review employee requests, approve or reject them, and keep a clean audit trail for full-day and partial-day absences.</p>
-            </div>
-            <div class="inline-actions">
-              <button id="leaveRequestBtn" type="button" class="btn btn-primary">Request Leave</button>
-              <button id="leaveRefreshBtn" type="button" class="btn btn-secondary">Refresh</button>
-            </div>
-          </div>
-          <div class="summary-grid">
-            ${buildSummaryCard('Pending Review', String(pendingCount), 'Requests waiting for an admin decision')}
-            ${buildSummaryCard('Approved', String(approvedCount), 'Approved requests in the current filter')}
-            ${buildSummaryCard('Partial Requests', String(partialCount), 'Permissions and short leave windows')}
-            ${buildSummaryCard('Approved Today', String(todayApproved), 'Requests covering today')}
-          </div>
-          <section class="card-block">
-            <div class="toolbar toolbar-wide">
-              <input id="leaveFrom" type="date" value="${escapeHtml(state.leaveFilters.from)}" />
-              <input id="leaveTo" type="date" value="${escapeHtml(state.leaveFilters.to)}" />
-              <select id="leaveStatus">
-                ${statusOptions.map((status) => `<option value="${status}" ${state.leaveFilters.status === status ? 'selected' : ''}>${escapeHtml(status === 'all' ? 'All Statuses' : leaveStatusLabel(status))}</option>`).join('')}
-              </select>
-              <select id="leaveType">
-                ${requestTypes.map((type) => `<option value="${type}" ${state.leaveFilters.requestType === type ? 'selected' : ''}>${escapeHtml(type === 'all' ? 'All Types' : leaveTypeLabel(type))}</option>`).join('')}
-              </select>
-              <select id="leaveUserId">
-                <option value="all">All Employees</option>
-                ${[...state.employees].sort((left, right) => left.full_name.localeCompare(right.full_name)).map((employee) => `<option value="${employee.id}" ${state.leaveFilters.userId === employee.id ? 'selected' : ''}>${escapeHtml(employee.full_name)}</option>`).join('')}
-              </select>
-              <button id="leaveApplyBtn" type="button" class="btn btn-secondary">Apply</button>
-            </div>
-          </section>
-          <section class="card-block">
-            <div class="table-shell">
-              <table>
-                <thead>
-                  <tr><th>Employee</th><th>Type</th><th>Window</th><th>Reason</th><th>Status</th><th>Reviewed</th><th>Actions</th></tr>
-                </thead>
-                <tbody>
-                  ${leaves.length ? leaves.map((item) => {
-                    const requester = item.requester || employeeById(item.user_id) || { full_name: 'Unknown', email: '-' };
-                    const reviewer = item.reviewer?.full_name ? `${item.reviewer.full_name}${item.reviewed_at ? ` · ${formatDateTime(item.reviewed_at)}` : ''}` : '-';
-                    return `
-                      <tr>
-                        <td>${buildUserCell(requester)}</td>
-                        <td>
-                          <strong>${escapeHtml(leaveTypeLabel(item.request_type))}</strong>
-                          <div class="inline-note">${escapeHtml(leaveScopeLabel(item.request_scope))}</div>
-                        </td>
-                        <td>${escapeHtml(formatLeaveWindow(item))}</td>
-                        <td>${escapeHtml(leaveReasonPreview(item))}</td>
-                        <td>${badgeMarkup(item.status, item.status, leaveStatusLabel(item.status))}</td>
-                        <td>${escapeHtml(reviewer)}</td>
-                        <td>
-                          <div class="table-actions">
-                            ${item.status === 'pending' ? `<button type="button" class="btn btn-secondary" data-leave-review="${item.id}">Review</button>` : ''}
-                            ${item.status === 'pending' ? `<button type="button" class="btn btn-danger" data-leave-cancel="${item.id}">Cancel</button>` : ''}
-                          </div>
-                        </td>
-                      </tr>
-                    `;
-                  }).join('') : '<tr><td colspan="7"><div class="empty-state">No leave requests match the current filters.</div></td></tr>'}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-      `;
-
-      container.querySelector('#leaveRefreshBtn')?.addEventListener('click', () => renderLeavePage().catch((error) => setPageError(container, error.message)));
-      container.querySelector('#leaveRequestBtn')?.addEventListener('click', () => openLeaveRequestForm());
-      container.querySelector('#leaveApplyBtn')?.addEventListener('click', () => {
-        state.leaveFilters.from = container.querySelector('#leaveFrom')?.value || offsetDate(-30);
-        state.leaveFilters.to = container.querySelector('#leaveTo')?.value || offsetDate(30);
-        state.leaveFilters.status = container.querySelector('#leaveStatus')?.value || 'all';
-        state.leaveFilters.requestType = container.querySelector('#leaveType')?.value || 'all';
-        state.leaveFilters.userId = container.querySelector('#leaveUserId')?.value || 'all';
-        renderLeavePage().catch((error) => setPageError(container, error.message));
-      });
-      container.querySelectorAll('[data-leave-review]').forEach((button) => {
-        button.addEventListener('click', () => {
-          const request = leaves.find((item) => String(item.id) === button.dataset.leaveReview);
-          if (request) {
-            openLeaveReviewForm(request);
-          }
-        });
-      });
-      container.querySelectorAll('[data-leave-cancel]').forEach((button) => {
-        button.addEventListener('click', async () => {
-          const request = leaves.find((item) => String(item.id) === button.dataset.leaveCancel);
-          if (request) {
-            await handleLeaveCancel(request);
-          }
-        });
-      });
-      return;
-    }
-
-    const pendingCount = leaves.filter((item) => item.status === 'pending').length;
-    const approvedCount = leaves.filter((item) => item.status === 'approved').length;
-    const rejectedCount = leaves.filter((item) => item.status === 'rejected').length;
-    const currentApproved = leaves.filter((item) => item.status === 'approved' && isLeaveCoveringDate(item, today)).length;
-
-    container.innerHTML = `
-      <div class="page-shell">
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">Your requests</p>
-            <h1>Leave & Permissions</h1>
-            <p>Submit leave requests, follow approval status, and keep track of permissions and absences from one page.</p>
-          </div>
-          <div class="inline-actions">
-            <button id="leaveRequestBtn" type="button" class="btn btn-primary">Request Leave</button>
-            <button id="leaveRefreshBtn" type="button" class="btn btn-secondary">Refresh</button>
-          </div>
-        </div>
-        <div class="summary-grid">
-          ${buildSummaryCard('Pending', String(pendingCount), 'Waiting for admin review')}
-          ${buildSummaryCard('Approved', String(approvedCount), 'Approved requests in the current view')}
-          ${buildSummaryCard('Rejected', String(rejectedCount), 'Requests not approved')}
-          ${buildSummaryCard('Covering Today', String(currentApproved), 'Approved requests that include today')}
-        </div>
-        <section class="card-block">
-          <div class="toolbar toolbar-wide">
-            <input id="leaveFrom" type="date" value="${escapeHtml(state.leaveFilters.from)}" />
-            <input id="leaveTo" type="date" value="${escapeHtml(state.leaveFilters.to)}" />
-            <select id="leaveStatus">
-              ${statusOptions.map((status) => `<option value="${status}" ${state.leaveFilters.status === status ? 'selected' : ''}>${escapeHtml(status === 'all' ? 'All Statuses' : leaveStatusLabel(status))}</option>`).join('')}
-            </select>
-            <select id="leaveType">
-              ${requestTypes.map((type) => `<option value="${type}" ${state.leaveFilters.requestType === type ? 'selected' : ''}>${escapeHtml(type === 'all' ? 'All Types' : leaveTypeLabel(type))}</option>`).join('')}
-            </select>
-            <button id="leaveApplyBtn" type="button" class="btn btn-secondary">Apply</button>
-          </div>
-        </section>
-        <section class="card-block">
-          <div class="table-shell">
-            <table>
-              <thead>
-                <tr><th>Type</th><th>Window</th><th>Reason</th><th>Status</th><th>Review Note</th><th>Actions</th></tr>
-              </thead>
-              <tbody>
-                ${leaves.length ? leaves.map((item) => `
-                  <tr>
-                    <td>
-                      <strong>${escapeHtml(leaveTypeLabel(item.request_type))}</strong>
-                      <div class="inline-note">${escapeHtml(leaveScopeLabel(item.request_scope))}</div>
-                    </td>
-                    <td>${escapeHtml(formatLeaveWindow(item))}</td>
-                    <td>${escapeHtml(leaveReasonPreview(item))}</td>
-                    <td>${badgeMarkup(item.status, item.status, leaveStatusLabel(item.status))}</td>
-                    <td>${escapeHtml(item.admin_note || '-')}</td>
-                    <td>
-                      <div class="table-actions">
-                        ${item.status === 'pending' ? `<button type="button" class="btn btn-danger" data-leave-cancel="${item.id}">Cancel</button>` : ''}
-                      </div>
-                    </td>
-                  </tr>
-                `).join('') : '<tr><td colspan="6"><div class="empty-state">No leave requests match the current filters.</div></td></tr>'}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
-    `;
-
-    container.querySelector('#leaveRefreshBtn')?.addEventListener('click', () => renderLeavePage().catch((error) => setPageError(container, error.message)));
-    container.querySelector('#leaveRequestBtn')?.addEventListener('click', () => openLeaveRequestForm());
-    container.querySelector('#leaveApplyBtn')?.addEventListener('click', () => {
-      state.leaveFilters.from = container.querySelector('#leaveFrom')?.value || offsetDate(-30);
-      state.leaveFilters.to = container.querySelector('#leaveTo')?.value || offsetDate(30);
-      state.leaveFilters.status = container.querySelector('#leaveStatus')?.value || 'all';
-      state.leaveFilters.requestType = container.querySelector('#leaveType')?.value || 'all';
-      renderLeavePage().catch((error) => setPageError(container, error.message));
-    });
-    container.querySelectorAll('[data-leave-cancel]').forEach((button) => {
-      button.addEventListener('click', async () => {
-        const request = leaves.find((item) => String(item.id) === button.dataset.leaveCancel);
-        if (request) {
-          await handleLeaveCancel(request);
-        }
-      });
-    });
-  } catch (error) {
-    setPageError(container, error.message);
-  }
-}
-
 async function submitAttendanceAction(type) {
   try {
     const { context, warning } = await collectAttendanceContext();
@@ -3048,6 +2470,7 @@ async function renderQrPage() {
     setPageError(container, error.message);
   }
 }
+
 
 
 
