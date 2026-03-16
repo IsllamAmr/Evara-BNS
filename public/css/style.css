@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   /* Soft Slate & Ocean */
   --bg: #1e2329;
   --bg-strong: #252a33;
@@ -34,6 +34,31 @@ button, input, select, textarea { font: inherit; }
 a { color: inherit; text-decoration: none; }
 .hidden { display: none !important; }
 .mobile-only { display: none; }
+.language-toggle {
+  align-self: flex-start;
+  border: 1px solid var(--line);
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 0.55rem 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+.language-toggle:hover {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(147, 197, 253, 0.35);
+  transform: translateY(-1px);
+}
+.topbar-language-toggle {
+  margin-inline-end: 0.85rem;
+}
+.checkin-language-toggle {
+  margin-bottom: 1rem;
+}
+html[dir='rtl'] body {
+  text-align: right;
+}
 .eyebrow {
   margin: 0 0 0.35rem;
   font-size: 0.78rem;
@@ -213,6 +238,14 @@ a { color: inherit; text-decoration: none; }
   flex-direction: column;
   justify-content: center;
 }
+html[dir='rtl'] .login-card,
+html[dir='rtl'] .login-story,
+html[dir='rtl'] .checkin-card,
+html[dir='rtl'] .page-panel,
+html[dir='rtl'] .card-block,
+html[dir='rtl'] .modal-panel {
+  text-align: right;
+}
 .login-card-header {
   display: flex;
   align-items: center;
@@ -284,6 +317,9 @@ textarea:focus {
   grid-template-columns: 1fr auto;
   gap: 0.75rem;
   align-items: center;
+}
+html[dir='rtl'] .input-with-action {
+  direction: rtl;
 }
 .btn,
 .ghost-inline {
@@ -495,6 +531,9 @@ textarea:focus {
   padding-top: 1rem;
   border-top: 1px solid var(--line);
 }
+html[dir='rtl'] .sidebar-user {
+  direction: rtl;
+}
 .avatar-badge {
   width: 48px;
   height: 48px;
@@ -525,10 +564,25 @@ textarea:focus {
   align-items: center;
   gap: 1rem;
 }
+html[dir='rtl'] .topbar {
+  flex-direction: row-reverse;
+}
+html[dir='rtl'] .topbar-start,
+html[dir='rtl'] .topbar-meta,
+html[dir='rtl'] .inline-actions,
+html[dir='rtl'] .modal-header,
+html[dir='rtl'] .modal-footer {
+  flex-direction: row-reverse;
+}
 .topbar-copy {
   display: grid;
   gap: 0.2rem;
   max-width: 760px;
+}
+html[dir='rtl'] .topbar-copy,
+html[dir='rtl'] .sidebar-user-copy,
+html[dir='rtl'] .login-contact {
+  text-align: right;
 }
 .topbar-copy strong {
   display: block;
@@ -926,6 +980,18 @@ tr:last-child td { border-bottom: 0; }
   display: grid;
   gap: 0.75rem;
 }
+html[dir='rtl'] .toolbar,
+html[dir='rtl'] .toolbar-wide,
+html[dir='rtl'] .checkin-actions,
+html[dir='rtl'] .stack-form {
+  direction: rtl;
+}
+html[dir='rtl'] input,
+html[dir='rtl'] select,
+html[dir='rtl'] textarea,
+html[dir='rtl'] button {
+  text-align: right;
+}
 .checkin-meta {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 1.25rem;
@@ -987,6 +1053,7 @@ tr:last-child td { border-bottom: 0; }
   .modal-footer { align-items: stretch; flex-direction: column; }
   .hero-line { white-space: normal; }
 }
+
 
 
 

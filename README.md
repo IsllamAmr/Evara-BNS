@@ -14,6 +14,7 @@ EVARA BNS is a Supabase-powered employee attendance system with role-based acces
 - Client-side pagination for employee and history views
 - Rate limiting, sanitization, and HTTP header hardening
 - Modular frontend helpers for reporting and export workflows
+- Bilingual frontend foundation with English/Arabic toggle and RTL support
 
 ## Local Development
 

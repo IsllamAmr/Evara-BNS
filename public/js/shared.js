@@ -1,3 +1,5 @@
+import { getLocale, t } from './i18n.js';
+
 export function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -12,7 +14,7 @@ export function formatDate(value) {
     return '-';
   }
 
-  return new Intl.DateTimeFormat('en-GB', {
+  return new Intl.DateTimeFormat(getLocale(), {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -24,7 +26,7 @@ export function formatTime(value) {
     return '-';
   }
 
-  return new Intl.DateTimeFormat('en-GB', {
+  return new Intl.DateTimeFormat(getLocale(), {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value));
@@ -35,7 +37,7 @@ export function formatDateTime(value) {
     return '-';
   }
 
-  return new Intl.DateTimeFormat('en-GB', {
+  return new Intl.DateTimeFormat(getLocale(), {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -45,12 +47,17 @@ export function formatDateTime(value) {
 }
 
 export function departmentLabel(value) {
-  return value || 'Unassigned';
+  return value || t('labels.unassigned');
 }
 
 export function statusLabel(value) {
   if (!value) {
-    return 'Unknown';
+    return t('labels.unknown');
+  }
+
+  const translated = t(`labels.${value}`);
+  if (translated !== `labels.${value}`) {
+    return translated;
   }
 
   return value
@@ -60,7 +67,7 @@ export function statusLabel(value) {
 }
 
 export function roleLabel(value) {
-  return value === 'admin' ? 'Admin' : 'Employee';
+  return value === 'admin' ? t('labels.admin') : t('labels.employee');
 }
 
 export function toInitials(value) {

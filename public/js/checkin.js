@@ -1,4 +1,10 @@
 ﻿import { getAppConfig, getSupabase, isSupabaseReady } from './supabaseClient.js';
+import {
+  applyDocumentLanguage,
+  getLocale,
+  t,
+  toggleLanguage,
+} from './i18n.js';
 import { formatDate, formatTime, statusLabel } from './shared.js';
 
 const config = getAppConfig();
@@ -10,6 +16,8 @@ const statusText = document.getElementById('checkinStatusText');
 const actionButton = document.getElementById('checkinActionBtn');
 const todayLabel = document.getElementById('checkinToday');
 const clockLabel = document.getElementById('checkinClock');
+let currentSession = null;
+let currentProfile = null;
 
 boot();
 
@@ -33,7 +41,7 @@ function setNotice(message = '') {
 
 function updateClock() {
   const now = new Date();
-  clockLabel.textContent = now.toLocaleTimeString('en-GB', {
+  clockLabel.textContent = now.toLocaleTimeString(getLocale(), {
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -52,7 +60,7 @@ async function apiRequest(path, session, options = {}) {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.message || 'Request failed');
+    throw new Error(payload.message || t('common.requestFailed'));
   }
 
   return payload;
@@ -66,7 +74,7 @@ async function fetchProfile(userId) {
     .single();
 
   if (error) {
-    throw new Error(error.message || 'Unable to load your profile');
+    throw new Error(error.message || t('checkin.unableProfile'));
   }
 
   return data;
@@ -81,7 +89,7 @@ async function fetchTodayAttendance(userId) {
     .limit(1);
 
   if (error) {
-    throw new Error(error.message || 'Unable to load attendance');
+    throw new Error(error.message || t('checkin.unableAttendance'));
   }
 
   return data?.[0] || null;
@@ -90,54 +98,73 @@ async function fetchTodayAttendance(userId) {
 async function renderState(session, profile) {
   const todayRecord = await fetchTodayAttendance(session.user.id);
   setError();
-  setNotice(`Signed in as ${profile.full_name}${profile.department ? ` · ${profile.department}` : ''}`);
+  setNotice(t('checkin.signedInAs', {
+    name: profile.full_name,
+    department: profile.department ? ` · ${profile.department}` : '',
+  }));
 
   if (!todayRecord || !todayRecord.check_in_time) {
-    statusTitle.textContent = 'Ready to check in';
-    statusText.textContent = 'Your attendance has not been recorded yet for today.';
+    statusTitle.textContent = t('checkin.readyTitle');
+    statusText.textContent = t('checkin.readyText');
     actionButton.disabled = false;
-    actionButton.textContent = 'Check In Now';
+    actionButton.textContent = t('checkin.checkInNow');
     actionButton.onclick = () => submitAttendance(session, 'checkin');
     return;
   }
 
   if (!todayRecord.check_out_time) {
     statusTitle.textContent = statusLabel(todayRecord.attendance_status);
-    statusText.textContent = `Checked in at ${formatTime(todayRecord.check_in_time)}. You can check out when your workday ends.`;
+    statusText.textContent = t('checkin.checkedInText', { time: formatTime(todayRecord.check_in_time) });
     actionButton.disabled = false;
-    actionButton.textContent = 'Check Out Now';
+    actionButton.textContent = t('checkin.checkOutNow');
     actionButton.onclick = () => submitAttendance(session, 'checkout');
     return;
   }
 
-  statusTitle.textContent = 'Completed for today';
-  statusText.textContent = `Checked in at ${formatTime(todayRecord.check_in_time)} and checked out at ${formatTime(todayRecord.check_out_time)}.`;
+  statusTitle.textContent = t('checkin.completedTitle');
+  statusText.textContent = t('checkin.completedText', {
+    checkIn: formatTime(todayRecord.check_in_time),
+    checkOut: formatTime(todayRecord.check_out_time),
+  });
   actionButton.disabled = true;
-  actionButton.textContent = 'Attendance Completed';
+  actionButton.textContent = t('checkin.completedButton');
   actionButton.onclick = null;
 }
 
 async function submitAttendance(session, type) {
   try {
     actionButton.disabled = true;
-    actionButton.textContent = type === 'checkin' ? 'Checking In' : 'Checking Out';
+    actionButton.textContent = type === 'checkin' ? t('checkin.checkinLoading') : t('checkin.checkoutLoading');
     await apiRequest(`/attendance/${type}`, session, { method: 'POST' });
     await renderState(session, await fetchProfile(session.user.id));
   } catch (error) {
     setError(error.message);
     actionButton.disabled = false;
-    actionButton.textContent = type === 'checkin' ? 'Check In Now' : 'Check Out Now';
+    actionButton.textContent = type === 'checkin' ? t('checkin.checkInNow') : t('checkin.checkOutNow');
   }
 }
 
 async function boot() {
+  applyDocumentLanguage();
   updateClock();
   window.setInterval(updateClock, 1000);
+  document.addEventListener('click', (event) => {
+    const trigger = event.target.closest('[data-language-toggle]');
+    if (!trigger) {
+      return;
+    }
+
+    toggleLanguage();
+    updateClock();
+    if (currentSession && currentProfile) {
+      renderState(currentSession, currentProfile).catch((error) => setError(error.message));
+    }
+  });
 
   if (!isSupabaseReady()) {
-    setError('Supabase configuration is missing. Set SUPABASE_URL and SUPABASE_ANON_KEY first.');
-    statusTitle.textContent = 'Configuration required';
-    statusText.textContent = 'This page cannot connect to Supabase until the runtime configuration is available.';
+    setError(t('checkin.configurationMissing'));
+    statusTitle.textContent = t('checkin.configurationRequired');
+    statusText.textContent = t('checkin.configurationText');
     return;
   }
 
@@ -155,11 +182,12 @@ async function boot() {
       return;
     }
 
+    currentSession = session;
+    currentProfile = profile;
     await renderState(session, profile);
   } catch (error) {
     setError(error.message);
-    statusTitle.textContent = 'Unable to continue';
-    statusText.textContent = 'Please return to the dashboard and try again.';
+    statusTitle.textContent = t('checkin.unableToContinue');
+    statusText.textContent = t('checkin.returnDashboard');
   }
 }
-

@@ -4,7 +4,7 @@
   "description": "EVARA BNS Attendance Management System",
   "main": "server.js",
   "scripts": {
-    "check": "node --check server.js && node --check public/js/app.js && node --check public/js/checkin.js && node --check public/js/reporting.js && node --check public/js/exporters.js",
+    "check": "node --check server.js && node --check public/js/app.js && node --check public/js/checkin.js && node --check public/js/reporting.js && node --check public/js/exporters.js && node --check public/js/shared.js && node --check public/js/i18n.js",
     "start": "node server.js",
     "dev": "nodemon server.js"
   },

@@ -1,4 +1,4 @@
-import { getAppConfig, getSupabase, isSupabaseReady } from './supabaseClient.js';
+ï»¿import { getAppConfig, getSupabase, isSupabaseReady } from './supabaseClient.js';
 import {
   exportAttendanceCsv,
   exportEmployeeTimesheetCsv,
@@ -23,6 +23,13 @@ import {
   reportsEmployeeChoices,
   trendBadgeMarkup,
 } from './reporting.js';
+import {
+  applyDocumentLanguage,
+  getLocale,
+  onLanguageChange,
+  t,
+  toggleLanguage,
+} from './i18n.js';
 import {
   departmentLabel,
   escapeHtml,
@@ -56,20 +63,6 @@ const DEPARTMENT_OPTIONS = [
 ];
 const EMPLOYEE_PAGE_SIZE = 10;
 const HISTORY_PAGE_SIZE = 12;
-const TOPBAR_MESSAGES = {
-  beforeCheckIn: {
-    headline: 'Good morning, begin your day with calm focus and clear confidence.',
-    subline: 'A strong start creates a productive day and better results.',
-  },
-  duringShift: {
-    headline: 'You are doing well, so keep your rhythm steady and your energy clear.',
-    subline: 'Stay focused, keep moving, and let the day work in your favor.',
-  },
-  afterCheckOut: {
-    headline: 'Excellent finish today, your effort made a real difference.',
-    subline: 'Recharge well and come back tomorrow ready for another strong win.',
-  },
-};
 const state = {
   session: null,
   profile: null,
@@ -200,7 +193,7 @@ function setPageLoading(container, label) {
 }
 
 function setPageError(container, message) {
-  container.innerHTML = `<div class="empty-state"><strong>Unable to load this section.</strong><p class="empty-note">${escapeHtml(message)}</p></div>`;
+  container.innerHTML = `<div class="empty-state"><strong>${escapeHtml(t('common.unableToLoadSection'))}</strong><p class="empty-note">${escapeHtml(message)}</p></div>`;
 }
 
 function dismissToast(toast) {
@@ -219,10 +212,10 @@ function showToast(message, type = 'info') {
   toast.className = `toast ${type}`;
   toast.innerHTML = `
     <div class="toast-copy">
-      <strong>${escapeHtml(type === 'success' ? 'Success' : type === 'error' ? 'Action needed' : 'Notice')}</strong>
+      <strong>${escapeHtml(type === 'success' ? t('common.success') : type === 'error' ? t('common.actionNeeded') : t('common.notice'))}</strong>
       <p>${escapeHtml(message)}</p>
     </div>
-    <button type="button" class="toast-close" aria-label="Close message">Close</button>
+    <button type="button" class="toast-close" aria-label="${escapeHtml(t('common.close'))}">${escapeHtml(t('common.close'))}</button>
   `;
 
   toast.querySelector('.toast-close')?.addEventListener('click', () => dismissToast(toast));
@@ -245,6 +238,12 @@ function closeModal(payload = null) {
   if (handler) {
     handler(payload);
   }
+}
+
+function syncPasswordToggleLabel() {
+  elements.togglePasswordBtn.textContent = elements.loginPassword.type === 'password'
+    ? t('login.showPassword')
+    : t('login.hidePassword');
 }
 
 function setLoginError(message = '') {
@@ -291,11 +290,11 @@ function showAppShell() {
 function startClock() {
   const renderClock = () => {
     const now = new Date();
-    elements.topbarClock.textContent = now.toLocaleTimeString('en-GB', {
+    elements.topbarClock.textContent = now.toLocaleTimeString(getLocale(), {
       hour: '2-digit',
       minute: '2-digit',
     });
-    elements.topbarDate.textContent = now.toLocaleDateString('en-GB', {
+    elements.topbarDate.textContent = now.toLocaleDateString(getLocale(), {
       weekday: 'short',
       day: '2-digit',
       month: 'short',
@@ -336,7 +335,7 @@ async function apiRequest(path, options = {}) {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.message || 'Request failed');
+    throw new Error(payload.message || t('common.requestFailed'));
   }
 
   return payload;
@@ -463,7 +462,10 @@ async function refreshTopbarMessage() {
     return;
   }
 
-  let message = TOPBAR_MESSAGES.beforeCheckIn;
+  let message = {
+    headline: t('topbar.preCheckInHeadline'),
+    subline: t('topbar.preCheckInSubline'),
+  };
 
   try {
     const todayRecord = (await fetchAttendance({
@@ -473,12 +475,21 @@ async function refreshTopbarMessage() {
     }))[0] || null;
 
     if (todayRecord?.check_out_time) {
-      message = TOPBAR_MESSAGES.afterCheckOut;
+      message = {
+        headline: t('topbar.afterCheckOutHeadline'),
+        subline: t('topbar.afterCheckOutSubline'),
+      };
     } else if (todayRecord?.check_in_time) {
-      message = TOPBAR_MESSAGES.duringShift;
+      message = {
+        headline: t('topbar.inShiftHeadline'),
+        subline: t('topbar.inShiftSubline'),
+      };
     }
   } catch (_error) {
-    message = TOPBAR_MESSAGES.beforeCheckIn;
+    message = {
+      headline: t('topbar.preCheckInHeadline'),
+      subline: t('topbar.preCheckInSubline'),
+    };
   }
 
   if (elements.topbarHeadline) {
@@ -494,11 +505,19 @@ function bindStaticEvents() {
   elements.togglePasswordBtn.addEventListener('click', () => {
     const nextType = elements.loginPassword.type === 'password' ? 'text' : 'password';
     elements.loginPassword.type = nextType;
-    elements.togglePasswordBtn.textContent = nextType === 'password' ? 'Show' : 'Hide';
+    syncPasswordToggleLabel();
   });
   elements.logoutBtn.addEventListener('click', handleLogout);
   elements.menuToggle.addEventListener('click', () => {
     elements.sidebar.classList.toggle('open');
+  });
+  document.addEventListener('click', (event) => {
+    const trigger = event.target.closest('[data-language-toggle]');
+    if (!trigger) {
+      return;
+    }
+
+    toggleLanguage();
   });
   elements.modalBackdrop.addEventListener('click', () => closeModal(false));
   document.addEventListener('keydown', (event) => {
@@ -555,8 +574,18 @@ function setupRealtimeSubscriptions() {
 }
 
 async function boot() {
+  applyDocumentLanguage();
+  syncPasswordToggleLabel();
   bindStaticEvents();
   startClock();
+  onLanguageChange(async () => {
+    syncPasswordToggleLabel();
+    syncShell();
+    await refreshTopbarMessage().catch(() => {});
+    if (state.profile) {
+      await renderRoute().catch((error) => showToast(error.message, 'error'));
+    }
+  });
 
   if (!isSupabaseReady()) {
     elements.loginBtn.disabled = true;
@@ -621,7 +650,7 @@ async function handleLogin(event) {
   event.preventDefault();
   setLoginError();
   elements.loginBtn.disabled = true;
-  elements.loginBtn.textContent = 'Signing in';
+  elements.loginBtn.textContent = t('login.signingIn');
 
   try {
     const { error, data } = await supabase.auth.signInWithPassword({
@@ -630,15 +659,15 @@ async function handleLogin(event) {
     });
 
     if (error) {
-      throw new Error(error.message || 'Unable to sign in');
+      throw new Error(error.message || t('login.unableToSignIn'));
     }
 
     await handleAuthenticatedSession(data.session);
   } catch (error) {
-    setLoginError(error.message || 'Unable to sign in');
+    setLoginError(error.message || t('login.unableToSignIn'));
   } finally {
     elements.loginBtn.disabled = false;
-    elements.loginBtn.textContent = 'Sign In';
+    elements.loginBtn.textContent = t('login.signIn');
   }
 }
 
@@ -1172,7 +1201,7 @@ async function renderReportsPage() {
             <button id="reportsApplyBtn" type="button" class="btn btn-secondary">Apply</button>
             <button id="reportsRefreshBtn" type="button" class="btn btn-secondary">Refresh</button>
           </div>
-          <p class="inline-note">Reporting period: ${escapeHtml(report.range.label)} · Employees in scope: ${escapeHtml(String(report.filteredEmployees.length))}</p>
+          <p class="inline-note">Reporting period: ${escapeHtml(report.range.label)} Â· Employees in scope: ${escapeHtml(String(report.filteredEmployees.length))}</p>
         </section>
         <div class="summary-grid">
           ${buildSummaryCard('Total Hours Worked', formatDuration(report.totals.totalHoursWorkedMinutes), 'Across the current report scope')}
@@ -1235,7 +1264,7 @@ async function renderReportsPage() {
                     <td>
                       <div class="report-trend-cell">
                         ${trendBadgeMarkup(item.trend)}
-                        <span class="inline-note">${escapeHtml(`${item.attendanceRate}% attendance · ${item.onTimeArrivalRate}% on-time`)}</span>
+                        <span class="inline-note">${escapeHtml(`${item.attendanceRate}% attendance Â· ${item.onTimeArrivalRate}% on-time`)}</span>
                       </div>
                     </td>
                   </tr>
@@ -1258,7 +1287,7 @@ async function renderReportsPage() {
                   <div>
                     <span class="status-label">Rank ${index + 1}</span>
                     <strong>${escapeHtml(item.employee.full_name)}</strong>
-                    <p class="inline-note">${escapeHtml(`${item.attendanceRate}% attendance · ${item.onTimeArrivalRate}% on-time · ${formatDuration(item.workedMinutes)}`)}</p>
+                    <p class="inline-note">${escapeHtml(`${item.attendanceRate}% attendance Â· ${item.onTimeArrivalRate}% on-time Â· ${formatDuration(item.workedMinutes)}`)}</p>
                   </div>
                 </div>
               `).join('') : '<div class="empty-state">No ranking is available yet.</div>'}
@@ -2268,6 +2297,7 @@ async function renderQrPage() {
     setPageError(container, error.message);
   }
 }
+
 
 
 
