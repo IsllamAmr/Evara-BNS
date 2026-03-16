@@ -10,8 +10,10 @@ EVARA BNS is a Supabase-powered employee attendance system with role-based acces
 - QR attendance access
 - Manual attendance entry for admins
 - CSV export for employees and attendance history
+- Advanced reports with working hours, overtime, shortfall, and employee timesheets
 - Client-side pagination for employee and history views
 - Rate limiting, sanitization, and HTTP header hardening
+- Modular frontend helpers for reporting and export workflows
 
 ## Local Development
 
@@ -52,7 +54,13 @@ TRUST_PROXY_HOPS=0
 npm start
 ```
 
-4. Open:
+4. Run a quick code health check:
+
+```bash
+npm run check
+```
+
+5. Open:
 
 - App: `http://localhost:5000`
 - Health: `http://localhost:5000/api/health`
@@ -70,3 +78,11 @@ npm start
 - The project is designed to run as a single Node.js service that serves both the API and the frontend.
 - Set production environment variables on your host before deployment.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` server-side only.
+
+## Frontend Structure
+
+- `public/js/app.js`: app shell, routing, page rendering, and modal flows
+- `public/js/reporting.js`: report calculations, attendance metrics, and chart rendering
+- `public/js/exporters.js`: CSV export helpers for employees, attendance, and reports
+- `public/js/checkin.js`: QR/check-in flow page logic
+- `public/js/shared.js`: small reusable formatting and label helpers
