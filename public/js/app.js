@@ -41,6 +41,9 @@ const DEPARTMENT_OPTIONS = [
 ];
 const EMPLOYEE_PAGE_SIZE = 10;
 const HISTORY_PAGE_SIZE = 12;
+const BUSINESS_TIME_ZONE = 'Africa/Cairo';
+const FULL_SHIFT_MINUTES = 8 * 60;
+const ON_TIME_THRESHOLD_MINUTES = (9 * 60) + 15;
 const state = {
   session: null,
   profile: null,
@@ -67,6 +70,8 @@ const state = {
   },
   reportsFilters: {
     month: currentMonthInput(),
+    department: 'all',
+    employeeId: 'all',
   },
   liveRefreshTimer: null,
 };
@@ -850,7 +855,7 @@ function enumerateDates(startDate, endDate) {
   return dates;
 }
 
-function minutesFromTimestamp(value) {
+function timePartsInZone(value, timeZone = BUSINESS_TIME_ZONE) {
   if (!value) {
     return null;
   }
@@ -860,7 +865,34 @@ function minutesFromTimestamp(value) {
     return null;
   }
 
-  return (date.getHours() * 60) + date.getMinutes();
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value);
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value);
+
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return null;
+  }
+
+  return { hour, minute };
+}
+
+function minutesFromTimestamp(value, timeZone = BUSINESS_TIME_ZONE) {
+  if (!value) {
+    return null;
+  }
+
+  const parts = timePartsInZone(value, timeZone);
+  if (!parts) {
+    return null;
+  }
+
+  return (parts.hour * 60) + parts.minute;
 }
 
 function average(values) {
@@ -882,39 +914,206 @@ function formatAverageTime(minutes) {
   return `${hours}:${mins}`;
 }
 
-function buildReportsDataset(employees, attendanceRows, monthValue) {
-  const range = monthRange(monthValue);
+function formatDuration(minutes) {
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return '0h 00m';
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const mins = String(minutes % 60).padStart(2, '0');
+  return `${hours}h ${mins}m`;
+}
+
+function durationToHours(minutes) {
+  return Math.round((minutes / 60) * 10) / 10;
+}
+
+function workingMinutesBetween(checkInTime, checkOutTime) {
+  if (!checkInTime || !checkOutTime) {
+    return 0;
+  }
+
+  const start = new Date(checkInTime);
+  const end = new Date(checkOutTime);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return 0;
+  }
+
+  return Math.max(Math.round((end.getTime() - start.getTime()) / 60000), 0);
+}
+
+function sumBy(items, selector) {
+  return items.reduce((total, item) => total + selector(item), 0);
+}
+
+function buildAttendanceRowMetrics(row) {
+  const checkInMinutes = minutesFromTimestamp(row.check_in_time);
+  const checkOutMinutes = minutesFromTimestamp(row.check_out_time);
+  const workedMinutes = workingMinutesBetween(row.check_in_time, row.check_out_time);
+  const overtimeMinutes = Math.max(workedMinutes - FULL_SHIFT_MINUTES, 0);
+  const shortfallMinutes = row.check_in_time && row.check_out_time
+    ? Math.max(FULL_SHIFT_MINUTES - workedMinutes, 0)
+    : 0;
+  const isPresent = Boolean(row.check_in_time);
+  const isLateArrival = Number.isFinite(checkInMinutes) && checkInMinutes > ON_TIME_THRESHOLD_MINUTES;
+
+  return {
+    checkInMinutes,
+    checkOutMinutes,
+    workedMinutes,
+    overtimeMinutes,
+    shortfallMinutes,
+    isPresent,
+    isLateArrival,
+    isOnTimeArrival: isPresent && !isLateArrival,
+    isCompleteShift: Boolean(row.check_in_time && row.check_out_time),
+  };
+}
+
+function attendanceOutcome(metrics) {
+  if (!metrics.isPresent) {
+    return 'No Check-in';
+  }
+  if (!metrics.isCompleteShift) {
+    return 'Incomplete Shift';
+  }
+  if (metrics.overtimeMinutes > 0) {
+    return `Overtime +${formatDuration(metrics.overtimeMinutes)}`;
+  }
+  if (metrics.shortfallMinutes > 0) {
+    return `Shortfall ${formatDuration(metrics.shortfallMinutes)}`;
+  }
+  return 'Full Shift';
+}
+
+function classifyEmployeeTrend(employeeReport) {
+  if (employeeReport.attendanceRate >= 96 && employeeReport.onTimeArrivalRate >= 90 && employeeReport.shortfallMinutes <= FULL_SHIFT_MINUTES) {
+    return { label: 'Exceptional', className: 'trend-exceptional', note: 'Consistent attendance with strong shift completion.' };
+  }
+  if (employeeReport.attendanceRate >= 85 && employeeReport.onTimeArrivalRate >= 75 && employeeReport.shortfallMinutes <= FULL_SHIFT_MINUTES * 2) {
+    return { label: 'Committed', className: 'trend-committed', note: 'Reliable attendance and healthy punctuality.' };
+  }
+  if (employeeReport.attendanceRate >= 70 && employeeReport.onTimeArrivalRate >= 60) {
+    return { label: 'Needs Focus', className: 'trend-focus', note: 'Watch punctuality and shift completion more closely.' };
+  }
+  return { label: 'Needs Attention', className: 'trend-risk', note: 'Attendance or punctuality is below target.' };
+}
+
+function trendBadgeMarkup(trend) {
+  return `<span class="badge ${escapeHtml(trend.className)}">${escapeHtml(trend.label)}</span>`;
+}
+
+function reportsDepartmentChoices(employees) {
+  return [...new Set(
+    employees
+      .map((employee) => departmentLabel(employee.department))
+      .filter(Boolean)
+  )].sort((left, right) => left.localeCompare(right));
+}
+
+function reportsEmployeeChoices(employees, departmentFilter = 'all') {
+  return employees
+    .filter((employee) => departmentFilter === 'all' || departmentLabel(employee.department) === departmentFilter)
+    .sort((left, right) => left.full_name.localeCompare(right.full_name));
+}
+
+function reportEmployeeOptions(employees, selectedEmployeeId = 'all') {
+  return [
+    '<option value="all">All Employees</option>',
+    ...employees.map((employee) => `
+      <option value="${escapeHtml(employee.id)}" ${selectedEmployeeId === employee.id ? 'selected' : ''}>
+        ${escapeHtml(employee.full_name)}${employee.employee_code ? ` (${escapeHtml(employee.employee_code)})` : ''}
+      </option>
+    `),
+  ].join('');
+}
+
+function buildReportsDataset(employees, attendanceRows, filters) {
+  const range = monthRange(filters.month);
   const workdays = enumerateDates(range.startDate, range.endDate).filter(isWorkday);
+  const workdaySet = new Set(workdays.map((date) => formatDateInput(date)));
   const eligibleEmployees = employees.filter((employee) => employee.is_active && employee.status !== 'inactive');
-  const employeeIds = new Set(eligibleEmployees.map((employee) => employee.id));
+  const filteredEmployees = eligibleEmployees.filter((employee) => {
+    if (filters.department !== 'all' && departmentLabel(employee.department) !== filters.department) {
+      return false;
+    }
+    if (filters.employeeId !== 'all' && employee.id !== filters.employeeId) {
+      return false;
+    }
+    return true;
+  });
+  const employeeIds = new Set(filteredEmployees.map((employee) => employee.id));
   const relevantRows = attendanceRows.filter((row) => employeeIds.has(row.user_id));
+  const rowsByEmployee = new Map(filteredEmployees.map((employee) => [employee.id, []]));
 
-  const byEmployee = eligibleEmployees.map((employee) => {
-    const rows = relevantRows.filter((row) => row.user_id === employee.id);
-    const presentDays = new Set(rows.filter((row) => row.check_in_time).map((row) => row.attendance_date)).size;
-    const lateDays = rows.filter((row) => row.attendance_status === 'late').length;
-    const averageCheckIn = average(rows.map((row) => minutesFromTimestamp(row.check_in_time)));
-    const averageCheckOut = average(rows.map((row) => minutesFromTimestamp(row.check_out_time)));
-    const attendanceRatio = workdays.length ? Math.round((presentDays / workdays.length) * 100) : 0;
+  relevantRows.forEach((row) => {
+    rowsByEmployee.get(row.user_id)?.push(row);
+  });
 
-    return {
+  const byEmployee = filteredEmployees.map((employee) => {
+    const rows = (rowsByEmployee.get(employee.id) || [])
+      .slice()
+      .sort((left, right) => right.attendance_date.localeCompare(left.attendance_date));
+    const detailedRows = rows.map((row) => ({
+      row,
+      metrics: buildAttendanceRowMetrics(row),
+    }));
+    const workdayRows = detailedRows.filter((item) => workdaySet.has(item.row.attendance_date));
+    const presentDays = new Set(workdayRows.filter((item) => item.metrics.isPresent).map((item) => item.row.attendance_date)).size;
+    const absentDays = Math.max(workdays.length - presentDays, 0);
+    const lateArrivals = workdayRows.filter((item) => item.metrics.isLateArrival).length;
+    const onTimeArrivals = workdayRows.filter((item) => item.metrics.isOnTimeArrival).length;
+    const workedMinutes = sumBy(detailedRows, (item) => item.metrics.workedMinutes);
+    const overtimeMinutes = sumBy(detailedRows, (item) => item.metrics.overtimeMinutes);
+    const shortfallMinutes = sumBy(workdayRows, (item) => item.metrics.shortfallMinutes);
+    const expectedMinutes = workdays.length * FULL_SHIFT_MINUTES;
+    const averageCheckIn = average(workdayRows.map((item) => item.metrics.checkInMinutes));
+    const averageCheckOut = average(detailedRows.map((item) => item.metrics.checkOutMinutes));
+    const attendanceRate = workdays.length ? Math.round((presentDays / workdays.length) * 100) : 0;
+    const onTimeArrivalRate = presentDays ? Math.round((onTimeArrivals / presentDays) * 100) : 0;
+
+    const employeeReport = {
       employee,
       rows,
+      detailedRows,
       presentDays,
-      lateDays,
-      attendanceRatio,
+      absentDays,
+      lateArrivals,
+      onTimeArrivals,
+      workedMinutes,
+      overtimeMinutes,
+      shortfallMinutes,
+      expectedMinutes,
+      attendanceRate,
+      onTimeArrivalRate,
       averageCheckIn,
       averageCheckOut,
     };
+
+    return {
+      ...employeeReport,
+      trend: classifyEmployeeTrend(employeeReport),
+    };
   }).sort((left, right) => {
-    if (right.attendanceRatio !== left.attendanceRatio) {
-      return right.attendanceRatio - left.attendanceRatio;
+    if (right.attendanceRate !== left.attendanceRate) {
+      return right.attendanceRate - left.attendanceRate;
     }
-    return right.presentDays - left.presentDays;
+    if (right.onTimeArrivalRate !== left.onTimeArrivalRate) {
+      return right.onTimeArrivalRate - left.onTimeArrivalRate;
+    }
+    return right.workedMinutes - left.workedMinutes;
   });
 
-  const weekdayTotals = enumerateDates(range.startDate, range.endDate)
-    .filter(isWorkday)
+  const totalExpectedDays = filteredEmployees.length * workdays.length;
+  const totalPresentDays = sumBy(byEmployee, (item) => item.presentDays);
+  const totalOnTimeArrivals = sumBy(byEmployee, (item) => item.onTimeArrivals);
+  const totalHoursWorkedMinutes = sumBy(byEmployee, (item) => item.workedMinutes);
+  const totalOvertimeMinutes = sumBy(byEmployee, (item) => item.overtimeMinutes);
+  const totalShortfallMinutes = sumBy(byEmployee, (item) => item.shortfallMinutes);
+  const attendanceRate = totalExpectedDays ? Math.round((totalPresentDays / totalExpectedDays) * 100) : 0;
+  const onTimeArrivalRate = totalPresentDays ? Math.round((totalOnTimeArrivals / totalPresentDays) * 100) : 0;
+
+  const weekdayTotals = workdays
     .map((date) => {
       const isoDate = formatDateInput(date);
       const presentCount = new Set(
@@ -925,8 +1124,8 @@ function buildReportsDataset(employees, attendanceRows, monthValue) {
 
       return {
         weekday: date.toLocaleDateString('en-GB', { weekday: 'long' }),
-        absentCount: Math.max(eligibleEmployees.length - presentCount, 0),
-        dateLabel: formatDate(date),
+        absentCount: Math.max(filteredEmployees.length - presentCount, 0),
+        occurrences: 1,
       };
     })
     .reduce((accumulator, item) => {
@@ -938,92 +1137,128 @@ function buildReportsDataset(employees, attendanceRows, monthValue) {
     }, new Map());
 
   const weekdayRows = [...weekdayTotals.values()].sort((left, right) => right.absentCount - left.absentCount);
-  const averageRatio = byEmployee.length ? Math.round(byEmployee.reduce((sum, item) => sum + item.attendanceRatio, 0) / byEmployee.length) : 0;
   const dailyTrend = workdays.map((date) => {
     const isoDate = formatDateInput(date);
-    const presentCount = new Set(
-      relevantRows
-        .filter((row) => row.attendance_date === isoDate && row.check_in_time)
-        .map((row) => row.user_id)
-    ).size;
+    const rowsForDate = relevantRows
+      .filter((row) => row.attendance_date === isoDate)
+      .map((row) => buildAttendanceRowMetrics(row));
+    const presentCount = relevantRows.filter((row) => row.attendance_date === isoDate && row.check_in_time).length;
 
     return {
       label: date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
       presentCount,
-      absentCount: Math.max(eligibleEmployees.length - presentCount, 0),
+      absentCount: Math.max(filteredEmployees.length - presentCount, 0),
+      workedHours: durationToHours(sumBy(rowsForDate, (item) => item.workedMinutes)),
+      overtimeHours: durationToHours(sumBy(rowsForDate, (item) => item.overtimeMinutes)),
     };
   });
+
+  const departmentHours = [...byEmployee.reduce((accumulator, item) => {
+    const key = departmentLabel(item.employee.department);
+    const current = accumulator.get(key) || {
+      department: key,
+      employeeCount: 0,
+      actualMinutes: 0,
+      expectedMinutes: 0,
+    };
+    current.employeeCount += 1;
+    current.actualMinutes += item.workedMinutes;
+    current.expectedMinutes += item.expectedMinutes;
+    accumulator.set(key, current);
+    return accumulator;
+  }, new Map()).values()]
+    .map((item) => ({
+      ...item,
+      actualHours: durationToHours(item.actualMinutes),
+      expectedHours: durationToHours(item.expectedMinutes),
+    }))
+    .sort((left, right) => right.actualMinutes - left.actualMinutes);
 
   return {
     range,
     workdays,
     eligibleEmployees,
+    filteredEmployees,
     attendanceRows: relevantRows,
     byEmployee,
     weekdayRows,
-    averageRatio,
     topPerformers: byEmployee.slice(0, 5),
     dailyTrend,
+    departmentHours,
+    selectedEmployeeReport: filters.employeeId === 'all'
+      ? null
+      : byEmployee.find((item) => item.employee.id === filters.employeeId) || null,
+    totals: {
+      totalHoursWorkedMinutes,
+      totalOvertimeMinutes,
+      totalShortfallMinutes,
+      totalExpectedMinutes: sumBy(byEmployee, (item) => item.expectedMinutes),
+      totalPresentDays,
+      totalExpectedDays,
+      attendanceRate,
+      onTimeArrivalRate,
+    },
   };
 }
 
-function drawAttendanceTrend(canvas, points) {
-  if (!canvas || !points.length) {
-    return;
+function prepareChartCanvas(canvas, height = 260) {
+  const context = canvas?.getContext('2d');
+  if (!canvas || !context) {
+    return null;
   }
 
-  const context = canvas.getContext('2d');
   const width = canvas.clientWidth || 720;
-  const height = 260;
   const ratio = window.devicePixelRatio || 1;
   canvas.width = width * ratio;
   canvas.height = height * ratio;
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   context.clearRect(0, 0, width, height);
 
-  const padding = { top: 20, right: 16, bottom: 42, left: 42 };
+  return {
+    context,
+    width,
+    height,
+  };
+}
+
+function drawWorkingHoursTrend(canvas, points) {
+  if (!canvas || !points.length) {
+    return;
+  }
+
+  const prepared = prepareChartCanvas(canvas);
+  if (!prepared) {
+    return;
+  }
+
+  const { context, width, height } = prepared;
+  const padding = { top: 26, right: 18, bottom: 44, left: 50 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  const maxValue = Math.max(...points.map((point) => point.presentCount), 1);
+  const maxValue = Math.max(...points.map((point) => Math.max(point.workedHours, point.overtimeHours)), 1);
+  const stepX = points.length > 1 ? chartWidth / (points.length - 1) : chartWidth;
+  const yForValue = (value) => padding.top + chartHeight - ((value / maxValue) * chartHeight);
 
-  context.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  context.strokeStyle = 'rgba(148, 163, 184, 0.16)';
   context.lineWidth = 1;
-
   for (let step = 0; step <= 4; step += 1) {
-    const y = padding.top + (chartHeight * step / 4);
+    const y = padding.top + ((chartHeight / 4) * step);
     context.beginPath();
     context.moveTo(padding.left, y);
     context.lineTo(width - padding.right, y);
     context.stroke();
 
-    const labelValue = Math.round(maxValue - (maxValue * step / 4));
-    context.fillStyle = 'rgba(238, 242, 246, 0.7)';
+    const labelValue = Math.round(maxValue - ((maxValue / 4) * step));
+    context.fillStyle = 'rgba(237, 242, 247, 0.72)';
     context.font = '12px Inter, sans-serif';
-    context.fillText(String(labelValue), 8, y + 4);
+    context.fillText(`${labelValue}h`, 8, y + 4);
   }
 
-  const stepX = points.length > 1 ? chartWidth / (points.length - 1) : chartWidth;
-  const yForValue = (value) => padding.top + chartHeight - ((value / maxValue) * chartHeight);
-
+  context.fillStyle = 'rgba(59, 130, 246, 0.12)';
   context.beginPath();
   points.forEach((point, index) => {
     const x = padding.left + (stepX * index);
-    const y = yForValue(point.presentCount);
-    if (index === 0) {
-      context.moveTo(x, y);
-    } else {
-      context.lineTo(x, y);
-    }
-  });
-  context.strokeStyle = '#d9e3ee';
-  context.lineWidth = 3;
-  context.stroke();
-
-  context.fillStyle = 'rgba(159, 176, 195, 0.18)';
-  context.beginPath();
-  points.forEach((point, index) => {
-    const x = padding.left + (stepX * index);
-    const y = yForValue(point.presentCount);
+    const y = yForValue(point.workedHours);
     if (index === 0) {
       context.moveTo(x, height - padding.bottom);
       context.lineTo(x, y);
@@ -1035,21 +1270,137 @@ function drawAttendanceTrend(canvas, points) {
   context.closePath();
   context.fill();
 
-  context.fillStyle = '#eef2f6';
+  context.beginPath();
   points.forEach((point, index) => {
     const x = padding.left + (stepX * index);
-    const y = yForValue(point.presentCount);
+    const y = yForValue(point.workedHours);
+    if (index === 0) {
+      context.moveTo(x, y);
+    } else {
+      context.lineTo(x, y);
+    }
+  });
+  context.strokeStyle = '#60a5fa';
+  context.lineWidth = 3;
+  context.stroke();
+
+  context.beginPath();
+  points.forEach((point, index) => {
+    const x = padding.left + (stepX * index);
+    const y = yForValue(point.overtimeHours);
+    if (index === 0) {
+      context.moveTo(x, y);
+    } else {
+      context.lineTo(x, y);
+    }
+  });
+  context.strokeStyle = 'rgba(191, 219, 254, 0.78)';
+  context.setLineDash([6, 4]);
+  context.lineWidth = 2;
+  context.stroke();
+  context.setLineDash([]);
+
+  context.fillStyle = '#dbeafe';
+  points.forEach((point, index) => {
+    const x = padding.left + (stepX * index);
+    const y = yForValue(point.workedHours);
     context.beginPath();
     context.arc(x, y, 4, 0, Math.PI * 2);
     context.fill();
 
     if (index === 0 || index === points.length - 1 || index % Math.max(Math.round(points.length / 6), 2) === 0) {
-      context.fillStyle = 'rgba(238, 242, 246, 0.72)';
+      context.fillStyle = 'rgba(237, 242, 247, 0.72)';
       context.font = '12px Inter, sans-serif';
       context.fillText(point.label, x - 18, height - 16);
-      context.fillStyle = '#eef2f6';
+      context.fillStyle = '#dbeafe';
     }
   });
+
+  context.fillStyle = '#60a5fa';
+  context.fillRect(width - 176, 16, 12, 12);
+  context.fillStyle = '#dbeafe';
+  context.font = '12px Inter, sans-serif';
+  context.fillText('Hours Worked', width - 156, 26);
+  context.strokeStyle = 'rgba(191, 219, 254, 0.78)';
+  context.setLineDash([6, 4]);
+  context.beginPath();
+  context.moveTo(width - 176, 42);
+  context.lineTo(width - 164, 42);
+  context.stroke();
+  context.setLineDash([]);
+  context.fillStyle = 'rgba(237, 242, 247, 0.72)';
+  context.fillText('Overtime', width - 156, 46);
+}
+
+function drawDepartmentHoursChart(canvas, points) {
+  if (!canvas || !points.length) {
+    return;
+  }
+
+  const prepared = prepareChartCanvas(canvas, 280);
+  if (!prepared) {
+    return;
+  }
+
+  const { context, width, height } = prepared;
+  const rows = points.slice(0, 6);
+  const padding = { top: 26, right: 18, bottom: 62, left: 52 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const maxValue = Math.max(...rows.map((item) => Math.max(item.actualHours, item.expectedHours)), 1);
+  const groupWidth = chartWidth / Math.max(rows.length, 1);
+  const barWidth = Math.min(22, Math.max(10, (groupWidth / 3)));
+  const yForValue = (value) => padding.top + chartHeight - ((value / maxValue) * chartHeight);
+
+  context.strokeStyle = 'rgba(148, 163, 184, 0.16)';
+  context.lineWidth = 1;
+  for (let step = 0; step <= 4; step += 1) {
+    const y = padding.top + ((chartHeight / 4) * step);
+    context.beginPath();
+    context.moveTo(padding.left, y);
+    context.lineTo(width - padding.right, y);
+    context.stroke();
+
+    const labelValue = Math.round(maxValue - ((maxValue / 4) * step));
+    context.fillStyle = 'rgba(237, 242, 247, 0.72)';
+    context.font = '12px Inter, sans-serif';
+    context.fillText(`${labelValue}h`, 8, y + 4);
+  }
+
+  rows.forEach((item, index) => {
+    const groupX = padding.left + (groupWidth * index) + (groupWidth / 2);
+    const expectedHeight = chartHeight * (item.expectedHours / maxValue);
+    const actualHeight = chartHeight * (item.actualHours / maxValue);
+    const expectedX = groupX - barWidth - 4;
+    const actualX = groupX + 4;
+    const expectedY = yForValue(item.expectedHours);
+    const actualY = yForValue(item.actualHours);
+    const shortLabel = item.department.length > 11 ? `${item.department.slice(0, 11)}...` : item.department;
+
+    context.fillStyle = 'rgba(148, 163, 184, 0.45)';
+    context.fillRect(expectedX, expectedY, barWidth, expectedHeight);
+
+    context.fillStyle = '#3b82f6';
+    context.fillRect(actualX, actualY, barWidth, actualHeight);
+
+    context.fillStyle = 'rgba(237, 242, 247, 0.72)';
+    context.font = '11px Inter, sans-serif';
+    context.save();
+    context.translate(groupX, height - 22);
+    context.rotate(-0.18);
+    context.fillText(shortLabel, -20, 0);
+    context.restore();
+  });
+
+  context.fillStyle = 'rgba(148, 163, 184, 0.45)';
+  context.fillRect(width - 178, 16, 12, 12);
+  context.fillStyle = '#dbeafe';
+  context.font = '12px Inter, sans-serif';
+  context.fillText('Expected', width - 158, 26);
+  context.fillStyle = '#3b82f6';
+  context.fillRect(width - 98, 16, 12, 12);
+  context.fillStyle = '#dbeafe';
+  context.fillText('Actual', width - 78, 26);
 }
 
 async function renderDashboardPage() {
@@ -1360,6 +1711,12 @@ async function renderReportsPage() {
       state.profileMap.set(state.profile.id, state.profile);
     }
 
+    const eligibleEmployees = state.employees.filter((employee) => employee.is_active && employee.status !== 'inactive');
+    const scopedEmployees = reportsEmployeeChoices(eligibleEmployees, state.reportsFilters.department);
+    if (state.reportsFilters.employeeId !== 'all' && !scopedEmployees.some((employee) => employee.id === state.reportsFilters.employeeId)) {
+      state.reportsFilters.employeeId = 'all';
+    }
+
     const range = monthRange(state.reportsFilters.month);
     const attendanceRows = await fetchAttendance({
       from: range.from,
@@ -1367,8 +1724,11 @@ async function renderReportsPage() {
     });
     await ensureProfileDirectory(attendanceRows);
 
-    const report = buildReportsDataset(state.employees, attendanceRows, state.reportsFilters.month);
+    const report = buildReportsDataset(state.employees, attendanceRows, state.reportsFilters);
     const peakWeekday = report.weekdayRows[0];
+    const departmentChoices = reportsDepartmentChoices(eligibleEmployees);
+    const employeeChoices = reportsEmployeeChoices(eligibleEmployees, state.reportsFilters.department);
+    const selectedEmployee = report.selectedEmployeeReport;
 
     container.innerHTML = `
       <div class="page-shell">
@@ -1376,61 +1736,90 @@ async function renderReportsPage() {
           <div>
             <p class="eyebrow">Insights</p>
             <h1>Reports & Analytics</h1>
-            <p>Track monthly attendance performance, employee punctuality, and absence pressure across the team.</p>
+            <p>Track worked hours, overtime, shortfall, punctuality, and department-level performance from one control page.</p>
           </div>
         </div>
         <section class="card-block">
           <div class="toolbar toolbar-wide">
             <input id="reportsMonth" type="month" value="${escapeHtml(state.reportsFilters.month)}" />
-            <div class="status-card compact">
-              <div>
-                <span class="status-label">Reporting Period</span>
-                <strong>${escapeHtml(report.range.label)}</strong>
-              </div>
-            </div>
+            <select id="reportsDepartment">
+              <option value="all">All Departments</option>
+              ${departmentChoices.map((department) => `<option value="${escapeHtml(department)}" ${state.reportsFilters.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
+            </select>
+            <select id="reportsEmployee">
+              ${reportEmployeeOptions(employeeChoices, state.reportsFilters.employeeId)}
+            </select>
             <button id="reportsApplyBtn" type="button" class="btn btn-secondary">Apply</button>
             <button id="reportsRefreshBtn" type="button" class="btn btn-secondary">Refresh</button>
           </div>
+          <p class="inline-note">Reporting period: ${escapeHtml(report.range.label)} · Employees in scope: ${escapeHtml(String(report.filteredEmployees.length))}</p>
         </section>
         <div class="summary-grid">
-          ${buildSummaryCard('Employees Measured', String(report.eligibleEmployees.length), 'Active accounts in the selected month')}
-          ${buildSummaryCard('Workdays in Range', String(report.workdays.length), 'Friday and Saturday excluded')}
-          ${buildSummaryCard('Average Attendance', `${report.averageRatio}%`, 'Average monthly attendance ratio')}
+          ${buildSummaryCard('Total Hours Worked', formatDuration(report.totals.totalHoursWorkedMinutes), 'Across the current report scope')}
+          ${buildSummaryCard('Total Overtime', formatDuration(report.totals.totalOvertimeMinutes), 'Minutes above the 8-hour daily baseline')}
+          ${buildSummaryCard('Total Shortfall', formatDuration(report.totals.totalShortfallMinutes), 'Missing time below the 8-hour daily target')}
+          ${buildSummaryCard('Attendance Rate', `${report.totals.attendanceRate}%`, `${report.totals.totalPresentDays} present day(s) out of ${report.totals.totalExpectedDays || 0}`)}
+          ${buildSummaryCard('On-Time Arrival', `${report.totals.onTimeArrivalRate}%`, 'Arrivals at or before 09:15 Africa/Cairo')}
           ${buildSummaryCard('Peak Absence Day', peakWeekday ? peakWeekday.weekday : 'N/A', peakWeekday ? `${peakWeekday.absentCount} total absences` : 'No absence trend yet')}
+        </div>
+        <div class="content-grid">
+          <section class="card-block">
+            <div class="card-head">
+              <div>
+                <h3>Working hours trend</h3>
+                <p class="card-subtle">Daily worked hours and overtime across the selected month.</p>
+              </div>
+            </div>
+            ${report.dailyTrend.length ? `
+              <div class="chart-shell">
+                <canvas id="reportsHoursCanvas" aria-label="Working hours trend chart"></canvas>
+              </div>
+            ` : '<div class="empty-state">No working-hours data is available for this period.</div>'}
+          </section>
+          <section class="card-block">
+            <div class="card-head">
+              <div>
+                <h3>Department hours comparison</h3>
+                <p class="card-subtle">Actual hours versus expected hours for each department in scope.</p>
+              </div>
+            </div>
+            ${report.departmentHours.length ? `
+              <div class="chart-shell">
+                <canvas id="reportsDepartmentCanvas" aria-label="Department hours comparison chart"></canvas>
+              </div>
+            ` : '<div class="empty-state">No department comparison is available for this scope.</div>'}
+          </section>
         </div>
         <section class="card-block">
           <div class="card-head">
             <div>
-              <h3>Attendance trend</h3>
-              <p class="card-subtle">Daily present headcount across the selected workdays.</p>
-            </div>
-          </div>
-          <div class="chart-shell">
-            <canvas id="reportsTrendCanvas" aria-label="Attendance trend chart"></canvas>
-          </div>
-        </section>
-        <section class="card-block">
-          <div class="card-head">
-            <div>
-              <h3>Monthly attendance ratio per employee</h3>
-              <p class="card-subtle">Attendance ratio is calculated against the workdays in the selected month.</p>
+              <h3>Detailed monthly employee report</h3>
+              <p class="card-subtle">Attendance days, hours, overtime, and trend classification for each employee in scope.</p>
             </div>
           </div>
           <div class="table-shell">
             <table>
               <thead>
-                <tr><th>Employee</th><th>Department</th><th>Present Days</th><th>Late Days</th><th>Attendance Ratio</th></tr>
+                <tr><th>Employee Name</th><th>Days Present</th><th>Days Absent</th><th>Late Arrivals</th><th>Total Hours</th><th>Expected Hours</th><th>Overtime</th><th>Status/Trend</th></tr>
               </thead>
               <tbody>
                 ${report.byEmployee.length ? report.byEmployee.map((item) => `
                   <tr>
                     <td>${buildUserCell(item.employee)}</td>
-                    <td>${escapeHtml(departmentLabel(item.employee.department))}</td>
                     <td>${escapeHtml(String(item.presentDays))}</td>
-                    <td>${escapeHtml(String(item.lateDays))}</td>
-                    <td><strong>${escapeHtml(String(item.attendanceRatio))}%</strong></td>
+                    <td>${escapeHtml(String(item.absentDays))}</td>
+                    <td>${escapeHtml(String(item.lateArrivals))}</td>
+                    <td><strong>${escapeHtml(formatDuration(item.workedMinutes))}</strong></td>
+                    <td>${escapeHtml(formatDuration(item.expectedMinutes))}</td>
+                    <td>${escapeHtml(formatDuration(item.overtimeMinutes))}</td>
+                    <td>
+                      <div class="report-trend-cell">
+                        ${trendBadgeMarkup(item.trend)}
+                        <span class="inline-note">${escapeHtml(`${item.attendanceRate}% attendance · ${item.onTimeArrivalRate}% on-time`)}</span>
+                      </div>
+                    </td>
                   </tr>
-                `).join('') : '<tr><td colspan="5"><div class="empty-state">No employee attendance data is available for this period.</div></td></tr>'}
+                `).join('') : '<tr><td colspan="8"><div class="empty-state">No employee attendance data is available for this period.</div></td></tr>'}
               </tbody>
             </table>
           </div>
@@ -1440,7 +1829,7 @@ async function renderReportsPage() {
             <div class="card-head">
               <div>
                 <h3>Top attendance ranking</h3>
-                <p class="card-subtle">Employees ranked by monthly attendance ratio.</p>
+                <p class="card-subtle">Employees ranked by attendance rate, on-time arrivals, and completed hours.</p>
               </div>
             </div>
             <div class="page-shell">
@@ -1449,7 +1838,7 @@ async function renderReportsPage() {
                   <div>
                     <span class="status-label">Rank ${index + 1}</span>
                     <strong>${escapeHtml(item.employee.full_name)}</strong>
-                    <p class="inline-note">${escapeHtml(String(item.attendanceRatio))}% attendance · ${escapeHtml(String(item.presentDays))} present day(s)</p>
+                    <p class="inline-note">${escapeHtml(`${item.attendanceRate}% attendance · ${item.onTimeArrivalRate}% on-time · ${formatDuration(item.workedMinutes)}`)}</p>
                   </div>
                 </div>
               `).join('') : '<div class="empty-state">No ranking is available yet.</div>'}
@@ -1484,13 +1873,13 @@ async function renderReportsPage() {
           <div class="card-head">
             <div>
               <h3>Average check-in and check-out times</h3>
-              <p class="card-subtle">Average times are based on attendance rows with recorded timestamps.</p>
+              <p class="card-subtle">Average times are based on attendance rows with recorded timestamps in Africa/Cairo.</p>
             </div>
           </div>
           <div class="table-shell">
             <table>
               <thead>
-                <tr><th>Employee</th><th>Average Check In</th><th>Average Check Out</th><th>Attendance Rows</th></tr>
+                <tr><th>Employee</th><th>Average Check In</th><th>Average Check Out</th><th>On-Time Arrival</th><th>Complete Shifts</th></tr>
               </thead>
               <tbody>
                 ${report.byEmployee.length ? report.byEmployee.map((item) => `
@@ -1498,24 +1887,79 @@ async function renderReportsPage() {
                     <td>${buildUserCell(item.employee)}</td>
                     <td>${escapeHtml(formatAverageTime(item.averageCheckIn))}</td>
                     <td>${escapeHtml(formatAverageTime(item.averageCheckOut))}</td>
-                    <td>${escapeHtml(String(item.rows.length))}</td>
+                    <td>${escapeHtml(`${item.onTimeArrivalRate}%`)}</td>
+                    <td>${escapeHtml(String(item.detailedRows.filter((entry) => entry.metrics.isCompleteShift).length))}</td>
                   </tr>
-                `).join('') : '<tr><td colspan="4"><div class="empty-state">No time analytics are available for this period.</div></td></tr>'}
+                `).join('') : '<tr><td colspan="5"><div class="empty-state">No time analytics are available for this period.</div></td></tr>'}
               </tbody>
             </table>
           </div>
         </section>
+        <section class="card-block">
+          <div class="card-head">
+            <div>
+              <h3>Employee timesheet</h3>
+              <p class="card-subtle">Choose a specific employee from the filter above to inspect daily hours and shift outcomes.</p>
+            </div>
+          </div>
+          ${selectedEmployee ? `
+            <div class="summary-grid compact-grid">
+              ${buildSummaryCard('Selected Employee', selectedEmployee.employee.full_name, departmentLabel(selectedEmployee.employee.department))}
+              ${buildSummaryCard('Total Hours', formatDuration(selectedEmployee.workedMinutes), `${selectedEmployee.presentDays} present day(s)`)}
+              ${buildSummaryCard('Overtime', formatDuration(selectedEmployee.overtimeMinutes), `${selectedEmployee.lateArrivals} late arrival(s)`)}
+              ${buildSummaryCard('Shortfall', formatDuration(selectedEmployee.shortfallMinutes), `${selectedEmployee.absentDays} absence day(s)`)}
+            </div>
+            <div class="table-shell">
+              <table>
+                <thead>
+                  <tr><th>Date</th><th>Arrival</th><th>Check In</th><th>Check Out</th><th>Total Hours</th><th>Overtime</th><th>Shortfall</th><th>Shift Result</th></tr>
+                </thead>
+                <tbody>
+                  ${selectedEmployee.detailedRows.length ? selectedEmployee.detailedRows.map((entry) => `
+                    <tr>
+                      <td>${escapeHtml(formatDate(entry.row.attendance_date))}</td>
+                      <td>${entry.metrics.isPresent ? trendBadgeMarkup(entry.metrics.isLateArrival ? { label: 'Late', className: 'trend-focus' } : { label: 'On Time', className: 'trend-exceptional' }) : '<span class="badge trend-risk">No Check-in</span>'}</td>
+                      <td>${escapeHtml(formatTime(entry.row.check_in_time))}</td>
+                      <td>${escapeHtml(formatTime(entry.row.check_out_time))}</td>
+                      <td>${escapeHtml(formatDuration(entry.metrics.workedMinutes))}</td>
+                      <td>${escapeHtml(formatDuration(entry.metrics.overtimeMinutes))}</td>
+                      <td>${escapeHtml(formatDuration(entry.metrics.shortfallMinutes))}</td>
+                      <td>${escapeHtml(attendanceOutcome(entry.metrics))}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="8"><div class="empty-state">No attendance rows are available for this employee in the selected period.</div></td></tr>'}
+                </tbody>
+              </table>
+            </div>
+          ` : '<div class="empty-state">Select a specific employee to view a detailed timesheet for the selected month.</div>'}
+        </section>
       </div>
     `;
 
+    const syncEmployeeOptions = () => {
+      const departmentValue = container.querySelector('#reportsDepartment')?.value || 'all';
+      const employeeSelect = container.querySelector('#reportsEmployee');
+      if (!employeeSelect) {
+        return;
+      }
+
+      const currentValue = employeeSelect.value || state.reportsFilters.employeeId;
+      const allowedEmployees = reportsEmployeeChoices(eligibleEmployees, departmentValue);
+      const nextValue = allowedEmployees.some((employee) => employee.id === currentValue) ? currentValue : 'all';
+      employeeSelect.innerHTML = reportEmployeeOptions(allowedEmployees, nextValue);
+    };
+
+    container.querySelector('#reportsDepartment')?.addEventListener('change', syncEmployeeOptions);
     container.querySelector('#reportsApplyBtn')?.addEventListener('click', () => {
       state.reportsFilters.month = container.querySelector('#reportsMonth').value || currentMonthInput();
+      state.reportsFilters.department = container.querySelector('#reportsDepartment').value || 'all';
+      state.reportsFilters.employeeId = container.querySelector('#reportsEmployee').value || 'all';
       renderReportsPage().catch((error) => setPageError(container, error.message));
     });
     container.querySelector('#reportsRefreshBtn')?.addEventListener('click', () => {
       renderReportsPage().catch((error) => setPageError(container, error.message));
     });
-    drawAttendanceTrend(container.querySelector('#reportsTrendCanvas'), report.dailyTrend);
+    drawWorkingHoursTrend(container.querySelector('#reportsHoursCanvas'), report.dailyTrend);
+    drawDepartmentHoursChart(container.querySelector('#reportsDepartmentCanvas'), report.departmentHours);
   } catch (error) {
     setPageError(container, error.message);
   }
