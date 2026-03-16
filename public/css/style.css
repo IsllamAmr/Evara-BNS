@@ -172,6 +172,15 @@ html[dir='rtl'] body {
   gap: 1.2rem;
   justify-content: center;
 }
+.login-story-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.login-language-toggle {
+  margin-inline-start: auto;
+}
 .login-story h1,
 .checkin-card h1 {
   margin: 0;
