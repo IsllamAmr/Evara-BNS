@@ -182,8 +182,8 @@ function isAdmin() {
 
 function allowedPages() {
   return isAdmin()
-    ? ['dashboard', 'profile', 'employees', 'attendance', 'leave', 'history', 'reports', 'qr']
-    : ['dashboard', 'profile', 'attendance', 'leave', 'history'];
+    ? ['dashboard', 'profile', 'employees', 'attendance', 'history', 'reports', 'qr']
+    : ['dashboard', 'profile', 'attendance', 'history'];
 }
 
 function pageFromHash() {
@@ -471,6 +471,10 @@ async function collectAttendanceContext() {
   };
 }
 
+function sumMetrics(items = [], selector) {
+  return items.reduce((total, item) => total + Number(selector(item) || 0), 0);
+}
+
 async function ensureProfileDirectory(records = []) {
   const missingIds = [...new Set(records.map((item) => item.user_id).filter((userId) => userId && !state.profileMap.has(userId)))];
   if (!missingIds.length) {
@@ -640,13 +644,6 @@ function setupRealtimeSubscriptions() {
     .subscribe();
 
   realtimeChannels.push(profileChannel);
-
-  const leaveChannel = supabase
-    .channel(`leave-feed-${state.profile.id}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, scheduleLiveRefresh)
-    .subscribe();
-
-  realtimeChannels.push(leaveChannel);
 }
 
 async function boot() {
