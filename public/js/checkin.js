@@ -86,6 +86,7 @@ function updateClock() {
   clockLabel.textContent = now.toLocaleTimeString(getLocale(), {
     hour: '2-digit',
     minute: '2-digit',
+    hour12: true,
   });
   todayLabel.textContent = formatDate(now);
 }

@@ -298,6 +298,7 @@ function startClock() {
     elements.topbarClock.textContent = now.toLocaleTimeString(getLocale(), {
       hour: '2-digit',
       minute: '2-digit',
+      hour12: true,
     });
     elements.topbarDate.textContent = now.toLocaleDateString(getLocale(), {
       weekday: 'short',

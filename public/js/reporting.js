@@ -128,9 +128,12 @@ export function formatAverageTime(minutes) {
     return '-';
   }
 
-  const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
-  const mins = String(minutes % 60).padStart(2, '0');
-  return `${hours}:${mins}`;
+  const normalizedMinutes = ((minutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+  const hours24 = Math.floor(normalizedMinutes / 60);
+  const mins = String(normalizedMinutes % 60).padStart(2, '0');
+  const meridiem = hours24 >= 12 ? 'PM' : 'AM';
+  const hours12 = hours24 % 12 || 12;
+  return `${hours12}:${mins} ${meridiem}`;
 }
 
 export function formatDuration(minutes) {
@@ -219,11 +222,11 @@ export function attendanceOutcome(metrics) {
   if (!metrics.isCompleteShift) {
     if (metrics.isPastDue) {
       return metrics.shortfallMinutes > 0
-        ? `Incomplete Shift � ${formatDuration(metrics.shortfallMinutes)} short`
-        : 'Incomplete Shift � Review Needed';
+        ? `Incomplete Shift Â· ${formatDuration(metrics.shortfallMinutes)} short`
+        : 'Incomplete Shift Â· Review Needed';
     }
     return metrics.projectedRemainingMinutes > 0
-      ? `Open Shift � ${formatDuration(metrics.projectedRemainingMinutes)} remaining`
+      ? `Open Shift Â· ${formatDuration(metrics.projectedRemainingMinutes)} remaining`
       : 'Open Shift';
   }
   if (metrics.overtimeMinutes > 0) {
