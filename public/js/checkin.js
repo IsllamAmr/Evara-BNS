@@ -185,6 +185,7 @@ async function renderState(session, profile) {
   });
 
   if (!todayRecord || !todayRecord.check_in_time) {
+    setNotice('');
     setStatePill(t('checkin.readyBadge'), 'ready');
     statusTitle.textContent = t('checkin.readyTitle');
     statusText.textContent = t('checkin.readyText');
@@ -198,6 +199,7 @@ async function renderState(session, profile) {
   }
 
   if (!todayRecord.check_out_time) {
+    setNotice(t('checkin.afterCheckInNotice'));
     setStatePill(t('checkin.checkedInBadge'), 'progress');
     statusTitle.textContent = t('checkin.checkedInTitle');
     statusText.textContent = t('checkin.checkedInText', { time: formatTime(todayRecord.check_in_time) });
@@ -213,6 +215,7 @@ async function renderState(session, profile) {
     return;
   }
 
+  setNotice(t('checkin.afterCheckOutNotice'));
   setStatePill(t('checkin.completedBadge'), 'success');
   statusTitle.textContent = t('checkin.completedTitle');
   statusText.textContent = t('checkin.completedText');
