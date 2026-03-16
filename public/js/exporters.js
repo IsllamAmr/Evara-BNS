@@ -117,8 +117,7 @@ export function exportEmployeeTimesheetCsv(employeeReport, filters) {
   downloadCsvFile(
     `timesheet-${employeeToken}-${monthToken(filters)}.csv`,
     [
-      'Employee Name',
-      'Employee Code',
+      'Name',
       'Department',
       'Date',
       'Arrival',
@@ -129,12 +128,10 @@ export function exportEmployeeTimesheetCsv(employeeReport, filters) {
       'Overtime',
       'Shortfall',
       'Shift Result',
-      'Attendance Status',
     ],
     employeeReport.detailedRows.map((entry) => [
       employeeReport.employee.full_name,
-      employeeReport.employee.employee_code || '',
-      departmentLabel(employeeReport.employee.department),
+      employeeReport.employee.department || departmentLabel(employeeReport.employee.department),
       formatDate(entry.row.attendance_date),
       entry.metrics.isPresent ? (entry.metrics.isLateArrival ? 'Late' : 'On Time') : 'No Check-in',
       formatTime(entry.row.check_in_time),
@@ -144,7 +141,6 @@ export function exportEmployeeTimesheetCsv(employeeReport, filters) {
       formatDuration(entry.metrics.overtimeMinutes),
       formatDuration(entry.metrics.shortfallMinutes),
       attendanceOutcome(entry.metrics),
-      statusLabel(entry.row.attendance_status),
     ])
   );
 }
