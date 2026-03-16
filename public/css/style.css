@@ -447,6 +447,10 @@ textarea:focus {
 .sidebar-user strong { display: block; }
 .sidebar-branding span,
 .sidebar-user span { color: var(--muted); font-size: 0.9rem; }
+.sidebar-branding strong,
+.sidebar-branding span {
+  display: none !important;
+}
 .sidebar-nav {
   display: grid;
   gap: 0.45rem;
@@ -524,6 +528,7 @@ textarea:focus {
 .topbar-copy {
   display: grid;
   gap: 0.2rem;
+  max-width: 760px;
 }
 .topbar-copy strong {
   display: block;
@@ -535,6 +540,10 @@ textarea:focus {
   color: var(--muted);
   font-size: 0.9rem;
   line-height: 1.5;
+}
+#topbarEyebrow,
+#topbarTitle {
+  display: none !important;
 }
 .topbar h2 {
   margin: 0;

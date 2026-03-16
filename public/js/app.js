@@ -38,16 +38,16 @@ const ON_TIME_THRESHOLD_MINUTES = (9 * 60) + 15;
 const SHIFT_END_MINUTES = 17 * 60;
 const TOPBAR_MESSAGES = {
   beforeCheckIn: {
-    headline: 'Start your day with focus and calm confidence.',
-    subline: 'Small consistent steps create strong results.',
+    headline: 'Good morning, begin your day with calm focus and clear confidence.',
+    subline: 'A strong start creates a productive day and better results.',
   },
   duringShift: {
-    headline: 'You are in motion now, so keep your rhythm steady.',
-    subline: 'A calm pace and clear attention will help you finish strong.',
+    headline: 'You are doing well, so keep your rhythm steady and your energy clear.',
+    subline: 'Stay focused, keep moving, and let the day work in your favor.',
   },
   afterCheckOut: {
-    headline: 'Great work today, you finished strong and moved the day forward.',
-    subline: 'Take a breath, recharge well, and come back tomorrow with fresh energy.',
+    headline: 'Excellent finish today, your effort made a real difference.',
+    subline: 'Recharge well and come back tomorrow ready for another strong win.',
   },
 };
 const state = {
