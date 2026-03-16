@@ -744,6 +744,22 @@ tr:last-child td { border-bottom: 0; }
   color: var(--accent); 
   border-color: rgba(88, 166, 255, 0.3);
 }
+.badge.pending {
+  background: rgba(59, 130, 246, 0.12);
+  color: #bfdbfe;
+  border-color: rgba(96, 165, 250, 0.32);
+}
+.badge.approved {
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--success);
+  border-color: rgba(63, 185, 80, 0.3);
+}
+.badge.rejected,
+.badge.cancelled {
+  background: rgba(248, 81, 73, 0.15);
+  color: var(--danger);
+  border-color: rgba(248, 81, 73, 0.3);
+}
 .badge.employee { 
   background: rgba(139, 148, 158, 0.15); 
   color: var(--muted); 
@@ -780,6 +796,9 @@ tr:last-child td { border-bottom: 0; }
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+}
+.attention-note {
+  color: #bfdbfe;
 }
 .table-actions .btn,
 .inline-actions .btn { padding: 0.55rem 0.8rem; font-size: 0.82rem; }

@@ -48,6 +48,42 @@ function updateClock() {
   todayLabel.textContent = formatDate(now);
 }
 
+function getCurrentPosition() {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    return Promise.resolve({ context: {}, warning: '' });
+  }
+
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          context: {
+            latitude: Number(position.coords.latitude),
+            longitude: Number(position.coords.longitude),
+            accuracy: Number(position.coords.accuracy),
+          },
+          warning: '',
+        });
+      },
+      (error) => {
+        let warning = '';
+        if (error?.code === error.PERMISSION_DENIED) {
+          warning = 'Location permission was denied. If attendance fencing is active, the request may be rejected.';
+        } else if (error?.code === error.TIMEOUT) {
+          warning = 'Location lookup timed out. The server will decide whether the request can continue.';
+        }
+
+        resolve({ context: {}, warning });
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 8000,
+        maximumAge: 60000,
+      }
+    );
+  });
+}
+
 async function apiRequest(path, session, options = {}) {
   const response = await fetch(`${config.apiBaseUrl}${path}`, {
     method: options.method || 'GET',
@@ -135,7 +171,12 @@ async function submitAttendance(session, type) {
   try {
     actionButton.disabled = true;
     actionButton.textContent = type === 'checkin' ? t('checkin.checkinLoading') : t('checkin.checkoutLoading');
-    await apiRequest(`/attendance/${type}`, session, { method: 'POST' });
+    const { context, warning } = await getCurrentPosition();
+    if (warning) {
+      setNotice(warning);
+    }
+
+    await apiRequest(`/attendance/${type}`, session, { method: 'POST', body: context });
     await renderState(session, await fetchProfile(session.user.id));
   } catch (error) {
     setError(error.message);

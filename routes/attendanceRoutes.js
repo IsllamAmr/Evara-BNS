@@ -8,8 +8,14 @@ const { attendanceActionLimiter, adminWriteLimiter } = require('../middlewares/r
 
 const router = express.Router();
 
-router.post('/checkin', attendanceActionLimiter, protect, checkIn);
-router.post('/checkout', attendanceActionLimiter, protect, checkOut);
+const attendanceContextValidators = [
+  body('latitude').optional({ nullable: true }).isFloat({ min: -90, max: 90 }).withMessage('latitude must be a valid latitude'),
+  body('longitude').optional({ nullable: true }).isFloat({ min: -180, max: 180 }).withMessage('longitude must be a valid longitude'),
+  body('accuracy').optional({ nullable: true }).isFloat({ min: 0 }).withMessage('accuracy must be a valid positive number'),
+];
+
+router.post('/checkin', attendanceActionLimiter, protect, attendanceContextValidators, handleValidation, checkIn);
+router.post('/checkout', attendanceActionLimiter, protect, attendanceContextValidators, handleValidation, checkOut);
 router.post(
   '/manual',
   adminWriteLimiter,

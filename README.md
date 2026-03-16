@@ -9,6 +9,9 @@ EVARA BNS is a Supabase-powered employee attendance system with role-based acces
 - Live attendance check-in and check-out
 - QR attendance access
 - Manual attendance entry for admins
+- Leave and permission requests with admin approval
+- Attendance fencing by company network and/or geolocation
+- 8-hour actuals dashboard for daily shift completion, overtime, and shortfall
 - CSV export for employees and attendance history
 - Advanced reports with working hours, overtime, shortfall, and employee timesheets
 - Client-side pagination for employee and history views
@@ -45,6 +48,13 @@ RATE_LIMIT_MAX_REQUESTS=200
 ADMIN_RATE_LIMIT_MAX=80
 ATTENDANCE_RATE_LIMIT_WINDOW_MS=300000
 ATTENDANCE_RATE_LIMIT_MAX=30
+ATTENDANCE_ACCESS_MODE=off
+ATTENDANCE_ALLOWED_IPS=
+ATTENDANCE_ALLOWED_IP_PREFIXES=
+ATTENDANCE_ALLOWED_CIDRS=
+ATTENDANCE_GEOFENCE_LAT=
+ATTENDANCE_GEOFENCE_LNG=
+ATTENDANCE_GEOFENCE_RADIUS_METERS=
 QR_TARGET_URL=http://localhost:5000/checkin
 TRUST_PROXY_HOPS=0
 ```
@@ -71,8 +81,17 @@ npm run check
 1. Open the Supabase SQL editor.
 2. Run [supabase/migrations/001_initial_schema.sql](supabase/migrations/001_initial_schema.sql).
 3. Run [supabase/migrations/002_fix_attendance_timestamp_functions.sql](supabase/migrations/002_fix_attendance_timestamp_functions.sql).
-4. Enable Email/Password authentication in Supabase Auth.
-5. Set redirect URLs for your local or deployed app.
+4. Run [supabase/migrations/003_leave_management_and_attendance_fencing.sql](supabase/migrations/003_leave_management_and_attendance_fencing.sql).
+5. Enable Email/Password authentication in Supabase Auth.
+6. Set redirect URLs for your local or deployed app.
+
+### Attendance Fencing Modes
+
+- `off`: no attendance restriction
+- `ip`: only approved IPs, prefixes, or CIDR ranges can submit attendance
+- `geo`: browser location must be inside the configured office radius
+- `either`: approved network or approved location
+- `both`: approved network and approved location together
 
 ## Deployment Notes
 

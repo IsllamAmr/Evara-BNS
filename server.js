@@ -10,6 +10,8 @@ const { bootstrapInitialAdmin } = require('./services/bootstrapService');
 const { isSupabaseConfigured, supabaseUrl } = require('./config/supabase');
 const adminRoutes = require('./routes/adminRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
+const leaveRoutes = require('./routes/leaveRoutes');
+const { attendanceRestrictionSummary } = require('./services/attendanceGuardService');
 const { sanitizeRequest } = require('./middlewares/sanitizeMiddleware');
 const { apiLimiter } = require('./middlewares/rateLimiters');
 const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
@@ -121,12 +123,14 @@ app.get('/api/health', (req, res) => {
     message: 'EVARA BNS Supabase backend is running',
     supabase_configured: isSupabaseConfigured(),
     supabase_host: supabaseUrl || null,
+    attendance_restrictions: attendanceRestrictionSummary(),
     timestamp: new Date().toISOString(),
   });
 });
 
 app.use('/api/admin', adminRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/leaves', leaveRoutes);
 
 app.get('/checkin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'checkin.html'));

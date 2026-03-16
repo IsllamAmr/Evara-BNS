@@ -1,13 +1,17 @@
 ﻿const asyncHandler = require('../utils/asyncHandler');
 const attendanceWriteService = require('../services/attendanceWriteService');
 const attendanceAdminService = require('../services/attendanceAdminService');
+const attendanceGuardService = require('../services/attendanceGuardService');
 const qrService = require('../services/qrService');
 const { sendSuccess } = require('../utils/responseHelper');
 
 const checkIn = asyncHandler(async (req, res) => {
+  const attendanceContext = attendanceGuardService.extractAttendanceContext(req);
+  attendanceGuardService.validateAttendanceAccess(attendanceContext);
+
   const data = await attendanceWriteService.checkIn(req.supabase, {
-    p_ip_address: req.ip || null,
-    p_device_info: req.headers['user-agent'] || null,
+    p_ip_address: attendanceContext.ipAddress || null,
+    p_device_info: attendanceGuardService.buildDeviceInfo(req),
   });
 
   return sendSuccess(
@@ -21,9 +25,12 @@ const checkIn = asyncHandler(async (req, res) => {
 });
 
 const checkOut = asyncHandler(async (req, res) => {
+  const attendanceContext = attendanceGuardService.extractAttendanceContext(req);
+  attendanceGuardService.validateAttendanceAccess(attendanceContext);
+
   const data = await attendanceWriteService.checkOut(req.supabase, {
-    p_ip_address: req.ip || null,
-    p_device_info: req.headers['user-agent'] || null,
+    p_ip_address: attendanceContext.ipAddress || null,
+    p_device_info: attendanceGuardService.buildDeviceInfo(req),
   });
 
   return sendSuccess(res, {
