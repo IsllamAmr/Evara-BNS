@@ -407,6 +407,15 @@ async function fetchAttendance(filters = {}) {
   return data || [];
 }
 
+async function fetchSystemHealth() {
+  try {
+    const payload = await apiRequest('/health');
+    return payload.attendance_restrictions || null;
+  } catch (_error) {
+    return null;
+  }
+}
+
 function buildQueryString(params = {}) {
   const query = new URLSearchParams();
 
@@ -473,6 +482,38 @@ async function collectAttendanceContext() {
 
 function sumMetrics(items = [], selector) {
   return items.reduce((total, item) => total + Number(selector(item) || 0), 0);
+}
+
+function attendanceRestrictionMessage(summary) {
+  if (!summary || !summary.access_mode || summary.access_mode === 'off') {
+    return '';
+  }
+
+  if (summary.access_mode === 'ip') {
+    return 'Attendance is limited to the approved company network.';
+  }
+
+  if (summary.access_mode === 'geo') {
+    return 'Attendance is limited to the approved company location boundary.';
+  }
+
+  if (summary.access_mode === 'either') {
+    if (summary.ip_restrictions_enabled && summary.geofence_enabled) {
+      return 'Attendance requires either the approved company network or the approved company location.';
+    }
+    if (summary.ip_restrictions_enabled) {
+      return 'Attendance requires the approved company network.';
+    }
+    if (summary.geofence_enabled) {
+      return 'Attendance requires the approved company location.';
+    }
+  }
+
+  if (summary.access_mode === 'both') {
+    return 'Attendance requires both the approved company network and the approved company location.';
+  }
+
+  return '';
 }
 
 async function ensureProfileDirectory(records = []) {
