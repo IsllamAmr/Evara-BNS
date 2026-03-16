@@ -1,33 +1,21 @@
 :root {
-  /* Premium Dark Mode Core */
-  --bg: #0d1116; /* Deep midnight black */
-  --bg-strong: #161b22; /* Slightly elevated black */
-  --ink: #f0f6fc; /* Crisp white */
-  --muted: #8b949e; /* Elegant slate gray */
-  
-  /* Glass Surface Colors */
-  --surface: rgba(22, 27, 34, 0.65); /* High transparency for frosted glass */
-  --surface-strong: rgba(33, 38, 45, 0.85); /* Slightly more solid components */
-  --surface-dark: #0a0c10;
-  
-  /* Borders and Dividers */
-  --line: rgba(240, 246, 252, 0.08); /* Extremely subtle white border */
-  
-  /* Premium Accents */
-  --brand: #c5a365; /* Sophisticated muted gold/champagne */
-  --brand-deep: #e8d095; /* Brighter gold for hover/pop */
-  --accent: #58a6ff; /* Sleek electric blue for active states/links */
-  
-  /* Semantic Status Colors (Neon-like pastels on dark backgrounds) */
+  /* Soft Slate & Ocean */
+  --bg: #1e2329;
+  --bg-strong: #252a33;
+  --ink: #edf2f7;
+  --muted: #94a3b8;
+  --surface: #252a33;
+  --surface-strong: #2c323b;
+  --surface-dark: #171b21;
+  --line: rgba(148, 163, 184, 0.16);
+  --brand: #3b82f6;
+  --brand-deep: #60a5fa;
+  --accent: #93c5fd;
   --success: #3fb950;
   --danger: #f85149;
   --warning: #d29922;
-  
-  /* Premium Elevation & Shadows */
-  --shadow: 0 32px 64px rgba(0, 0, 0, 0.5); /* Deeper, softer shadow */
-  --shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.35); /* For smaller components */
-  
-  /* Sharper, Modern Border Radii */
+  --shadow: 0 10px 26px rgba(15, 23, 42, 0.12);
+  --shadow-sm: 0 2px 10px rgba(15, 23, 42, 0.08);
   --radius-lg: 24px;
   --radius-md: 16px;
   --radius-sm: 8px;
@@ -39,7 +27,7 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: url('assets/evara_bns_background_1773549442878.png') center center / cover no-repeat fixed;
+  background: linear-gradient(180deg, #1e2329 0%, #252a33 100%) fixed;
   color: var(--ink);
 }
 button, input, select, textarea { font: inherit; }
@@ -139,10 +127,10 @@ a { color: inherit; text-decoration: none; }
 .topbar,
 .modal-panel,
 .checkin-card {
-  backdrop-filter: blur(28px); /* Stronger frosted glass */
+  backdrop-filter: none;
   background: var(--surface);
   border: 1px solid var(--line);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-sm);
 }
 .login-screen .login-story,
 .login-screen .login-card {
@@ -259,8 +247,8 @@ textarea {
   width: 100%;
   padding: 0.9rem 1rem;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(25, 30, 36, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: #1f242c;
   color: var(--ink);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
@@ -268,9 +256,9 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: rgba(159, 176, 195, 0.75);
-  background: rgba(34, 40, 47, 0.96);
-  box-shadow: 0 0 0 4px rgba(159, 176, 195, 0.12);
+  border-color: rgba(59, 130, 246, 0.9);
+  background: #1f242c;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
 }
 .login-screen input,
 .login-screen select,
@@ -314,10 +302,10 @@ textarea:focus {
 }
 .btn-block { width: 100%; }
 .btn-primary {
-  background: linear-gradient(135deg, var(--brand), #af8a4b);
-  color: #111; /* Dark text on gold for high contrast luxury */
-  box-shadow: 0 8px 20px rgba(197, 163, 101, 0.3);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.2);
+  background: linear-gradient(135deg, var(--brand), #2563eb);
+  color: #eff6ff;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.16);
+  text-shadow: none;
 }
 .login-screen .btn-primary {
   background: #3b82f6;
@@ -338,11 +326,11 @@ textarea:focus {
 .btn:hover,
 .ghost-inline:hover,
 .nav-item:hover { 
-  transform: translateY(-2px); 
+  transform: translateY(-1px); 
 }
 .btn-primary:hover {
   background: linear-gradient(135deg, var(--brand-deep), var(--brand));
-  box-shadow: 0 12px 24px rgba(197, 163, 101, 0.5);
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.18);
 }
 .login-screen .btn-primary:hover {
   background: #2563eb;
@@ -357,10 +345,11 @@ textarea:focus {
 }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 .ghost-inline {
-  background: transparent;
+  background: rgba(148, 163, 184, 0.08);
   padding: 0.65rem 0.9rem;
   font-weight: 700;
   color: var(--accent);
+  border: 1px solid rgba(148, 163, 184, 0.12);
 }
 .login-screen .ghost-inline {
   color: #93c5fd;
@@ -401,6 +390,7 @@ textarea:focus {
   grid-template-columns: 290px 1fr;
   gap: 1.25rem;
   padding: 1.25rem;
+  background: linear-gradient(180deg, #1e2329 0%, #252a33 100%);
 }
 .sidebar {
   border-radius: 30px;
@@ -440,8 +430,8 @@ textarea:focus {
   position: relative;
 }
 .nav-item.active {
-  background: linear-gradient(135deg, rgba(137, 148, 161, 0.1), rgba(159, 176, 195, 0.05));
-  color: var(--brand); /* Use gold for active item to make it stand out */
+  background: rgba(59, 130, 246, 0.12);
+  color: #dbeafe;
 }
 .nav-item::after {
   content: '';
@@ -451,7 +441,7 @@ textarea:focus {
   bottom: 0.35rem;
   height: 2px;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--brand), var(--brand-deep));
+  background: linear-gradient(90deg, #3b82f6, #93c5fd);
   transform: scaleX(0.2);
   transform-origin: left center;
   opacity: 0;
@@ -472,7 +462,7 @@ textarea:focus {
   border-radius: 16px;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, #4a5562, #718194);
+  background: linear-gradient(135deg, #3b82f6, #60a5fa);
   color: #fff;
   font-weight: 800;
 }
@@ -510,10 +500,9 @@ textarea:focus {
   font-size: 0.84rem;
 }
 .page-panel {
-  backdrop-filter: blur(28px); /* Stronger frosted glass */
   background: var(--surface);
   border: 1px solid var(--line);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-sm);
   display: none;
   border-radius: 30px;
   padding: 1.4rem;
@@ -609,7 +598,7 @@ tbody tr {
   transition: background 0.15s ease;
 }
 tbody tr:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(59, 130, 246, 0.04);
 }
 tr:last-child td { border-bottom: 0; }
 .table-user {
@@ -693,8 +682,8 @@ tr:last-child td { border-bottom: 0; }
 .modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(20, 24, 32, 0.4);
-  backdrop-filter: blur(8px);
+  background: rgba(12, 18, 28, 0.56);
+  backdrop-filter: none;
 }
 .modal-panel {
   position: relative;
@@ -748,9 +737,10 @@ tr:last-child td { border-bottom: 0; }
   max-width: 100%;
   padding: 1rem 1.15rem;
   border-radius: 16px;
-  background: rgba(32, 37, 48, 0.94);
+  background: #2c323b;
   color: #fff;
-  box-shadow: 0 24px 55px rgba(18, 22, 31, 0.28);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
   opacity: 0;
   transform: translateY(10px);
   transition: opacity 0.18s ease, transform 0.18s ease;
@@ -759,9 +749,9 @@ tr:last-child td { border-bottom: 0; }
   opacity: 1;
   transform: translateY(0);
 }
-.toast.success { background: rgba(31, 138, 91, 0.94); }
-.toast.error { background: rgba(176, 75, 72, 0.96); }
-.toast.info { background: rgba(35, 78, 112, 0.96); }
+.toast.success { background: #24382f; }
+.toast.error { background: #3a2528; }
+.toast.info { background: #243246; }
 .toast-copy strong {
   display: block;
   margin-bottom: 0.2rem;
@@ -797,8 +787,8 @@ tr:last-child td { border-bottom: 0; }
 .pagination-pill {
   padding: 0.6rem 0.85rem;
   border-radius: 999px;
-  background: rgba(159, 176, 195, 0.12);
-  border: 1px solid rgba(159, 176, 195, 0.14);
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.16);
   color: var(--ink);
   font-size: 0.88rem;
   font-weight: 700;
@@ -809,8 +799,9 @@ tr:last-child td { border-bottom: 0; }
 .chart-shell {
   border-radius: 24px;
   padding: 1rem;
-  background: rgba(30, 35, 42, 0.76);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #232830;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
 }
 .chart-shell canvas {
   display: block;
@@ -859,8 +850,9 @@ tr:last-child td { border-bottom: 0; }
   place-items: center;
   padding: 1.2rem;
   border-radius: 24px;
-  background: rgba(30, 35, 42, 0.92);
-  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.24);
+  background: #232830;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
 }
 .qr-frame img {
   width: min(280px, 100%);
