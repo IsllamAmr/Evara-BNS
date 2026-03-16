@@ -1,4 +1,4 @@
-﻿export function escapeHtml(value) {
+export function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -76,4 +76,3 @@ export function toInitials(value) {
 export function isStrongPassword(value) {
   return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/.test(String(value || ''));
 }
-

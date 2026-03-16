@@ -15,15 +15,6 @@ const config = getAppConfig();
 const supabase = isSupabaseReady() ? getSupabase() : null;
 const PROFILE_SELECT = 'id, full_name, email, role, is_active, employee_code, phone, department, position, status, created_at, updated_at';
 const ATTENDANCE_SELECT = 'id, user_id, attendance_date, check_in_time, check_out_time, attendance_status, ip_address, device_info, created_at, updated_at';
-const PAGE_TITLES = {
-  dashboard: ['Workspace', 'Dashboard'],
-  profile: ['Workspace', 'My Profile'],
-  employees: ['Administration', 'Employee Management'],
-  attendance: ['Operations', 'Attendance'],
-  history: ['Operations', 'Attendance History'],
-  reports: ['Insights', 'Reports & Analytics'],
-  qr: ['Administration', 'QR Access'],
-};
 const DEPARTMENT_OPTIONS = [
   'Administration',
   'Business Development',
@@ -45,6 +36,20 @@ const BUSINESS_TIME_ZONE = 'Africa/Cairo';
 const FULL_SHIFT_MINUTES = 8 * 60;
 const ON_TIME_THRESHOLD_MINUTES = (9 * 60) + 15;
 const SHIFT_END_MINUTES = 17 * 60;
+const TOPBAR_MESSAGES = {
+  beforeCheckIn: {
+    headline: 'Start your day with focus and calm confidence.',
+    subline: 'Small consistent steps create strong results.',
+  },
+  duringShift: {
+    headline: 'You are in motion now, so keep your rhythm steady.',
+    subline: 'A calm pace and clear attention will help you finish strong.',
+  },
+  afterCheckOut: {
+    headline: 'Great work today, you finished strong and moved the day forward.',
+    subline: 'Take a breath, recharge well, and come back tomorrow with fresh energy.',
+  },
+};
 const state = {
   session: null,
   profile: null,
@@ -93,8 +98,8 @@ const elements = {
   sidebarAvatar: document.getElementById('sidebarAvatar'),
   logoutBtn: document.getElementById('logoutBtn'),
   menuToggle: document.getElementById('menuToggle'),
-  topbarEyebrow: document.getElementById('topbarEyebrow'),
-  topbarTitle: document.getElementById('topbarTitle'),
+  topbarHeadline: document.getElementById('topbarHeadline'),
+  topbarSubline: document.getElementById('topbarSubline'),
   topbarClock: document.getElementById('topbarClock'),
   topbarDate: document.getElementById('topbarDate'),
   modal: document.getElementById('modal'),
@@ -443,11 +448,41 @@ function syncPageFrame(page) {
   Object.entries(elements.pages).forEach(([key, value]) => {
     value.classList.toggle('active', key === page);
   });
-
-  const [eyebrow, title] = PAGE_TITLES[page] || ['Workspace', 'EVARA BNS'];
-  elements.topbarEyebrow.textContent = eyebrow;
-  elements.topbarTitle.textContent = title;
   syncShell();
+  refreshTopbarMessage().catch(() => {
+    // Keep the existing copy if the attendance state cannot be loaded right now.
+  });
+}
+
+async function refreshTopbarMessage() {
+  if (!state.profile) {
+    return;
+  }
+
+  let message = TOPBAR_MESSAGES.beforeCheckIn;
+
+  try {
+    const todayRecord = (await fetchAttendance({
+      userId: state.profile.id,
+      date: todayIso(),
+      limit: 1,
+    }))[0] || null;
+
+    if (todayRecord?.check_out_time) {
+      message = TOPBAR_MESSAGES.afterCheckOut;
+    } else if (todayRecord?.check_in_time) {
+      message = TOPBAR_MESSAGES.duringShift;
+    }
+  } catch (_error) {
+    message = TOPBAR_MESSAGES.beforeCheckIn;
+  }
+
+  if (elements.topbarHeadline) {
+    elements.topbarHeadline.textContent = message.headline;
+  }
+  if (elements.topbarSubline) {
+    elements.topbarSubline.textContent = message.subline;
+  }
 }
 
 function bindStaticEvents() {
@@ -2853,6 +2888,7 @@ async function submitAttendanceAction(type) {
     await apiRequest(`/attendance/${type}`, { method: 'POST' });
     showToast(type === 'checkin' ? 'Check-in recorded successfully.' : 'Check-out recorded successfully.', 'success');
     await renderAttendancePage();
+    await refreshTopbarMessage();
   } catch (error) {
     showToast(error.message, 'error');
   }
