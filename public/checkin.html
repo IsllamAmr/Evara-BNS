@@ -16,38 +16,44 @@
   <main class="checkin-shell">
     <section class="checkin-card">
       <button type="button" class="language-toggle checkin-language-toggle" data-language-toggle>العربية</button>
-      <div class="brand-mark">
-        <img src="assets/image.png" alt="EVARA BNS logo" class="brand-logo" />
+      <div class="checkin-head">
+        <div class="brand-mark checkin-brand">
+          <img src="assets/image.png" alt="EVARA BNS logo" class="brand-logo" />
+        </div>
+        <div class="checkin-live-meta">
+          <div class="checkin-live-chip">
+            <span class="meta-label" data-i18n="checkin.today">Today</span>
+            <strong id="checkinToday">--</strong>
+          </div>
+          <div class="checkin-live-chip">
+            <span class="meta-label" data-i18n="checkin.currentTime">Current time</span>
+            <strong id="checkinClock">--:--</strong>
+          </div>
+        </div>
       </div>
       <p class="eyebrow" data-i18n="checkin.eyebrow">Quick Attendance</p>
-      <h1 data-i18n="checkin.title">Check in from your phone in seconds.</h1>
-      <p class="checkin-copy" data-i18n="checkin.copy">If you are not signed in, we will send you to the secure login page first and bring you right back.</p>
+      <h1 data-i18n="checkin.title">Quick mobile attendance.</h1>
+      <p class="checkin-copy" data-i18n="checkin.copy">Sign in once, then check in or out instantly.</p>
 
       <div id="checkinNotice" class="form-alert info hidden"></div>
       <div id="checkinError" class="form-alert error hidden"></div>
 
-      <div id="checkinStatus" class="status-card compact">
-        <div>
+      <div id="checkinStatus" class="status-card compact checkin-status-card">
+        <div class="checkin-status-main">
+          <div class="checkin-status-topline">
+            <span id="checkinStatePill" class="status-pill neutral" data-i18n="checkin.loadingButton">Loading</span>
+            <span id="checkinIdentity" class="checkin-identity">--</span>
+          </div>
           <span class="status-label" data-i18n="checkin.statusLabel">Attendance status</span>
           <strong id="checkinStatusTitle" data-i18n="checkin.loadingTitle">Checking your session</strong>
           <p id="checkinStatusText" data-i18n="checkin.loadingText">Please wait while we load your attendance state.</p>
+          <div id="checkinStatusMeta" class="checkin-status-meta hidden"></div>
         </div>
       </div>
 
       <div class="checkin-actions">
         <button id="checkinActionBtn" type="button" class="btn btn-primary btn-block" data-i18n="checkin.loadingButton" disabled>Loading</button>
-        <a href="/" class="btn btn-secondary btn-block" data-i18n="common.openDashboard">Open Dashboard</a>
-      </div>
-
-      <div class="checkin-meta">
-        <div>
-          <span class="meta-label" data-i18n="checkin.today">Today</span>
-          <strong id="checkinToday">--</strong>
-        </div>
-        <div>
-          <span class="meta-label" data-i18n="checkin.currentTime">Current time</span>
-          <strong id="checkinClock">--:--</strong>
-        </div>
+        <button id="checkinSecondaryBtn" type="button" class="btn btn-secondary btn-block" data-i18n="common.openDashboard">Open Dashboard</button>
       </div>
     </section>
   </main>

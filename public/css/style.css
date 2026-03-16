@@ -976,16 +976,121 @@ tr:last-child td { border-bottom: 0; }
   padding: 1.5rem;
 }
 .checkin-shell {
-  width: min(560px, 100%);
+  width: min(620px, 100%);
 }
 .checkin-card {
   border-radius: 32px;
-  padding: 2rem;
+  padding: 1.6rem;
+  display: grid;
+  gap: 1rem;
 }
+.checkin-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.checkin-brand {
+  width: 146px;
+  height: 48px;
+  flex: 0 0 auto;
+}
+.checkin-live-meta,
 .checkin-actions,
-.checkin-meta {
+.checkin-status-meta {
   display: grid;
   gap: 0.75rem;
+}
+.checkin-live-meta {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: min(100%, 260px);
+}
+.checkin-live-chip,
+.checkin-status-meta-item {
+  border-radius: 16px;
+  padding: 0.8rem 0.9rem;
+  background: rgba(15, 23, 42, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+.checkin-live-chip strong,
+.checkin-status-meta-item strong {
+  display: block;
+  font-size: 1rem;
+}
+.checkin-card h1 {
+  max-width: 11ch;
+  font-size: clamp(2.1rem, 7vw, 3.4rem);
+}
+.checkin-copy {
+  max-width: 34ch;
+  font-size: 1rem;
+}
+.checkin-status-card {
+  display: block;
+}
+.checkin-status-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--line);
+}
+.status-pill.neutral {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--muted);
+}
+.status-pill.ready {
+  background: rgba(59, 130, 246, 0.14);
+  color: #bfdbfe;
+  border-color: rgba(59, 130, 246, 0.32);
+}
+.status-pill.progress {
+  background: rgba(37, 99, 235, 0.18);
+  color: #dbeafe;
+  border-color: rgba(96, 165, 250, 0.34);
+}
+.status-pill.success {
+  background: rgba(63, 185, 80, 0.16);
+  color: #86efac;
+  border-color: rgba(63, 185, 80, 0.35);
+}
+.status-pill.warning {
+  background: rgba(210, 153, 34, 0.14);
+  color: #fde68a;
+  border-color: rgba(210, 153, 34, 0.28);
+}
+.checkin-identity {
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.checkin-status-meta {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 1rem;
+}
+.checkin-status-meta-item span {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 html[dir='rtl'] .toolbar,
 html[dir='rtl'] .toolbar-wide,
@@ -999,11 +1104,6 @@ html[dir='rtl'] textarea,
 html[dir='rtl'] button {
   text-align: right;
 }
-.checkin-meta {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 1.25rem;
-}
-.checkin-meta strong { display: block; font-size: 1.15rem; }
 .qr-frame {
   display: grid;
   place-items: center;
@@ -1052,13 +1152,52 @@ html[dir='rtl'] button {
   .checkin-card { border-radius: 24px; }
   .story-grid,
   .form-grid,
-  .checkin-meta,
   .summary-grid { grid-template-columns: 1fr; }
   .section-header,
   .status-card,
   .topbar,
   .modal-footer { align-items: stretch; flex-direction: column; }
   .hero-line { white-space: normal; }
+  .checkin-card {
+    padding: 1.15rem;
+    gap: 0.85rem;
+  }
+  .checkin-brand {
+    width: 122px;
+    height: 42px;
+  }
+  .checkin-head {
+    flex-direction: column;
+  }
+  .checkin-live-meta,
+  .checkin-status-meta {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+  }
+  .checkin-live-meta {
+    width: 100%;
+  }
+  .checkin-live-chip,
+  .checkin-status-meta-item {
+    padding: 0.7rem 0.75rem;
+    border-radius: 14px;
+  }
+  .checkin-card h1 {
+    max-width: 10ch;
+    font-size: clamp(2.35rem, 11vw, 3.4rem);
+    line-height: 0.98;
+  }
+  .checkin-copy {
+    max-width: 28ch;
+    font-size: 0.98rem;
+    line-height: 1.45;
+  }
+  .checkin-identity {
+    font-size: 0.9rem;
+  }
+  .checkin-actions .btn {
+    min-height: 54px;
+  }
 }
 
 

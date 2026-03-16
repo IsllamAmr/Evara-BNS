@@ -11,9 +11,13 @@ const config = getAppConfig();
 const supabase = isSupabaseReady() ? getSupabase() : null;
 const notice = document.getElementById('checkinNotice');
 const errorBox = document.getElementById('checkinError');
+const statePill = document.getElementById('checkinStatePill');
+const identityLabel = document.getElementById('checkinIdentity');
 const statusTitle = document.getElementById('checkinStatusTitle');
 const statusText = document.getElementById('checkinStatusText');
+const statusMeta = document.getElementById('checkinStatusMeta');
 const actionButton = document.getElementById('checkinActionBtn');
+const secondaryActionButton = document.getElementById('checkinSecondaryBtn');
 const todayLabel = document.getElementById('checkinToday');
 const clockLabel = document.getElementById('checkinClock');
 let currentSession = null;
@@ -37,6 +41,44 @@ function setError(message = '') {
 function setNotice(message = '') {
   notice.textContent = message;
   notice.classList.toggle('hidden', !message);
+}
+
+function setStatePill(label, tone = 'neutral') {
+  statePill.textContent = label;
+  statePill.className = `status-pill ${tone}`;
+}
+
+function setIdentity(profile) {
+  identityLabel.textContent = profile?.department
+    ? `${profile.full_name} • ${profile.department}`
+    : (profile?.full_name || '--');
+}
+
+function renderStatusMeta(items = []) {
+  if (!items.length) {
+    statusMeta.innerHTML = '';
+    statusMeta.classList.add('hidden');
+    return;
+  }
+
+  statusMeta.innerHTML = items.map((item) => `
+    <div class="checkin-status-meta-item">
+      <span>${item.label}</span>
+      <strong>${item.value}</strong>
+    </div>
+  `).join('');
+  statusMeta.classList.remove('hidden');
+}
+
+function configureActionButton({ label, disabled = false, onClick }) {
+  actionButton.disabled = disabled;
+  actionButton.textContent = label;
+  actionButton.onclick = typeof onClick === 'function' ? onClick : null;
+}
+
+function configureSecondaryButton({ label, onClick }) {
+  secondaryActionButton.textContent = label;
+  secondaryActionButton.onclick = typeof onClick === 'function' ? onClick : null;
 }
 
 function updateClock() {
@@ -134,37 +176,58 @@ async function fetchTodayAttendance(userId) {
 async function renderState(session, profile) {
   const todayRecord = await fetchTodayAttendance(session.user.id);
   setError();
-  setNotice(t('checkin.signedInAs', {
-    name: profile.full_name,
-    department: profile.department ? ` · ${profile.department}` : '',
-  }));
+  setNotice();
+  setIdentity(profile);
+  configureSecondaryButton({
+    label: t('common.openDashboard'),
+    onClick: () => window.location.assign('/'),
+  });
 
   if (!todayRecord || !todayRecord.check_in_time) {
+    setStatePill(t('checkin.readyBadge'), 'ready');
     statusTitle.textContent = t('checkin.readyTitle');
     statusText.textContent = t('checkin.readyText');
-    actionButton.disabled = false;
-    actionButton.textContent = t('checkin.checkInNow');
-    actionButton.onclick = () => submitAttendance(session, 'checkin');
+    renderStatusMeta([]);
+    configureActionButton({
+      disabled: false,
+      label: t('checkin.checkInNow'),
+      onClick: () => submitAttendance(session, 'checkin'),
+    });
     return;
   }
 
   if (!todayRecord.check_out_time) {
-    statusTitle.textContent = statusLabel(todayRecord.attendance_status);
+    setStatePill(t('checkin.checkedInBadge'), 'progress');
+    statusTitle.textContent = t('checkin.checkedInTitle');
     statusText.textContent = t('checkin.checkedInText', { time: formatTime(todayRecord.check_in_time) });
-    actionButton.disabled = false;
-    actionButton.textContent = t('checkin.checkOutNow');
-    actionButton.onclick = () => submitAttendance(session, 'checkout');
+    renderStatusMeta([
+      { label: t('checkin.checkInTimeLabel'), value: formatTime(todayRecord.check_in_time) },
+      { label: t('checkin.statusSummaryLabel'), value: statusLabel(todayRecord.attendance_status) },
+    ]);
+    configureActionButton({
+      disabled: false,
+      label: t('checkin.checkOutNow'),
+      onClick: () => submitAttendance(session, 'checkout'),
+    });
     return;
   }
 
+  setStatePill(t('checkin.completedBadge'), 'success');
   statusTitle.textContent = t('checkin.completedTitle');
-  statusText.textContent = t('checkin.completedText', {
-    checkIn: formatTime(todayRecord.check_in_time),
-    checkOut: formatTime(todayRecord.check_out_time),
+  statusText.textContent = t('checkin.completedText');
+  renderStatusMeta([
+    { label: t('checkin.checkInTimeLabel'), value: formatTime(todayRecord.check_in_time) },
+    { label: t('checkin.checkOutTimeLabel'), value: formatTime(todayRecord.check_out_time) },
+  ]);
+  configureActionButton({
+    disabled: false,
+    label: t('common.openDashboard'),
+    onClick: () => window.location.assign('/'),
   });
-  actionButton.disabled = true;
-  actionButton.textContent = t('checkin.completedButton');
-  actionButton.onclick = null;
+  configureSecondaryButton({
+    label: t('checkin.refreshStatus'),
+    onClick: () => renderState(session, profile).catch((error) => setError(error.message)),
+  });
 }
 
 async function submitAttendance(session, type) {
@@ -204,8 +267,19 @@ async function boot() {
 
   if (!isSupabaseReady()) {
     setError(t('checkin.configurationMissing'));
+    setStatePill(t('common.actionNeeded'), 'warning');
+    setIdentity(null);
+    renderStatusMeta([]);
     statusTitle.textContent = t('checkin.configurationRequired');
     statusText.textContent = t('checkin.configurationText');
+    configureActionButton({
+      disabled: true,
+      label: t('checkin.loadingButton'),
+    });
+    configureSecondaryButton({
+      label: t('common.openDashboard'),
+      onClick: () => window.location.assign('/'),
+    });
     return;
   }
 
@@ -228,7 +302,18 @@ async function boot() {
     await renderState(session, profile);
   } catch (error) {
     setError(error.message);
+    setStatePill(t('common.actionNeeded'), 'warning');
     statusTitle.textContent = t('checkin.unableToContinue');
     statusText.textContent = t('checkin.returnDashboard');
+    renderStatusMeta([]);
+    configureActionButton({
+      disabled: false,
+      label: t('common.openDashboard'),
+      onClick: () => window.location.assign('/'),
+    });
+    configureSecondaryButton({
+      label: t('checkin.refreshStatus'),
+      onClick: () => window.location.reload(),
+    });
   }
 }
