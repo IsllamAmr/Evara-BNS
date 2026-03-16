@@ -1,5 +1,5 @@
 import { departmentLabel, formatDate, formatTime, roleLabel, statusLabel } from './shared.js';
-import { attendanceOutcome, formatAverageTime, formatDuration, FULL_SHIFT_MINUTES } from './reporting.js';
+import { attendanceOutcome, formatDuration, FULL_SHIFT_MINUTES } from './reporting.js';
 
 function csvValue(value) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -78,11 +78,9 @@ export function exportReportsCsv(report, filters) {
   downloadCsvFile(
     `reports-${monthToken(filters)}-${departmentToken}-${employeeToken}.csv`,
     [
-      'Employee Name',
-      'Employee Code',
+      'Name',
       'Email',
       'Department',
-      'Position',
       'Days Present',
       'Days Absent',
       'Late Arrivals',
@@ -90,20 +88,11 @@ export function exportReportsCsv(report, filters) {
       'Expected Hours',
       'Overtime',
       'Shortfall',
-      'Attendance Rate (%)',
-      'On-Time Arrival (%)',
-      'Average Check In',
-      'Average Check Out',
-      'Complete Shifts',
-      'Trend',
-      'Trend Note',
     ],
     report.byEmployee.map((item) => [
       item.employee.full_name,
-      item.employee.employee_code || '',
       item.employee.email || '',
-      departmentLabel(item.employee.department),
-      item.employee.position || '',
+      item.employee.department || departmentLabel(item.employee.department),
       item.presentDays,
       item.absentDays,
       item.lateArrivals,
@@ -111,13 +100,6 @@ export function exportReportsCsv(report, filters) {
       formatDuration(item.expectedMinutes),
       formatDuration(item.overtimeMinutes),
       formatDuration(item.shortfallMinutes),
-      item.attendanceRate,
-      item.onTimeArrivalRate,
-      formatAverageTime(item.averageCheckIn),
-      formatAverageTime(item.averageCheckOut),
-      item.detailedRows.filter((entry) => entry.metrics.isCompleteShift).length,
-      item.trend.label,
-      item.trend.note,
     ])
   );
 }
