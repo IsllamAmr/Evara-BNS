@@ -1790,6 +1790,7 @@ function openEmployeeView(employee) {
     <div class="modal-footer">
       <div class="inline-actions">
         <button id="viewEditEmployeeBtn" type="button" class="btn btn-secondary">Edit</button>
+        ${isAdmin() ? '<button id="viewManualAttendanceBtn" type="button" class="btn btn-secondary">Add Manual Record</button>' : ''}
       </div>
       <div class="inline-actions">
         <button id="closeEmployeeViewBtn" type="button" class="btn btn-primary">Done</button>
@@ -1801,6 +1802,15 @@ function openEmployeeView(employee) {
   document.getElementById('closeEmployeeViewBtn')?.addEventListener('click', closeModal);
   document.getElementById('viewEditEmployeeBtn')?.addEventListener('click', () => {
     openEmployeeForm('edit', employee);
+  });
+  document.getElementById('viewManualAttendanceBtn')?.addEventListener('click', () => {
+    openManualAttendanceForm({
+      userId: employee.id,
+      attendanceDate: todayIso(),
+      onSaved: async () => {
+        await renderAttendancePage();
+      },
+    });
   });
 }
 
@@ -1920,8 +1930,13 @@ function openResetPasswordModal(employee) {
   });
 }
 
-function openManualAttendanceForm() {
+function openManualAttendanceForm(options = {}) {
   const employees = [...state.employees].sort((a, b) => a.full_name.localeCompare(b.full_name));
+  const defaultUserId = options.userId || '';
+  const defaultAttendanceDate = options.attendanceDate || todayIso();
+  const onSaved = typeof options.onSaved === 'function' ? options.onSaved : async () => {
+    await renderAttendancePage();
+  };
 
   openModal(`
     <div class="modal-header">
@@ -1937,12 +1952,12 @@ function openManualAttendanceForm() {
           <label for="manual_user_id">Employee</label>
           <select id="manual_user_id" name="user_id" required>
             <option value="">Select employee</option>
-            ${employees.map((employee) => `<option value="${employee.id}">${escapeHtml(employee.full_name)}${employee.employee_code ? ` - ${escapeHtml(employee.employee_code)}` : ''}</option>`).join('')}
+            ${employees.map((employee) => `<option value="${employee.id}" ${defaultUserId === employee.id ? 'selected' : ''}>${escapeHtml(employee.full_name)}${employee.employee_code ? ` - ${escapeHtml(employee.employee_code)}` : ''}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
           <label for="manual_attendance_date">Attendance Date</label>
-          <input id="manual_attendance_date" name="attendance_date" type="date" value="${todayIso()}" required />
+          <input id="manual_attendance_date" name="attendance_date" type="date" value="${escapeHtml(defaultAttendanceDate)}" required />
         </div>
         <div class="form-group">
           <label for="manual_attendance_status">Status</label>
@@ -2015,7 +2030,7 @@ function openManualAttendanceForm() {
       });
       closeModal(true);
       showToast('Manual attendance saved successfully.', 'success');
-      await renderAttendancePage();
+      await onSaved();
     } catch (error) {
       showFormError('manualAttendanceError', error.message);
       submitButton.disabled = false;
@@ -2111,7 +2126,7 @@ async function renderAttendancePage() {
               <p>Monitor check-ins and check-outs as they happen, export records, and add manual entries when needed.</p>
             </div>
             <div class="inline-actions">
-              <button id="manualAttendanceBtn" type="button" class="btn btn-primary">Manual Entry</button>
+              <button id="manualAttendanceBtn" type="button" class="btn btn-primary">Add Manual Record</button>
               <button id="exportAttendanceBtn" type="button" class="btn btn-secondary">Export CSV</button>
               <button id="attendanceRefreshBtn" type="button" class="btn btn-secondary">Refresh</button>
             </div>
@@ -2150,7 +2165,13 @@ async function renderAttendancePage() {
       `;
 
       container.querySelector('#attendanceRefreshBtn')?.addEventListener('click', () => renderAttendancePage().catch((error) => setPageError(container, error.message)));
-      container.querySelector('#manualAttendanceBtn')?.addEventListener('click', openManualAttendanceForm);
+      container.querySelector('#manualAttendanceBtn')?.addEventListener('click', () => {
+        openManualAttendanceForm({
+          onSaved: async () => {
+            await renderAttendancePage();
+          },
+        });
+      });
       container.querySelector('#exportAttendanceBtn')?.addEventListener('click', () => {
         exportAttendanceCsv(todayRecords);
         showToast('Attendance CSV exported successfully.', 'success');
@@ -2251,6 +2272,7 @@ async function renderHistoryPage() {
             <h1>Attendance History</h1>
             <p>Filter live attendance rows by date range and status.</p>
           </div>
+          ${isAdmin() ? '<button id="historyManualAttendanceBtn" type="button" class="btn btn-primary">Add Manual Record</button>' : ''}
         </div>
         <section class="card-block">
           <div class="toolbar toolbar-wide">
@@ -2296,6 +2318,14 @@ async function renderHistoryPage() {
       state.historyFilters.status = container.querySelector('#historyStatus').value;
       state.historyPagination.page = 1;
       renderHistoryPage().catch((error) => setPageError(container, error.message));
+    });
+    container.querySelector('#historyManualAttendanceBtn')?.addEventListener('click', () => {
+      openManualAttendanceForm({
+        attendanceDate: state.historyFilters.to || todayIso(),
+        onSaved: async () => {
+          await renderHistoryPage();
+        },
+      });
     });
     container.querySelector('#historyExportBtn')?.addEventListener('click', () => {
       exportAttendanceCsv(records);
