@@ -69,6 +69,16 @@ const HISTORY_PAGE_SIZE = 12;
 const EMPLOYEE_CACHE_TTL_MS = 60 * 1000;
 const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const INPUT_DEBOUNCE_MS = 220;
+const QUERY_CACHE_TTL_MS = {
+  employees: EMPLOYEE_CACHE_TTL_MS,
+  employeeDirectory: 20 * 1000,
+  employeeStats: 30 * 1000,
+  attendance: 12 * 1000,
+  attendancePage: 12 * 1000,
+  reports: 20 * 1000,
+  profile: 20 * 1000,
+  qr: 60 * 1000,
+};
 const state = {
   session: null,
   profile: null,
@@ -168,6 +178,8 @@ const elements = {
 let modalCloseHandler = null;
 let realtimeChannels = [];
 let employeeSearchDebounceId = null;
+const queryCache = new Map();
+let prefetchTimerId = null;
 
 boot();
 
@@ -336,10 +348,15 @@ function resetSessionState() {
 
   state.attendanceRestrictions = null;
   state.attendanceRestrictionsFetchedAt = 0;
+  queryCache.clear();
 
   if (employeeSearchDebounceId) {
     window.clearTimeout(employeeSearchDebounceId);
     employeeSearchDebounceId = null;
+  }
+  if (prefetchTimerId) {
+    window.clearTimeout(prefetchTimerId);
+    prefetchTimerId = null;
   }
 }
 
@@ -426,18 +443,20 @@ async function fetchMyProfile(userId) {
   return data;
 }
 
-async function fetchEmployees() {
-  let query = supabase
-    .from('profiles')
-    .select(PROFILE_SELECT)
-    .order('created_at', { ascending: false });
+async function fetchEmployees(options = {}) {
+  const key = buildCacheKey('employees', { all: true });
+  return getCachedQuery(key, QUERY_CACHE_TTL_MS.employees, async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select(PROFILE_SELECT)
+      .order('created_at', { ascending: false });
 
-  const { data, error } = await query;
-  if (error) {
-    throw new Error(error.message || 'Unable to load employees');
-  }
+    if (error) {
+      throw new Error(error.message || 'Unable to load employees');
+    }
 
-  return data || [];
+    return data || [];
+  }, options);
 }
 
 function escapeLikeValue(value) {
@@ -497,177 +516,213 @@ function invalidateEmployeeCache() {
     activeAdminCount: 0,
     departments: [],
   };
+  invalidateQueryCache(['employees:', 'employeeDirectoryPage:', 'employeeDirectoryStats:']);
 }
 
-async function fetchEmployeeDirectoryPage(filters, paginationState) {
+function invalidateAttendanceCache() {
+  state.historyPageData = {
+    items: [],
+    totalItems: 0,
+    totalPages: 1,
+    currentPage: 1,
+    pageSize: HISTORY_PAGE_SIZE,
+    startItem: 0,
+    endItem: 0,
+  };
+  state.attendanceRestrictionsFetchedAt = 0;
+  invalidateQueryCache(['attendance:', 'attendancePage:', 'health:', 'qr:']);
+}
+
+async function fetchEmployeeDirectoryPage(filters, paginationState, options = {}) {
   const requestedPage = paginationState.page;
   const pageSize = paginationState.pageSize;
-  const fetchPage = async (pageNumber) => {
-    let query = supabase
-      .from('profiles')
-      .select(PROFILE_SELECT, { count: 'exact' })
-      .order('created_at', { ascending: false });
-    query = applyEmployeeFilters(query, filters);
-    const fromIndex = Math.max((pageNumber - 1) * pageSize, 0);
-    const toIndex = fromIndex + pageSize - 1;
-    return query.range(fromIndex, toIndex);
-  };
+  const key = buildCacheKey('employeeDirectoryPage', {
+    filters,
+    requestedPage,
+    pageSize,
+  });
 
-  let { data, error, count } = await fetchPage(requestedPage);
-  if (error) {
-    throw new Error(error.message || 'Unable to load employees');
-  }
+  return getCachedQuery(key, QUERY_CACHE_TTL_MS.employeeDirectory, async () => {
+    const fetchPage = async (pageNumber) => {
+      let query = supabase
+        .from('profiles')
+        .select(PROFILE_SELECT, { count: 'exact' })
+        .order('created_at', { ascending: false });
+      query = applyEmployeeFilters(query, filters);
+      const fromIndex = Math.max((pageNumber - 1) * pageSize, 0);
+      const toIndex = fromIndex + pageSize - 1;
+      return query.range(fromIndex, toIndex);
+    };
 
-  let meta = buildPaginationMeta(count || 0, paginationState);
-  if (meta.currentPage !== requestedPage) {
-    const retry = await fetchPage(meta.currentPage);
-    if (retry.error) {
-      throw new Error(retry.error.message || 'Unable to load employees');
+    let { data, error, count } = await fetchPage(requestedPage);
+    if (error) {
+      throw new Error(error.message || 'Unable to load employees');
     }
-    data = retry.data;
-    count = retry.count;
-    meta = buildPaginationMeta(count || 0, paginationState);
-  }
 
-  return {
-    items: data || [],
-    ...meta,
-  };
+    let meta = buildPaginationMeta(count || 0, paginationState);
+    if (meta.currentPage !== requestedPage) {
+      const retry = await fetchPage(meta.currentPage);
+      if (retry.error) {
+        throw new Error(retry.error.message || 'Unable to load employees');
+      }
+      data = retry.data;
+      count = retry.count;
+      meta = buildPaginationMeta(count || 0, paginationState);
+    }
+
+    return {
+      items: data || [],
+      ...meta,
+    };
+  }, options);
 }
 
-async function fetchEmployeeDirectoryStats() {
-  const [
-    totalResult,
-    activeResult,
-    onLeaveResult,
-    activeAdminResult,
-    departmentsResult,
-  ] = await Promise.all([
-    supabase.from('profiles').select('id', { count: 'exact', head: true }),
-    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', true),
-    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('status', 'on_leave'),
-    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'admin').eq('is_active', true),
-    supabase.from('profiles').select('department').not('department', 'is', null).order('department', { ascending: true }),
-  ]);
+async function fetchEmployeeDirectoryStats(options = {}) {
+  const key = buildCacheKey('employeeDirectoryStats', { all: true });
+  return getCachedQuery(key, QUERY_CACHE_TTL_MS.employeeStats, async () => {
+    const [
+      totalResult,
+      activeResult,
+      onLeaveResult,
+      activeAdminResult,
+      departmentsResult,
+    ] = await Promise.all([
+      supabase.from('profiles').select('id', { count: 'exact', head: true }),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', true),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('status', 'on_leave'),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'admin').eq('is_active', true),
+      supabase.from('profiles').select('department').not('department', 'is', null).order('department', { ascending: true }),
+    ]);
 
-  const firstError = [totalResult.error, activeResult.error, onLeaveResult.error, activeAdminResult.error, departmentsResult.error].find(Boolean);
-  if (firstError) {
-    throw new Error(firstError.message || 'Unable to load employee directory metrics');
-  }
+    const firstError = [totalResult.error, activeResult.error, onLeaveResult.error, activeAdminResult.error, departmentsResult.error].find(Boolean);
+    if (firstError) {
+      throw new Error(firstError.message || 'Unable to load employee directory metrics');
+    }
 
-  const departments = [...new Set((departmentsResult.data || []).map((item) => departmentLabel(item.department)).filter(Boolean))];
+    const departments = [...new Set((departmentsResult.data || []).map((item) => departmentLabel(item.department)).filter(Boolean))];
 
-  return {
-    totalEmployees: totalResult.count || 0,
-    activeCount: activeResult.count || 0,
-    onLeaveCount: onLeaveResult.count || 0,
-    activeAdminCount: activeAdminResult.count || 0,
-    departments,
-  };
+    return {
+      totalEmployees: totalResult.count || 0,
+      activeCount: activeResult.count || 0,
+      onLeaveCount: onLeaveResult.count || 0,
+      activeAdminCount: activeAdminResult.count || 0,
+      departments,
+    };
+  }, options);
 }
 
 async function fetchAttendance(filters = {}) {
-  let query = supabase
-    .from('attendance')
-    .select(ATTENDANCE_SELECT)
-    .order('attendance_date', { ascending: false })
-    .order('check_in_time', { ascending: false });
-
-  if (filters.userId) {
-    query = query.eq('user_id', filters.userId);
-  }
-  if (filters.date) {
-    query = query.eq('attendance_date', filters.date);
-  }
-  if (filters.from) {
-    query = query.gte('attendance_date', filters.from);
-  }
-  if (filters.to) {
-    query = query.lte('attendance_date', filters.to);
-  }
-  if (filters.status && filters.status !== 'all') {
-    query = query.eq('attendance_status', filters.status);
-  }
-  if (filters.limit) {
-    query = query.limit(filters.limit);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    throw new Error(error.message || 'Unable to load attendance');
-  }
-
-  return data || [];
-}
-
-async function fetchAttendancePage(filters = {}, paginationState = state.historyPagination) {
-  const requestedPage = paginationState.page;
-  const pageSize = paginationState.pageSize;
-  const fetchPage = async (pageNumber) => {
+  const { force, ...queryFilters } = filters;
+  const key = buildCacheKey('attendance', queryFilters);
+  return getCachedQuery(key, QUERY_CACHE_TTL_MS.attendance, async () => {
     let query = supabase
       .from('attendance')
-      .select(ATTENDANCE_SELECT, { count: 'exact' })
+      .select(ATTENDANCE_SELECT)
       .order('attendance_date', { ascending: false })
       .order('check_in_time', { ascending: false });
 
-    if (filters.userId) {
-      query = query.eq('user_id', filters.userId);
+    if (queryFilters.userId) {
+      query = query.eq('user_id', queryFilters.userId);
     }
-    if (filters.date) {
-      query = query.eq('attendance_date', filters.date);
+    if (queryFilters.date) {
+      query = query.eq('attendance_date', queryFilters.date);
     }
-    if (filters.from) {
-      query = query.gte('attendance_date', filters.from);
+    if (queryFilters.from) {
+      query = query.gte('attendance_date', queryFilters.from);
     }
-    if (filters.to) {
-      query = query.lte('attendance_date', filters.to);
+    if (queryFilters.to) {
+      query = query.lte('attendance_date', queryFilters.to);
     }
-    if (filters.status && filters.status !== 'all') {
-      query = query.eq('attendance_status', filters.status);
+    if (queryFilters.status && queryFilters.status !== 'all') {
+      query = query.eq('attendance_status', queryFilters.status);
+    }
+    if (queryFilters.limit) {
+      query = query.limit(queryFilters.limit);
     }
 
-    const fromIndex = Math.max((pageNumber - 1) * pageSize, 0);
-    const toIndex = fromIndex + pageSize - 1;
-    return query.range(fromIndex, toIndex);
-  };
-
-  let { data, error, count } = await fetchPage(requestedPage);
-  if (error) {
-    throw new Error(error.message || 'Unable to load attendance');
-  }
-
-  let meta = buildPaginationMeta(count || 0, paginationState);
-  if (meta.currentPage !== requestedPage) {
-    const retry = await fetchPage(meta.currentPage);
-    if (retry.error) {
-      throw new Error(retry.error.message || 'Unable to load attendance');
+    const { data, error } = await query;
+    if (error) {
+      throw new Error(error.message || 'Unable to load attendance');
     }
-    data = retry.data;
-    count = retry.count;
-    meta = buildPaginationMeta(count || 0, paginationState);
-  }
 
-  return {
-    items: data || [],
-    ...meta,
-  };
+    return data || [];
+  }, { force });
+}
+
+async function fetchAttendancePage(filters = {}, paginationState = state.historyPagination, options = {}) {
+  const requestedPage = paginationState.page;
+  const pageSize = paginationState.pageSize;
+  const key = buildCacheKey('attendancePage', { filters, requestedPage, pageSize });
+  return getCachedQuery(key, QUERY_CACHE_TTL_MS.attendancePage, async () => {
+    const fetchPage = async (pageNumber) => {
+      let query = supabase
+        .from('attendance')
+        .select(ATTENDANCE_SELECT, { count: 'exact' })
+        .order('attendance_date', { ascending: false })
+        .order('check_in_time', { ascending: false });
+
+      if (filters.userId) {
+        query = query.eq('user_id', filters.userId);
+      }
+      if (filters.date) {
+        query = query.eq('attendance_date', filters.date);
+      }
+      if (filters.from) {
+        query = query.gte('attendance_date', filters.from);
+      }
+      if (filters.to) {
+        query = query.lte('attendance_date', filters.to);
+      }
+      if (filters.status && filters.status !== 'all') {
+        query = query.eq('attendance_status', filters.status);
+      }
+
+      const fromIndex = Math.max((pageNumber - 1) * pageSize, 0);
+      const toIndex = fromIndex + pageSize - 1;
+      return query.range(fromIndex, toIndex);
+    };
+
+    let { data, error, count } = await fetchPage(requestedPage);
+    if (error) {
+      throw new Error(error.message || 'Unable to load attendance');
+    }
+
+    let meta = buildPaginationMeta(count || 0, paginationState);
+    if (meta.currentPage !== requestedPage) {
+      const retry = await fetchPage(meta.currentPage);
+      if (retry.error) {
+        throw new Error(retry.error.message || 'Unable to load attendance');
+      }
+      data = retry.data;
+      count = retry.count;
+      meta = buildPaginationMeta(count || 0, paginationState);
+    }
+
+    return {
+      items: data || [],
+      ...meta,
+    };
+  }, options);
 }
 
 async function fetchSystemHealth(options = {}) {
   const force = Boolean(options.force);
+  const key = buildCacheKey('health', { restrictions: true });
   const now = Date.now();
   if (!force && state.attendanceRestrictions && (now - state.attendanceRestrictionsFetchedAt) < HEALTH_CACHE_TTL_MS) {
     return state.attendanceRestrictions;
   }
 
-  try {
-    const payload = await apiRequest('/health');
-    state.attendanceRestrictions = payload.attendance_restrictions || null;
-    state.attendanceRestrictionsFetchedAt = now;
-    return state.attendanceRestrictions;
-  } catch (_error) {
-    return null;
-  }
+  return getCachedQuery(key, HEALTH_CACHE_TTL_MS, async () => {
+    try {
+      const payload = await apiRequest('/health');
+      state.attendanceRestrictions = payload.attendance_restrictions || null;
+      state.attendanceRestrictionsFetchedAt = Date.now();
+      return state.attendanceRestrictions;
+    } catch (_error) {
+      return null;
+    }
+  }, { force });
 }
 
 function buildQueryString(params = {}) {
@@ -683,6 +738,231 @@ function buildQueryString(params = {}) {
 
   const serialized = query.toString();
   return serialized ? `?${serialized}` : '';
+}
+
+function stableSerialize(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${key}:${stableSerialize(value[key])}`).join('|')}}`;
+  }
+  return String(value);
+}
+
+function buildCacheKey(namespace, params = {}) {
+  return `${namespace}:${stableSerialize(params)}`;
+}
+
+function getFreshCachedValue(key, ttlMs) {
+  const entry = queryCache.get(key);
+  if (!entry) {
+    return null;
+  }
+  if (entry.data !== undefined && entry.expiresAt > Date.now()) {
+    return entry.data;
+  }
+  if (!entry.promise) {
+    queryCache.delete(key);
+  }
+  return null;
+}
+
+async function getCachedQuery(key, ttlMs, loader, options = {}) {
+  const force = Boolean(options.force);
+  const now = Date.now();
+  const existing = queryCache.get(key);
+
+  if (!force && existing?.data !== undefined && existing.expiresAt > now) {
+    return existing.data;
+  }
+
+  if (!force && existing?.promise) {
+    return existing.promise;
+  }
+
+  const promise = Promise.resolve()
+    .then(loader)
+    .then((data) => {
+      queryCache.set(key, {
+        data,
+        expiresAt: Date.now() + ttlMs,
+        promise: null,
+      });
+      return data;
+    })
+    .catch((error) => {
+      queryCache.delete(key);
+      throw error;
+    });
+
+  queryCache.set(key, {
+    data: existing?.data,
+    expiresAt: existing?.expiresAt || 0,
+    promise,
+  });
+
+  return promise;
+}
+
+function invalidateQueryCache(prefixes = []) {
+  const list = Array.isArray(prefixes) ? prefixes : [prefixes];
+  if (!list.length) {
+    queryCache.clear();
+    return;
+  }
+
+  [...queryCache.keys()].forEach((key) => {
+    if (list.some((prefix) => key.startsWith(prefix))) {
+      queryCache.delete(key);
+    }
+  });
+}
+
+function warmQueryInBackground(key, ttlMs, loader) {
+  if (getFreshCachedValue(key, ttlMs)) {
+    return;
+  }
+
+  getCachedQuery(key, ttlMs, loader).catch(() => {
+    // Ignore background prefetch failures.
+  });
+}
+
+function schedulePagePrefetch() {
+  if (!state.profile) {
+    return;
+  }
+
+  if (prefetchTimerId) {
+    window.clearTimeout(prefetchTimerId);
+  }
+
+  const runner = () => {
+    const today = todayIso();
+    const currentMonth = monthRange(currentMonthInput());
+
+    if (isAdmin()) {
+      warmQueryInBackground(
+        buildCacheKey('employees', { all: true }),
+        QUERY_CACHE_TTL_MS.employees,
+        () => fetchEmployees({ force: true })
+      );
+      warmQueryInBackground(
+        buildCacheKey('employeeDirectoryPage', {
+          filters: state.employeeFilters,
+          requestedPage: state.employeePagination.page,
+          pageSize: state.employeePagination.pageSize,
+        }),
+        QUERY_CACHE_TTL_MS.employeeDirectory,
+        () => fetchEmployeeDirectoryPage(state.employeeFilters, state.employeePagination, { force: true })
+      );
+      warmQueryInBackground(
+        buildCacheKey('employeeDirectoryStats', { all: true }),
+        QUERY_CACHE_TTL_MS.employeeStats,
+        () => fetchEmployeeDirectoryStats({ force: true })
+      );
+      warmQueryInBackground(
+        buildCacheKey('attendance', { date: today, limit: 250 }),
+        QUERY_CACHE_TTL_MS.attendance,
+        () => fetchAttendance({ date: today, limit: 250, force: true })
+      );
+      warmQueryInBackground(
+        buildCacheKey('attendance', { date: today }),
+        QUERY_CACHE_TTL_MS.attendance,
+        () => fetchAttendance({ date: today, force: true })
+      );
+      warmQueryInBackground(
+        buildCacheKey('attendance', { from: offsetDate(-14), to: today, limit: 14 }),
+        QUERY_CACHE_TTL_MS.attendance,
+        () => fetchAttendance({ from: offsetDate(-14), to: today, limit: 14, force: true })
+      );
+      warmQueryInBackground(
+        buildCacheKey('attendancePage', {
+          filters: {
+            from: state.historyFilters.from,
+            to: state.historyFilters.to,
+            status: state.historyFilters.status,
+          },
+          requestedPage: state.historyPagination.page,
+          pageSize: state.historyPagination.pageSize,
+        }),
+        QUERY_CACHE_TTL_MS.attendancePage,
+        () => fetchAttendancePage({
+          from: state.historyFilters.from,
+          to: state.historyFilters.to,
+          status: state.historyFilters.status,
+        }, state.historyPagination, { force: true })
+      );
+      warmQueryInBackground(
+        buildCacheKey('attendance', { from: currentMonth.from, to: currentMonth.to }),
+        QUERY_CACHE_TTL_MS.reports,
+        () => fetchAttendance({ from: currentMonth.from, to: currentMonth.to, force: true })
+      );
+      warmQueryInBackground(
+        buildCacheKey('qr', { current: true }),
+        QUERY_CACHE_TTL_MS.qr,
+        () => apiRequest('/attendance/qr')
+      );
+    } else {
+      warmQueryInBackground(
+        buildCacheKey('attendance', { userId: state.profile.id, date: today, limit: 1 }),
+        QUERY_CACHE_TTL_MS.attendance,
+        () => fetchAttendance({ userId: state.profile.id, date: today, limit: 1, force: true })
+      );
+      warmQueryInBackground(
+        buildCacheKey('attendance', { userId: state.profile.id, from: offsetDate(-14), to: today, limit: 14 }),
+        QUERY_CACHE_TTL_MS.attendance,
+        () => fetchAttendance({ userId: state.profile.id, from: offsetDate(-14), to: today, limit: 14, force: true })
+      );
+      warmQueryInBackground(
+        buildCacheKey('attendance', { userId: state.profile.id, from: currentMonth.from, to: currentMonth.to, limit: 60 }),
+        QUERY_CACHE_TTL_MS.attendance,
+        () => fetchAttendance({ userId: state.profile.id, from: currentMonth.from, to: currentMonth.to, limit: 60, force: true })
+      );
+      warmQueryInBackground(
+        buildCacheKey('attendancePage', {
+          filters: {
+            from: state.historyFilters.from,
+            to: state.historyFilters.to,
+            status: state.historyFilters.status,
+            userId: state.profile.id,
+          },
+          requestedPage: state.historyPagination.page,
+          pageSize: state.historyPagination.pageSize,
+        }),
+        QUERY_CACHE_TTL_MS.attendancePage,
+        () => fetchAttendancePage({
+          from: state.historyFilters.from,
+          to: state.historyFilters.to,
+          status: state.historyFilters.status,
+          userId: state.profile.id,
+        }, state.historyPagination, { force: true })
+      );
+    }
+
+    warmQueryInBackground(
+      buildCacheKey('attendance', { userId: state.profile.id, from: offsetDate(-30), to: today, limit: 30 }),
+      QUERY_CACHE_TTL_MS.profile,
+      () => fetchAttendance({ userId: state.profile.id, from: offsetDate(-30), to: today, limit: 30, force: true })
+    );
+
+    warmQueryInBackground(
+      buildCacheKey('health', { restrictions: true }),
+      HEALTH_CACHE_TTL_MS,
+      () => fetchSystemHealth({ force: true })
+    );
+  };
+
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(runner, { timeout: 1200 });
+    return;
+  }
+
+  prefetchTimerId = window.setTimeout(runner, 250);
 }
 
 
@@ -1073,35 +1353,23 @@ async function renderRoute() {
 
   syncPageFrame(page);
   elements.sidebar.classList.remove('open');
-
   if (page === 'dashboard') {
     await renderDashboardPage();
-    return;
-  }
-  if (page === 'profile') {
+  } else if (page === 'profile') {
     await renderProfilePage();
-    return;
-  }
-  if (page === 'employees') {
+  } else if (page === 'employees') {
     await renderEmployeesPage();
-    return;
-  }
-  if (page === 'attendance') {
+  } else if (page === 'attendance') {
     await renderAttendancePage();
-    return;
-  }
-
-  if (page === 'history') {
+  } else if (page === 'history') {
     await renderHistoryPage();
-    return;
-  }
-  if (page === 'reports') {
+  } else if (page === 'reports') {
     await renderReportsPage();
-    return;
-  }
-  if (page === 'qr') {
+  } else if (page === 'qr') {
     await renderQrPage();
   }
+
+  schedulePagePrefetch();
 }
 
 function buildSummaryCard(label, value, meta = '') {
@@ -1228,11 +1496,24 @@ function confirmAction({ eyebrow = 'Please confirm', title, message, confirmLabe
 
 async function renderDashboardPage() {
   const container = elements.pages.dashboard;
-  setPageLoading(container, 'Loading dashboard');
+  const today = todayIso();
+  const currentMonth = monthRange(currentMonthInput());
+  const warmDashboardCache = isAdmin()
+    ? Boolean(
+      getFreshCachedValue(buildCacheKey('employees', { all: true }), QUERY_CACHE_TTL_MS.employees)
+      && getFreshCachedValue(buildCacheKey('attendance', { date: today, limit: 250 }), QUERY_CACHE_TTL_MS.attendance)
+    )
+    : Boolean(
+      getFreshCachedValue(buildCacheKey('attendance', { userId: state.profile?.id, date: today, limit: 1 }), QUERY_CACHE_TTL_MS.attendance)
+      && getFreshCachedValue(buildCacheKey('attendance', { userId: state.profile?.id, from: offsetDate(-14), to: today, limit: 14 }), QUERY_CACHE_TTL_MS.attendance)
+      && getFreshCachedValue(buildCacheKey('attendance', { userId: state.profile?.id, from: currentMonth.from, to: currentMonth.to, limit: 60 }), QUERY_CACHE_TTL_MS.attendance)
+    );
+
+  if (!warmDashboardCache) {
+    setPageLoading(container, 'Loading dashboard');
+  }
 
   try {
-    const today = todayIso();
-
     if (isAdmin()) {
       const todayIsWorkday = isWorkday(new Date(`${today}T12:00:00`));
       const [employees, todayAttendance] = await Promise.all([
@@ -1380,12 +1661,11 @@ async function renderDashboardPage() {
       return;
     }
 
-    const currentMonth = monthRange(currentMonthInput());
     const todayIsWorkday = isWorkday(new Date(`${today}T12:00:00`));
     const [todayAttendance, recentAttendance, monthAttendance] = await Promise.all([
-      fetchAttendance({ date: today, limit: 1 }),
-      fetchAttendance({ from: offsetDate(-14), to: today, limit: 14 }),
-      fetchAttendance({ from: currentMonth.from, to: currentMonth.to, limit: 60 }),
+      fetchAttendance({ userId: state.profile.id, date: today, limit: 1 }),
+      fetchAttendance({ userId: state.profile.id, from: offsetDate(-14), to: today, limit: 14 }),
+      fetchAttendance({ userId: state.profile.id, from: currentMonth.from, to: currentMonth.to, limit: 60 }),
     ]);
     const todayRecord = todayAttendance[0] || null;
     const todayMetrics = todayRecord ? buildAttendanceRowMetrics(todayRecord) : null;
@@ -1495,11 +1775,19 @@ async function renderEmployeesPage() {
     setPageError(container, 'Only admins can access employee management.');
     return;
   }
-
-  setPageLoading(container, 'Loading employees');
+  const employeesPageKey = buildCacheKey('employeeDirectoryPage', {
+    filters: state.employeeFilters,
+    requestedPage: state.employeePagination.page,
+    pageSize: state.employeePagination.pageSize,
+  });
+  const statsKey = buildCacheKey('employeeDirectoryStats', { all: true });
+  if (!(getFreshCachedValue(employeesPageKey, QUERY_CACHE_TTL_MS.employeeDirectory) && getFreshCachedValue(statsKey, QUERY_CACHE_TTL_MS.employeeStats))) {
+    setPageLoading(container, 'Loading employees');
+  }
 
   try {
-    const [pageData, stats] = await Promise.all([
+    const [, pageData, stats] = await Promise.all([
+      loadEmployees(),
       fetchEmployeeDirectoryPage(state.employeeFilters, state.employeePagination),
       fetchEmployeeDirectoryStats(),
     ]);
@@ -1517,7 +1805,15 @@ async function renderEmployeesPage() {
 
 async function renderProfilePage() {
   const container = elements.pages.profile;
-  setPageLoading(container, 'Loading profile');
+  const profileKey = buildCacheKey('attendance', {
+    userId: state.profile?.id,
+    from: offsetDate(-30),
+    to: todayIso(),
+    limit: 30,
+  });
+  if (!getFreshCachedValue(profileKey, QUERY_CACHE_TTL_MS.profile)) {
+    setPageLoading(container, 'Loading profile');
+  }
 
   try {
     const records = await fetchAttendance({
@@ -1622,8 +1918,12 @@ async function renderReportsPage() {
     setPageError(container, 'Only admins can access reports and analytics.');
     return;
   }
-
-  setPageLoading(container, 'Loading reports');
+  const range = monthRange(state.reportsFilters.month);
+  const reportsAttendanceKey = buildCacheKey('attendance', { from: range.from, to: range.to });
+  const reportsEmployeesKey = buildCacheKey('employees', { all: true });
+  if (!(getFreshCachedValue(reportsAttendanceKey, QUERY_CACHE_TTL_MS.reports) && getFreshCachedValue(reportsEmployeesKey, QUERY_CACHE_TTL_MS.employees))) {
+    setPageLoading(container, 'Loading reports');
+  }
 
   try {
     await loadEmployees();
@@ -1634,7 +1934,6 @@ async function renderReportsPage() {
       state.reportsFilters.employeeId = 'all';
     }
 
-    const range = monthRange(state.reportsFilters.month);
     const attendanceRows = await fetchAttendance({
       from: range.from,
       to: range.to,
@@ -2427,6 +2726,7 @@ function openManualAttendanceForm(options = {}) {
           device_info: form.device_info.value.trim(),
         },
       });
+      invalidateAttendanceCache();
       closeModal(true);
       showToast('Manual attendance saved successfully.', 'success');
       await onSaved();
@@ -2499,10 +2799,24 @@ async function handleEmployeeDelete(employee) {
 }
 async function renderAttendancePage() {
   const container = elements.pages.attendance;
-  setPageLoading(container, 'Loading attendance');
+  const hasWarmHealth = (Date.now() - state.attendanceRestrictionsFetchedAt) < HEALTH_CACHE_TTL_MS;
+  const today = todayIso();
+  const warmAttendanceCache = isAdmin()
+    ? Boolean(
+      getFreshCachedValue(buildCacheKey('attendance', { date: today }), QUERY_CACHE_TTL_MS.attendance)
+      && getFreshCachedValue(buildCacheKey('attendance', { from: offsetDate(-14), to: today, limit: 14 }), QUERY_CACHE_TTL_MS.attendance)
+      && hasWarmHealth
+    )
+    : Boolean(
+      getFreshCachedValue(buildCacheKey('attendance', { userId: state.profile?.id, date: today }), QUERY_CACHE_TTL_MS.attendance)
+      && getFreshCachedValue(buildCacheKey('attendance', { userId: state.profile?.id, from: offsetDate(-14), to: today, limit: 14 }), QUERY_CACHE_TTL_MS.attendance)
+      && hasWarmHealth
+    );
+  if (!warmAttendanceCache) {
+    setPageLoading(container, 'Loading attendance');
+  }
 
   try {
-    const today = todayIso();
     const [todayRecords, recentRecords, restrictionSummary] = await Promise.all([
       fetchAttendance({ date: today, ...(isAdmin() ? {} : { userId: state.profile.id }) }),
       fetchAttendance({ from: offsetDate(-14), to: today, limit: 14, ...(isAdmin() ? {} : { userId: state.profile.id }) }),
@@ -2650,6 +2964,7 @@ async function submitAttendanceAction(type) {
     }
 
     await apiRequest(`/attendance/${type}`, { method: 'POST', body: context });
+    invalidateAttendanceCache();
     showToast(type === 'checkin' ? 'Check-in recorded successfully.' : 'Check-out recorded successfully.', 'success');
     await renderAttendancePage();
     await refreshTopbarMessage();
@@ -2660,7 +2975,19 @@ async function submitAttendanceAction(type) {
 
 async function renderHistoryPage() {
   const container = elements.pages.history;
-  setPageLoading(container, 'Loading history');
+  const historyKey = buildCacheKey('attendancePage', {
+    filters: {
+      from: state.historyFilters.from,
+      to: state.historyFilters.to,
+      status: state.historyFilters.status,
+      ...(isAdmin() ? {} : { userId: state.profile?.id }),
+    },
+    requestedPage: state.historyPagination.page,
+    pageSize: state.historyPagination.pageSize,
+  });
+  if (!getFreshCachedValue(historyKey, QUERY_CACHE_TTL_MS.attendancePage)) {
+    setPageLoading(container, 'Loading history');
+  }
 
   try {
     const pageData = await fetchAttendancePage({
@@ -2760,11 +3087,12 @@ async function renderQrPage() {
     setPageError(container, 'Only admins can open the QR access page.');
     return;
   }
-
-  setPageLoading(container, 'Generating QR code');
+  if (!getFreshCachedValue(buildCacheKey('qr', { current: true }), QUERY_CACHE_TTL_MS.qr)) {
+    setPageLoading(container, 'Generating QR code');
+  }
 
   try {
-    const payload = await apiRequest('/attendance/qr');
+    const payload = await getCachedQuery(buildCacheKey('qr', { current: true }), QUERY_CACHE_TTL_MS.qr, () => apiRequest('/attendance/qr'));
     const qr = payload.data;
     container.innerHTML = `
       <div class="page-shell">
