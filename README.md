@@ -11,6 +11,7 @@ EVARA BNS is a Supabase-powered employee attendance system with role-based acces
 - Manual attendance entry for admins
 - Attendance fencing by company network and/or geolocation
 - 8-hour actuals dashboard for daily shift completion, overtime, and shortfall
+- Default business schedule: Sunday to Thursday, 10:00 AM to 6:00 PM, with Friday and Saturday as weekly days off
 - CSV export for employees and attendance history
 - Advanced reports with working hours, overtime, shortfall, and employee timesheets
 - Client-side pagination for employee and history views
@@ -80,8 +81,9 @@ npm run check
 1. Open the Supabase SQL editor.
 2. Run [supabase/migrations/001_initial_schema.sql](supabase/migrations/001_initial_schema.sql).
 3. Run [supabase/migrations/002_fix_attendance_timestamp_functions.sql](supabase/migrations/002_fix_attendance_timestamp_functions.sql).
-4. Enable Email/Password authentication in Supabase Auth.
-5. Set redirect URLs for your local or deployed app.
+4. Run [supabase/migrations/003_update_business_schedule.sql](supabase/migrations/003_update_business_schedule.sql).
+5. Enable Email/Password authentication in Supabase Auth.
+6. Set redirect URLs for your local or deployed app.
 
 ### Attendance Fencing Modes
 

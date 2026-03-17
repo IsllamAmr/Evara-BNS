@@ -2,8 +2,10 @@ import { departmentLabel, escapeHtml } from './shared.js';
 
 export const BUSINESS_TIME_ZONE = 'Africa/Cairo';
 export const FULL_SHIFT_MINUTES = 8 * 60;
-const ON_TIME_THRESHOLD_MINUTES = (9 * 60) + 15;
-const SHIFT_END_MINUTES = 17 * 60;
+export const SHIFT_START_MINUTES = 10 * 60;
+export const SHIFT_END_MINUTES = SHIFT_START_MINUTES + FULL_SHIFT_MINUTES;
+const ON_TIME_THRESHOLD_MINUTES = SHIFT_START_MINUTES;
+const BUSINESS_WORKDAY_INDEXES = new Set([0, 1, 2, 3, 4]);
 
 function formatDateInput(date) {
   const year = date.getFullYear();
@@ -56,7 +58,19 @@ export function monthRange(monthValue) {
 
 export function isWorkday(date) {
   const day = date.getDay();
-  return day !== 5 && day !== 6;
+  return BUSINESS_WORKDAY_INDEXES.has(day);
+}
+
+export function businessStartTimeLabel() {
+  return formatAverageTime(SHIFT_START_MINUTES);
+}
+
+export function businessEndTimeLabel() {
+  return formatAverageTime(SHIFT_END_MINUTES);
+}
+
+export function businessScheduleLabel() {
+  return `Sunday to Thursday - ${businessStartTimeLabel()} to ${businessEndTimeLabel()}`;
 }
 
 export function enumerateDates(startDate, endDate) {
@@ -173,6 +187,8 @@ export function buildAttendanceRowMetrics(row) {
   const checkOutMinutes = minutesFromTimestamp(row.check_out_time);
   const todayBusinessIso = isoDateInTimeZone(new Date(), BUSINESS_TIME_ZONE);
   const currentBusinessMinutes = minutesFromTimestamp(new Date(), BUSINESS_TIME_ZONE);
+  const rowBusinessDate = row.attendance_date ? new Date(`${row.attendance_date}T12:00:00`) : null;
+  const isScheduledWorkday = rowBusinessDate ? isWorkday(rowBusinessDate) : true;
   let workedMinutes = workingMinutesBetween(row.check_in_time, row.check_out_time);
   let overtimeMinutes = Math.max(workedMinutes - FULL_SHIFT_MINUTES, 0);
   let shortfallMinutes = row.check_in_time && row.check_out_time
@@ -180,7 +196,7 @@ export function buildAttendanceRowMetrics(row) {
     : 0;
   let projectedRemainingMinutes = 0;
   const isPresent = Boolean(row.check_in_time);
-  const isLateArrival = Number.isFinite(checkInMinutes) && checkInMinutes > ON_TIME_THRESHOLD_MINUTES;
+  const isLateArrival = isScheduledWorkday && Number.isFinite(checkInMinutes) && checkInMinutes > ON_TIME_THRESHOLD_MINUTES;
   const isOpenShift = Boolean(row.check_in_time && !row.check_out_time);
   let isPastDue = false;
 
@@ -222,11 +238,11 @@ export function attendanceOutcome(metrics) {
   if (!metrics.isCompleteShift) {
     if (metrics.isPastDue) {
       return metrics.shortfallMinutes > 0
-        ? `Incomplete Shift Â· ${formatDuration(metrics.shortfallMinutes)} short`
-        : 'Incomplete Shift Â· Review Needed';
+        ? `Incomplete Shift - ${formatDuration(metrics.shortfallMinutes)} short`
+        : 'Incomplete Shift - Review Needed';
     }
     return metrics.projectedRemainingMinutes > 0
-      ? `Open Shift Â· ${formatDuration(metrics.projectedRemainingMinutes)} remaining`
+      ? `Open Shift - ${formatDuration(metrics.projectedRemainingMinutes)} remaining`
       : 'Open Shift';
   }
   if (metrics.overtimeMinutes > 0) {
@@ -654,3 +670,4 @@ export function drawDepartmentHoursChart(canvas, points) {
   context.fillStyle = '#dbeafe';
   context.fillText('Actual', width - 78, 26);
 }
+

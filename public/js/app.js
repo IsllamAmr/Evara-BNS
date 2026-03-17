@@ -8,6 +8,8 @@ import {
 import {
   average,
   attendanceOutcome,
+  businessScheduleLabel,
+  businessStartTimeLabel,
   buildAttendanceRowMetrics,
   buildReportsDataset,
   drawDepartmentHoursChart,
@@ -972,6 +974,7 @@ async function renderDashboardPage() {
     const today = todayIso();
 
     if (isAdmin()) {
+      const todayIsWorkday = isWorkday(new Date(`${today}T12:00:00`));
       const [employees, todayAttendance] = await Promise.all([
         fetchEmployees(),
         fetchAttendance({ date: today, limit: 250 }),
@@ -987,8 +990,10 @@ async function renderDashboardPage() {
         metrics: buildAttendanceRowMetrics(row),
       }));
       const presentToday = todayDetailed.filter((entry) => entry.metrics.isPresent).length;
-      const absentToday = Math.max(activeEmployees.length - presentToday, 0);
-      const lateToday = todayDetailed.filter((entry) => entry.metrics.isLateArrival || entry.row.attendance_status === 'late').length;
+      const absentToday = todayIsWorkday ? Math.max(activeEmployees.length - presentToday, 0) : 0;
+      const lateToday = todayIsWorkday
+        ? todayDetailed.filter((entry) => entry.metrics.isLateArrival || entry.row.attendance_status === 'late').length
+        : 0;
       const fullShiftCount = todayDetailed.filter((entry) => entry.metrics.isCompleteShift && entry.metrics.shortfallMinutes === 0 && entry.metrics.overtimeMinutes === 0).length;
       const openShiftCount = todayDetailed.filter((entry) => entry.metrics.isOpenShift).length;
       const workedMinutesToday = sumMetrics(todayDetailed, (entry) => entry.metrics.workedMinutes);
@@ -1014,7 +1019,7 @@ async function renderDashboardPage() {
             <div>
               <p class="eyebrow">Overview</p>
               <h1>Operations dashboard</h1>
-              <p>Live employee and attendance data connected directly to Supabase.</p>
+              <p>Live employee and attendance data connected directly to Supabase. ${escapeHtml(businessScheduleLabel())}.</p>
             </div>
             <button id="dashboardRefreshBtn" type="button" class="btn btn-secondary">Refresh</button>
           </div>
@@ -1023,8 +1028,8 @@ async function renderDashboardPage() {
             ${buildSummaryCard('Active Employees', String(activeEmployees.length), 'Ready for attendance today')}
             ${buildSummaryCard('On Leave', String(onLeave), 'Employees currently on leave')}
             ${buildSummaryCard('Present Today', String(presentToday), 'Attendance records created today')}
-            ${buildSummaryCard('Absent Today', String(absentToday), 'Active employees with no check-in yet')}
-            ${buildSummaryCard('Late Today', String(lateToday), 'Computed from check-in time')}
+            ${buildSummaryCard('Absent Today', String(absentToday), todayIsWorkday ? 'Active employees with no check-in yet' : 'Friday and Saturday are scheduled days off')}
+            ${buildSummaryCard('Late Today', String(lateToday), todayIsWorkday ? `Arrivals after ${businessStartTimeLabel()}` : 'Weekend attendance is not marked late')}
             ${buildSummaryCard('Worked Today', formatDuration(workedMinutesToday), 'Combined completed and open shift minutes')}
             ${buildSummaryCard('8-Hour Actuals', `${fullShiftCount} full / ${openShiftCount} open`, `${formatDuration(overtimeMinutesToday)} overtime · ${formatDuration(shortfallMinutesToday)} shortfall`)}
           </div>
@@ -1118,6 +1123,7 @@ async function renderDashboardPage() {
     }
 
     const currentMonth = monthRange(currentMonthInput());
+    const todayIsWorkday = isWorkday(new Date(`${today}T12:00:00`));
     const [todayAttendance, recentAttendance, monthAttendance] = await Promise.all([
       fetchAttendance({ date: today, limit: 1 }),
       fetchAttendance({ from: offsetDate(-14), to: today, limit: 14 }),
@@ -1137,7 +1143,10 @@ async function renderDashboardPage() {
     let balanceLabel = '8-hour target waiting to begin';
     let balanceMeta = 'No attendance recorded yet for today.';
 
-    if (todayMetrics?.isOpenShift) {
+    if (!todayIsWorkday && !todayRecord) {
+      balanceLabel = 'Weekend';
+      balanceMeta = 'Friday and Saturday are your scheduled days off.';
+    } else if (todayMetrics?.isOpenShift) {
       balanceLabel = `${formatDuration(todayMetrics.projectedRemainingMinutes)} remaining`;
       balanceMeta = 'Live estimate until you reach the full 8-hour target.';
     } else if (todayMetrics?.overtimeMinutes) {
@@ -1157,15 +1166,15 @@ async function renderDashboardPage() {
           <div>
             <p class="eyebrow">Welcome</p>
             <h1>${escapeHtml(state.profile.full_name)}</h1>
-            <p>Your attendance overview is ready with live 8-hour tracking and attendance actions.</p>
+            <p>Your attendance overview is ready with live 8-hour tracking and attendance actions. ${escapeHtml(businessScheduleLabel())}.</p>
           </div>
           <div class="inline-actions">
             <button id="employeeAttendanceShortcut" type="button" class="btn btn-secondary">Open attendance</button>
           </div>
         </div>
         <div class="summary-grid">
-          ${buildSummaryCard('Today Status', todayRecord ? statusLabel(todayRecord.attendance_status) : 'Pending', todayRecord ? `Checked in ${formatTime(todayRecord.check_in_time)}` : 'No attendance recorded yet')}
-          ${buildSummaryCard('Worked Today', formatDuration(todayMetrics?.workedMinutes || 0), todayMetrics ? attendanceOutcome(todayMetrics) : 'No attendance recorded yet')}
+          ${buildSummaryCard('Today Status', todayRecord ? statusLabel(todayRecord.attendance_status) : (todayIsWorkday ? 'Pending' : 'Weekend'), todayRecord ? `Checked in ${formatTime(todayRecord.check_in_time)}` : (todayIsWorkday ? 'No attendance recorded yet' : 'Friday and Saturday are counted as weekly days off'))}
+          ${buildSummaryCard('Worked Today', formatDuration(todayMetrics?.workedMinutes || 0), todayMetrics ? attendanceOutcome(todayMetrics) : (todayIsWorkday ? 'No attendance recorded yet' : 'No required shift scheduled today'))}
           ${buildSummaryCard('Today Balance', balanceLabel, balanceMeta)}
           ${buildSummaryCard('Full Shifts This Month', String(fullShiftDays), `${checkedDays} checked day(s) in your recent history`)}
           ${buildSummaryCard('Overtime This Month', formatDuration(monthOvertimeMinutes), 'Minutes above the daily 8-hour baseline')}
@@ -1382,7 +1391,7 @@ async function renderReportsPage() {
           <div>
             <p class="eyebrow">Insights</p>
             <h1>Reports & Analytics</h1>
-            <p>Track worked hours, overtime, shortfall, punctuality, and department-level performance from one control page.</p>
+            <p>Track worked hours, overtime, shortfall, punctuality, and department-level performance from one control page. ${escapeHtml(businessScheduleLabel())}.</p>
           </div>
           <div class="inline-actions">
             <button id="reportsExportBtn" type="button" class="btn btn-secondary">Export Report CSV</button>
@@ -1409,7 +1418,7 @@ async function renderReportsPage() {
           ${buildSummaryCard('Total Overtime', formatDuration(report.totals.totalOvertimeMinutes), 'Minutes above the 8-hour daily baseline')}
           ${buildSummaryCard('Total Shortfall', formatDuration(report.totals.totalShortfallMinutes), 'Missing time below the 8-hour daily target')}
           ${buildSummaryCard('Attendance Rate', `${report.totals.attendanceRate}%`, `${report.totals.totalPresentDays} present day(s) out of ${report.totals.totalExpectedDays || 0}`)}
-          ${buildSummaryCard('On-Time Arrival', `${report.totals.onTimeArrivalRate}%`, 'Arrivals at or before 09:15 Africa/Cairo')}
+          ${buildSummaryCard('On-Time Arrival', `${report.totals.onTimeArrivalRate}%`, `Arrivals at or before ${businessStartTimeLabel()} on Sunday to Thursday`)}
           ${buildSummaryCard('Peak Absence Day', peakWeekday ? peakWeekday.weekday : 'N/A', peakWeekday ? `${peakWeekday.absentCount} total absences` : 'No absence trend yet')}
         </div>
         <div class="content-grid">
@@ -1521,10 +1530,10 @@ async function renderReportsPage() {
         </div>
         <section class="card-block">
           <div class="card-head">
-            <div>
-              <h3>Average check-in and check-out times</h3>
-              <p class="card-subtle">Average times are based on attendance rows with recorded timestamps in Africa/Cairo.</p>
-            </div>
+              <div>
+                <h3>Average check-in and check-out times</h3>
+                <p class="card-subtle">Average times are based on attendance rows with recorded timestamps in Africa/Cairo. Weekly days off: Friday and Saturday.</p>
+              </div>
           </div>
           <div class="table-shell">
             <table>
@@ -2232,7 +2241,7 @@ async function renderAttendancePage() {
             <div>
               <p class="eyebrow">Live operations</p>
               <h1>Attendance for ${escapeHtml(formatDate(today))}</h1>
-              <p>Monitor check-ins and check-outs as they happen, export records, and add manual entries when needed.</p>
+              <p>Monitor check-ins and check-outs as they happen, export records, and add manual entries when needed. ${escapeHtml(businessScheduleLabel())}.</p>
               ${restrictionNote ? `<p class="inline-note attention-note">${escapeHtml(restrictionNote)}</p>` : ''}
             </div>
             <div class="inline-actions">
@@ -2299,7 +2308,7 @@ async function renderAttendancePage() {
           <div>
             <p class="eyebrow">Personal attendance</p>
             <h1>Check in and check out</h1>
-            <p>Your attendance actions are written securely through Supabase.</p>
+            <p>Your attendance actions are written securely through Supabase. ${escapeHtml(businessScheduleLabel())}.</p>
             ${restrictionNote ? `<p class="inline-note attention-note">${escapeHtml(restrictionNote)}</p>` : ''}
           </div>
         </div>
