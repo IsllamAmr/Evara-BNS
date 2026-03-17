@@ -66,12 +66,32 @@ const DEPARTMENT_OPTIONS = [
 
 const EMPLOYEE_PAGE_SIZE = 10;
 const HISTORY_PAGE_SIZE = 12;
+const EMPLOYEE_CACHE_TTL_MS = 60 * 1000;
+const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000;
+const INPUT_DEBOUNCE_MS = 220;
 const state = {
   session: null,
   profile: null,
   currentPage: 'dashboard',
   employees: [],
+  employeesFetchedAt: 0,
   profileMap: new Map(),
+  employeeDirectoryItems: [],
+  employeeDirectoryMeta: {
+    totalItems: 0,
+    totalPages: 1,
+    currentPage: 1,
+    pageSize: EMPLOYEE_PAGE_SIZE,
+    startItem: 0,
+    endItem: 0,
+  },
+  employeeDirectoryStats: {
+    totalEmployees: 0,
+    activeCount: 0,
+    onLeaveCount: 0,
+    activeAdminCount: 0,
+    departments: [],
+  },
   employeeFilters: {
     search: '',
     department: 'all',
@@ -90,6 +110,15 @@ const state = {
     page: 1,
     pageSize: HISTORY_PAGE_SIZE,
   },
+  historyPageData: {
+    items: [],
+    totalItems: 0,
+    totalPages: 1,
+    currentPage: 1,
+    pageSize: HISTORY_PAGE_SIZE,
+    startItem: 0,
+    endItem: 0,
+  },
 
   reportsFilters: {
     month: currentMonthInput(),
@@ -97,6 +126,7 @@ const state = {
     employeeId: 'all',
   },
   attendanceRestrictions: null,
+  attendanceRestrictionsFetchedAt: 0,
   liveRefreshTimer: null,
 };
 const elements = {
@@ -137,6 +167,7 @@ const elements = {
 
 let modalCloseHandler = null;
 let realtimeChannels = [];
+let employeeSearchDebounceId = null;
 
 boot();
 
@@ -273,11 +304,43 @@ function resetSessionState() {
   state.session = null;
   state.profile = null;
   state.employees = [];
+  state.employeesFetchedAt = 0;
   state.profileMap = new Map();
+  state.employeeDirectoryItems = [];
+  state.employeeDirectoryMeta = {
+    totalItems: 0,
+    totalPages: 1,
+    currentPage: 1,
+    pageSize: EMPLOYEE_PAGE_SIZE,
+    startItem: 0,
+    endItem: 0,
+  };
+  state.employeeDirectoryStats = {
+    totalEmployees: 0,
+    activeCount: 0,
+    onLeaveCount: 0,
+    activeAdminCount: 0,
+    departments: [],
+  };
   state.employeePagination.page = 1;
   state.historyPagination.page = 1;
+  state.historyPageData = {
+    items: [],
+    totalItems: 0,
+    totalPages: 1,
+    currentPage: 1,
+    pageSize: HISTORY_PAGE_SIZE,
+    startItem: 0,
+    endItem: 0,
+  };
 
   state.attendanceRestrictions = null;
+  state.attendanceRestrictionsFetchedAt = 0;
+
+  if (employeeSearchDebounceId) {
+    window.clearTimeout(employeeSearchDebounceId);
+    employeeSearchDebounceId = null;
+  }
 }
 
 function showLogin(message = '') {
@@ -364,16 +427,143 @@ async function fetchMyProfile(userId) {
 }
 
 async function fetchEmployees() {
-  const { data, error } = await supabase
+  let query = supabase
     .from('profiles')
     .select(PROFILE_SELECT)
     .order('created_at', { ascending: false });
 
+  const { data, error } = await query;
   if (error) {
     throw new Error(error.message || 'Unable to load employees');
   }
 
   return data || [];
+}
+
+function escapeLikeValue(value) {
+  return String(value || '').replace(/[,%()]/g, ' ').trim();
+}
+
+function applyEmployeeFilters(query, filters = {}) {
+  const search = escapeLikeValue(filters.search);
+  if (search) {
+    const token = `%${search}%`;
+    query = query.or([
+      `full_name.ilike.${token}`,
+      `employee_code.ilike.${token}`,
+      `email.ilike.${token}`,
+      `department.ilike.${token}`,
+      `position.ilike.${token}`,
+    ].join(','));
+  }
+
+  if (filters.department && filters.department !== 'all') {
+    query = query.eq('department', filters.department);
+  }
+
+  if (filters.status && filters.status !== 'all') {
+    query = query.eq('status', filters.status);
+  }
+
+  return query;
+}
+
+async function loadEmployees(options = {}) {
+  const force = Boolean(options.force);
+  const now = Date.now();
+  if (!force && state.employees.length && (now - state.employeesFetchedAt) < EMPLOYEE_CACHE_TTL_MS) {
+    return state.employees;
+  }
+
+  const employees = await fetchEmployees();
+  state.employees = employees;
+  state.employeesFetchedAt = now;
+  state.profileMap = new Map(employees.map((employee) => [employee.id, employee]));
+  if (state.profile) {
+    state.profileMap.set(state.profile.id, state.profile);
+  }
+  return employees;
+}
+
+function invalidateEmployeeCache() {
+  state.employees = [];
+  state.employeesFetchedAt = 0;
+  state.employeeDirectoryItems = [];
+  state.employeeDirectoryMeta = buildPaginationMeta(0, state.employeePagination);
+  state.employeeDirectoryStats = {
+    totalEmployees: 0,
+    activeCount: 0,
+    onLeaveCount: 0,
+    activeAdminCount: 0,
+    departments: [],
+  };
+}
+
+async function fetchEmployeeDirectoryPage(filters, paginationState) {
+  const requestedPage = paginationState.page;
+  const pageSize = paginationState.pageSize;
+  const fetchPage = async (pageNumber) => {
+    let query = supabase
+      .from('profiles')
+      .select(PROFILE_SELECT, { count: 'exact' })
+      .order('created_at', { ascending: false });
+    query = applyEmployeeFilters(query, filters);
+    const fromIndex = Math.max((pageNumber - 1) * pageSize, 0);
+    const toIndex = fromIndex + pageSize - 1;
+    return query.range(fromIndex, toIndex);
+  };
+
+  let { data, error, count } = await fetchPage(requestedPage);
+  if (error) {
+    throw new Error(error.message || 'Unable to load employees');
+  }
+
+  let meta = buildPaginationMeta(count || 0, paginationState);
+  if (meta.currentPage !== requestedPage) {
+    const retry = await fetchPage(meta.currentPage);
+    if (retry.error) {
+      throw new Error(retry.error.message || 'Unable to load employees');
+    }
+    data = retry.data;
+    count = retry.count;
+    meta = buildPaginationMeta(count || 0, paginationState);
+  }
+
+  return {
+    items: data || [],
+    ...meta,
+  };
+}
+
+async function fetchEmployeeDirectoryStats() {
+  const [
+    totalResult,
+    activeResult,
+    onLeaveResult,
+    activeAdminResult,
+    departmentsResult,
+  ] = await Promise.all([
+    supabase.from('profiles').select('id', { count: 'exact', head: true }),
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', true),
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('status', 'on_leave'),
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'admin').eq('is_active', true),
+    supabase.from('profiles').select('department').not('department', 'is', null).order('department', { ascending: true }),
+  ]);
+
+  const firstError = [totalResult.error, activeResult.error, onLeaveResult.error, activeAdminResult.error, departmentsResult.error].find(Boolean);
+  if (firstError) {
+    throw new Error(firstError.message || 'Unable to load employee directory metrics');
+  }
+
+  const departments = [...new Set((departmentsResult.data || []).map((item) => departmentLabel(item.department)).filter(Boolean))];
+
+  return {
+    totalEmployees: totalResult.count || 0,
+    activeCount: activeResult.count || 0,
+    onLeaveCount: onLeaveResult.count || 0,
+    activeAdminCount: activeAdminResult.count || 0,
+    departments,
+  };
 }
 
 async function fetchAttendance(filters = {}) {
@@ -410,10 +600,71 @@ async function fetchAttendance(filters = {}) {
   return data || [];
 }
 
-async function fetchSystemHealth() {
+async function fetchAttendancePage(filters = {}, paginationState = state.historyPagination) {
+  const requestedPage = paginationState.page;
+  const pageSize = paginationState.pageSize;
+  const fetchPage = async (pageNumber) => {
+    let query = supabase
+      .from('attendance')
+      .select(ATTENDANCE_SELECT, { count: 'exact' })
+      .order('attendance_date', { ascending: false })
+      .order('check_in_time', { ascending: false });
+
+    if (filters.userId) {
+      query = query.eq('user_id', filters.userId);
+    }
+    if (filters.date) {
+      query = query.eq('attendance_date', filters.date);
+    }
+    if (filters.from) {
+      query = query.gte('attendance_date', filters.from);
+    }
+    if (filters.to) {
+      query = query.lte('attendance_date', filters.to);
+    }
+    if (filters.status && filters.status !== 'all') {
+      query = query.eq('attendance_status', filters.status);
+    }
+
+    const fromIndex = Math.max((pageNumber - 1) * pageSize, 0);
+    const toIndex = fromIndex + pageSize - 1;
+    return query.range(fromIndex, toIndex);
+  };
+
+  let { data, error, count } = await fetchPage(requestedPage);
+  if (error) {
+    throw new Error(error.message || 'Unable to load attendance');
+  }
+
+  let meta = buildPaginationMeta(count || 0, paginationState);
+  if (meta.currentPage !== requestedPage) {
+    const retry = await fetchPage(meta.currentPage);
+    if (retry.error) {
+      throw new Error(retry.error.message || 'Unable to load attendance');
+    }
+    data = retry.data;
+    count = retry.count;
+    meta = buildPaginationMeta(count || 0, paginationState);
+  }
+
+  return {
+    items: data || [],
+    ...meta,
+  };
+}
+
+async function fetchSystemHealth(options = {}) {
+  const force = Boolean(options.force);
+  const now = Date.now();
+  if (!force && state.attendanceRestrictions && (now - state.attendanceRestrictionsFetchedAt) < HEALTH_CACHE_TTL_MS) {
+    return state.attendanceRestrictions;
+  }
+
   try {
     const payload = await apiRequest('/health');
-    return payload.attendance_restrictions || null;
+    state.attendanceRestrictions = payload.attendance_restrictions || null;
+    state.attendanceRestrictionsFetchedAt = now;
+    return state.attendanceRestrictions;
   } catch (_error) {
     return null;
   }
@@ -879,8 +1130,7 @@ function badgeMarkup(type, value, label = null) {
   return `<span class="badge ${escapeHtml(type)}">${escapeHtml(label || statusLabel(value))}</span>`;
 }
 
-function paginateItems(items, paginationState) {
-  const totalItems = items.length;
+function buildPaginationMeta(totalItems, paginationState) {
   const totalPages = Math.max(1, Math.ceil(totalItems / paginationState.pageSize));
   const currentPage = Math.min(Math.max(paginationState.page, 1), totalPages);
   paginationState.page = currentPage;
@@ -889,13 +1139,23 @@ function paginateItems(items, paginationState) {
   const endIndex = startIndex + paginationState.pageSize;
 
   return {
-    items: items.slice(startIndex, endIndex),
     totalItems,
     totalPages,
     currentPage,
     pageSize: paginationState.pageSize,
     startItem: totalItems ? startIndex + 1 : 0,
     endItem: totalItems ? Math.min(endIndex, totalItems) : 0,
+  };
+}
+
+function paginateItems(items, paginationState) {
+  const meta = buildPaginationMeta(items.length, paginationState);
+  const startIndex = (meta.currentPage - 1) * paginationState.pageSize;
+  const endIndex = startIndex + paginationState.pageSize;
+
+  return {
+    items: items.slice(startIndex, endIndex),
+    ...meta,
   };
 }
 
@@ -976,11 +1236,9 @@ async function renderDashboardPage() {
     if (isAdmin()) {
       const todayIsWorkday = isWorkday(new Date(`${today}T12:00:00`));
       const [employees, todayAttendance] = await Promise.all([
-        fetchEmployees(),
+        loadEmployees(),
         fetchAttendance({ date: today, limit: 250 }),
       ]);
-      state.employees = employees;
-      state.profileMap = new Map(employees.map((employee) => [employee.id, employee]));
 
       const activeEmployees = employees.filter((employee) => employee.is_active);
       const onLeave = employees.filter((employee) => employee.status === 'on_leave').length;
@@ -1241,8 +1499,16 @@ async function renderEmployeesPage() {
   setPageLoading(container, 'Loading employees');
 
   try {
-    state.employees = await fetchEmployees();
-    state.profileMap = new Map(state.employees.map((employee) => [employee.id, employee]));
+    const [pageData, stats] = await Promise.all([
+      fetchEmployeeDirectoryPage(state.employeeFilters, state.employeePagination),
+      fetchEmployeeDirectoryStats(),
+    ]);
+    state.employeeDirectoryItems = pageData.items;
+    state.employeeDirectoryMeta = pageData;
+    state.employeeDirectoryStats = stats;
+    pageData.items.forEach((employee) => {
+      state.profileMap.set(employee.id, employee);
+    });
     drawEmployeesPage();
   } catch (error) {
     setPageError(container, error.message);
@@ -1360,11 +1626,7 @@ async function renderReportsPage() {
   setPageLoading(container, 'Loading reports');
 
   try {
-    if (!state.employees.length) {
-      state.employees = await fetchEmployees();
-      state.profileMap = new Map(state.employees.map((employee) => [employee.id, employee]));
-      state.profileMap.set(state.profile.id, state.profile);
-    }
+    await loadEmployees();
 
     const eligibleEmployees = state.employees.filter((employee) => employee.is_active && employee.status !== 'inactive');
     const scopedEmployees = reportsEmployeeChoices(eligibleEmployees, state.reportsFilters.department);
@@ -1637,12 +1899,12 @@ async function renderReportsPage() {
 
 function drawEmployeesPage() {
   const container = elements.pages.employees;
-  const list = filteredEmployees();
-  const paginated = paginateItems(list, state.employeePagination);
-  const departments = [...new Set(state.employees.map((employee) => departmentLabel(employee.department)))].sort();
-  const activeCount = state.employees.filter((employee) => employee.is_active).length;
-  const onLeaveCount = state.employees.filter((employee) => employee.status === 'on_leave').length;
-  const activeAdminCount = state.employees.filter((employee) => employee.role === 'admin' && employee.is_active).length;
+  const items = state.employeeDirectoryItems;
+  const paginated = state.employeeDirectoryMeta;
+  const departments = state.employeeDirectoryStats.departments;
+  const activeCount = state.employeeDirectoryStats.activeCount;
+  const onLeaveCount = state.employeeDirectoryStats.onLeaveCount;
+  const activeAdminCount = state.employeeDirectoryStats.activeAdminCount;
 
   container.innerHTML = `
     <div class="page-shell">
@@ -1655,7 +1917,7 @@ function drawEmployeesPage() {
         <button id="openAddEmployeeBtn" type="button" class="btn btn-primary">Add Employee</button>
       </div>
       <div class="summary-grid">
-        ${buildSummaryCard('Total Employees', String(state.employees.length), 'All employee and admin profiles')}
+        ${buildSummaryCard('Total Employees', String(state.employeeDirectoryStats.totalEmployees), 'All employee and admin profiles')}
         ${buildSummaryCard('Active Employees', String(activeCount), 'Profiles with active access')}
         ${buildSummaryCard('On Leave', String(onLeaveCount), 'Profiles marked as on leave')}
         ${buildSummaryCard('Departments', String(departments.length), 'Distinct departments represented')}
@@ -1690,7 +1952,7 @@ function drawEmployeesPage() {
               </tr>
             </thead>
             <tbody>
-              ${paginated.items.length ? paginated.items.map((employee) => {
+              ${items.length ? items.map((employee) => {
                 const isSelf = employee.id === state.profile?.id;
                 const isLastActiveAdmin = employee.role === 'admin' && employee.is_active && activeAdminCount <= 1;
                 const protectionReason = isSelf
@@ -1729,19 +1991,25 @@ function drawEmployeesPage() {
   `;
 
   container.querySelector('#employeeSearch')?.addEventListener('input', (event) => {
-    state.employeeFilters.search = event.target.value;
-    state.employeePagination.page = 1;
-    drawEmployeesPage();
+    const nextValue = event.target.value;
+    if (employeeSearchDebounceId) {
+      window.clearTimeout(employeeSearchDebounceId);
+    }
+    employeeSearchDebounceId = window.setTimeout(() => {
+      state.employeeFilters.search = nextValue;
+      state.employeePagination.page = 1;
+      renderEmployeesPage().catch((error) => setPageError(container, error.message));
+    }, INPUT_DEBOUNCE_MS);
   });
   container.querySelector('#departmentFilter')?.addEventListener('change', (event) => {
     state.employeeFilters.department = event.target.value;
     state.employeePagination.page = 1;
-    drawEmployeesPage();
+    renderEmployeesPage().catch((error) => setPageError(container, error.message));
   });
   container.querySelector('#statusFilter')?.addEventListener('change', (event) => {
     state.employeeFilters.status = event.target.value;
     state.employeePagination.page = 1;
-    drawEmployeesPage();
+    renderEmployeesPage().catch((error) => setPageError(container, error.message));
   });
   container.querySelector('#openAddEmployeeBtn')?.addEventListener('click', () => {
     openEmployeeForm('create');
@@ -1749,11 +2017,25 @@ function drawEmployeesPage() {
   container.querySelector('#refreshEmployeesBtn')?.addEventListener('click', () => {
     renderEmployeesPage().catch((error) => setPageError(container, error.message));
   });
-  container.querySelector('#exportEmployeesBtn')?.addEventListener('click', () => {
-    exportEmployeesCsv(list);
+  container.querySelector('#exportEmployeesBtn')?.addEventListener('click', async () => {
+    const list = await fetchEmployees();
+    const searchValue = state.employeeFilters.search.trim().toLowerCase();
+    const filteredList = list.filter((employee) => {
+      const matchesSearch = !searchValue || `${employee.full_name} ${employee.employee_code || ''} ${employee.email} ${employee.department || ''} ${employee.position || ''}`
+        .toLowerCase()
+        .includes(searchValue);
+      const matchesDepartment = state.employeeFilters.department === 'all'
+        || departmentLabel(employee.department) === state.employeeFilters.department;
+      const matchesStatus = state.employeeFilters.status === 'all'
+        || employee.status === state.employeeFilters.status;
+      return matchesSearch && matchesDepartment && matchesStatus;
+    });
+    exportEmployeesCsv(filteredList);
     showToast('Employees CSV exported successfully.', 'success');
   });
-  bindPagination(container, 'employeesPager', state.employeePagination, drawEmployeesPage);
+  bindPagination(container, 'employeesPager', state.employeePagination, () => {
+    renderEmployeesPage().catch((error) => setPageError(container, error.message));
+  });
   container.querySelector('tbody')?.addEventListener('click', (event) => {
     const action = event.target.closest('[data-action]');
     if (!action) {
@@ -1970,6 +2252,7 @@ function openEmployeeForm(mode, employee = null) {
         method: mode === 'create' ? 'POST' : 'PUT',
         body: payload,
       });
+      invalidateEmployeeCache();
       closeModal();
       showToast(mode === 'create' ? 'Employee created successfully.' : 'Employee updated successfully.', 'success');
       await renderEmployeesPage();
@@ -2181,6 +2464,7 @@ async function handleEmployeeToggle(employee) {
   await apiRequest(`/admin/employees/${employee.id}/toggle-status`, {
     method: 'PATCH',
   });
+  invalidateEmployeeCache();
   showToast(`${employee.full_name} status updated.`, 'success');
   await renderEmployeesPage();
 }
@@ -2209,6 +2493,7 @@ async function handleEmployeeDelete(employee) {
   await apiRequest(`/admin/employees/${employee.id}`, {
     method: 'DELETE',
   });
+  invalidateEmployeeCache();
   showToast(`${employee.full_name} deleted successfully.`, 'success');
   await renderEmployeesPage();
 }
@@ -2226,10 +2511,7 @@ async function renderAttendancePage() {
     const restrictionNote = attendanceRestrictionMessage(restrictionSummary);
 
     if (isAdmin()) {
-      if (!state.employees.length) {
-        state.employees = await fetchEmployees();
-        state.profileMap = new Map(state.employees.map((employee) => [employee.id, employee]));
-      }
+      await loadEmployees();
       await ensureProfileDirectory(todayRecords);
       const checkedOut = todayRecords.filter((item) => item.check_out_time).length;
       const stillInside = todayRecords.filter((item) => item.check_in_time && !item.check_out_time).length;
@@ -2381,14 +2663,14 @@ async function renderHistoryPage() {
   setPageLoading(container, 'Loading history');
 
   try {
-    const records = await fetchAttendance({
+    const pageData = await fetchAttendancePage({
       from: state.historyFilters.from,
       to: state.historyFilters.to,
       status: state.historyFilters.status,
       ...(isAdmin() ? {} : { userId: state.profile.id }),
-    });
-    await ensureProfileDirectory(records);
-    const paginated = paginateItems(records, state.historyPagination);
+    }, state.historyPagination);
+    state.historyPageData = pageData;
+    await ensureProfileDirectory(pageData.items);
 
     container.innerHTML = `
       <div class="page-shell">
@@ -2417,7 +2699,7 @@ async function renderHistoryPage() {
                 <tr><th>Employee</th><th>Date</th><th>Check In</th><th>Check Out</th><th>Status</th><th>IP Address</th></tr>
               </thead>
               <tbody>
-                ${paginated.items.length ? paginated.items.map((row) => {
+                ${pageData.items.length ? pageData.items.map((row) => {
                   const profile = employeeById(row.user_id) || state.profile;
                   return `
                     <tr>
@@ -2433,7 +2715,7 @@ async function renderHistoryPage() {
               </tbody>
             </table>
           </div>
-          ${buildPaginationMarkup('historyPager', paginated)}
+          ${buildPaginationMarkup('historyPager', pageData)}
         </section>
       </div>
     `;
@@ -2453,7 +2735,14 @@ async function renderHistoryPage() {
         },
       });
     });
-    container.querySelector('#historyExportBtn')?.addEventListener('click', () => {
+    container.querySelector('#historyExportBtn')?.addEventListener('click', async () => {
+      const records = await fetchAttendance({
+        from: state.historyFilters.from,
+        to: state.historyFilters.to,
+        status: state.historyFilters.status,
+        ...(isAdmin() ? {} : { userId: state.profile.id }),
+      });
+      await ensureProfileDirectory(records);
       exportAttendanceCsv(records, { resolveProfile: employeeById, fallbackProfile: state.profile });
       showToast('Attendance history CSV exported successfully.', 'success');
     });
