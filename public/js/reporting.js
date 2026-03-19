@@ -4,6 +4,7 @@ import {
   escapeHtml,
   todayIso as todayBusinessIso,
 } from './shared.js';
+import { getLocale, t } from './i18n.js';
 
 export const BUSINESS_TIME_ZONE = 'Africa/Cairo';
 export const FULL_SHIFT_MINUTES = 8 * 60;
@@ -62,7 +63,7 @@ export function monthRange(monthValue) {
     endDate: boundedEnd,
     from: formatDateInput(startDate),
     to: formatDateInput(boundedEnd),
-    label: startDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
+    label: startDate.toLocaleDateString(getLocale(), { month: 'long', year: 'numeric' }),
   };
 }
 
@@ -80,7 +81,10 @@ export function businessEndTimeLabel() {
 }
 
 export function businessScheduleLabel() {
-  return `Sunday to Thursday - ${businessStartTimeLabel()} to ${businessEndTimeLabel()}`;
+  return t('schedule.businessLabel', {
+    start: businessStartTimeLabel(),
+    end: businessEndTimeLabel(),
+  });
 }
 
 export function getBusinessDayContext(now = new Date()) {
@@ -114,8 +118,8 @@ export function deriveMissingAttendanceState({
   if (!isActive || employeeStatus === 'inactive') {
     return {
       code: 'inactive',
-      label: 'Inactive',
-      note: 'Attendance tracking is disabled for this account.',
+      label: t('states.inactiveAccount'),
+      note: t('outcomes.attendanceDisabled'),
       badgeType: 'inactive',
       countsAsMissing: false,
       countsAsAbsent: false,
@@ -125,8 +129,8 @@ export function deriveMissingAttendanceState({
   if (employeeStatus === 'on_leave') {
     return {
       code: 'on_leave',
-      label: 'On Leave',
-      note: 'This employee is currently marked as on leave.',
+      label: t('outcomes.onLeave'),
+      note: t('states.onLeaveNote'),
       badgeType: 'on_leave',
       countsAsMissing: false,
       countsAsAbsent: false,
@@ -136,8 +140,8 @@ export function deriveMissingAttendanceState({
   if (!targetDateObject || !isWorkday(targetDateObject)) {
     return {
       code: 'weekend',
-      label: 'Weekly Leave',
-      note: 'Friday and Saturday are counted as weekly leave.',
+      label: t('states.weeklyLeave'),
+      note: t('schedule.weeklyLeaveHint'),
       badgeType: 'pending',
       countsAsMissing: false,
       countsAsAbsent: false,
@@ -147,8 +151,8 @@ export function deriveMissingAttendanceState({
   if (targetDate < context.todayIso) {
     return {
       code: 'absent',
-      label: 'Absent',
-      note: 'No check-in was recorded for this workday.',
+      label: t('labels.absent'),
+      note: t('states.workdayAbsent'),
       badgeType: 'absent',
       countsAsMissing: true,
       countsAsAbsent: true,
@@ -158,8 +162,8 @@ export function deriveMissingAttendanceState({
   if (targetDate > context.todayIso) {
     return {
       code: 'upcoming',
-      label: 'Upcoming',
-      note: 'This attendance day has not started yet.',
+      label: t('states.upcoming'),
+      note: t('states.upcomingDay'),
       badgeType: 'pending',
       countsAsMissing: false,
       countsAsAbsent: false,
@@ -169,8 +173,8 @@ export function deriveMissingAttendanceState({
   if (!context.hasShiftStarted) {
     return {
       code: 'not_checked_in_yet',
-      label: 'Not Checked In Yet',
-      note: `No check-in has been recorded yet. The shift starts at ${businessStartTimeLabel()}.`,
+      label: t('states.notCheckedInYet'),
+      note: t('outcomes.shiftStartsAt', { time: businessStartTimeLabel() }),
       badgeType: 'pending',
       countsAsMissing: true,
       countsAsAbsent: false,
@@ -180,8 +184,8 @@ export function deriveMissingAttendanceState({
   if (!context.hasShiftEnded) {
     return {
       code: 'absent_so_far',
-      label: 'Absent So Far',
-      note: 'No check-in has been recorded yet for today.',
+      label: t('states.absentSoFar'),
+      note: t('outcomes.noCheckInToday'),
       badgeType: 'late',
       countsAsMissing: true,
       countsAsAbsent: false,
@@ -190,8 +194,8 @@ export function deriveMissingAttendanceState({
 
   return {
     code: 'absent',
-    label: 'Absent',
-    note: `No check-in was recorded before the workday ended at ${businessEndTimeLabel()}.`,
+    label: t('labels.absent'),
+    note: t('states.missedBeforeEnd', { time: businessEndTimeLabel() }),
     badgeType: 'absent',
     countsAsMissing: true,
     countsAsAbsent: true,
@@ -269,10 +273,15 @@ export function formatAverageTime(minutes) {
 
   const normalizedMinutes = ((minutes % (24 * 60)) + (24 * 60)) % (24 * 60);
   const hours24 = Math.floor(normalizedMinutes / 60);
-  const mins = String(normalizedMinutes % 60).padStart(2, '0');
-  const meridiem = hours24 >= 12 ? 'PM' : 'AM';
-  const hours12 = hours24 % 12 || 12;
-  return `${hours12}:${mins} ${meridiem}`;
+  const mins = normalizedMinutes % 60;
+  const reference = new Date(Date.UTC(2020, 0, 1, hours24, mins));
+
+  return new Intl.DateTimeFormat(getLocale(), {
+    timeZone: 'UTC',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(reference);
 }
 
 export function formatDuration(minutes) {
@@ -358,38 +367,38 @@ export function buildAttendanceRowMetrics(row) {
 
 export function attendanceOutcome(metrics) {
   if (!metrics.isPresent) {
-    return 'No Check-in';
+    return t('outcomes.noCheckIn');
   }
   if (!metrics.isCompleteShift) {
     if (metrics.isPastDue) {
       return metrics.shortfallMinutes > 0
-        ? `Incomplete Shift - ${formatDuration(metrics.shortfallMinutes)} short`
-        : 'Incomplete Shift - Review Needed';
+        ? t('outcomes.incompleteShort', { duration: formatDuration(metrics.shortfallMinutes) })
+        : t('outcomes.incompleteReview');
     }
     return metrics.projectedRemainingMinutes > 0
-      ? `Open Shift - ${formatDuration(metrics.projectedRemainingMinutes)} remaining`
-      : 'Open Shift';
+      ? t('outcomes.openShiftRemaining', { duration: formatDuration(metrics.projectedRemainingMinutes) })
+      : t('outcomes.openShift');
   }
   if (metrics.overtimeMinutes > 0) {
-    return `Overtime +${formatDuration(metrics.overtimeMinutes)}`;
+    return t('outcomes.overtimePlus', { duration: formatDuration(metrics.overtimeMinutes) });
   }
   if (metrics.shortfallMinutes > 0) {
-    return `Shortfall ${formatDuration(metrics.shortfallMinutes)}`;
+    return t('outcomes.shortfall', { duration: formatDuration(metrics.shortfallMinutes) });
   }
-  return 'Full Shift';
+  return t('outcomes.fullShift');
 }
 
 function classifyEmployeeTrend(employeeReport) {
   if (employeeReport.attendanceRate >= 96 && employeeReport.onTimeArrivalRate >= 90 && employeeReport.shortfallMinutes <= FULL_SHIFT_MINUTES) {
-    return { label: 'Exceptional', className: 'trend-exceptional', note: 'Consistent attendance with strong shift completion.' };
+    return { label: t('trends.exceptional'), className: 'trend-exceptional', note: t('trends.exceptionalNote') };
   }
   if (employeeReport.attendanceRate >= 85 && employeeReport.onTimeArrivalRate >= 75 && employeeReport.shortfallMinutes <= FULL_SHIFT_MINUTES * 2) {
-    return { label: 'Committed', className: 'trend-committed', note: 'Reliable attendance and healthy punctuality.' };
+    return { label: t('trends.committed'), className: 'trend-committed', note: t('trends.committedNote') };
   }
   if (employeeReport.attendanceRate >= 70 && employeeReport.onTimeArrivalRate >= 60) {
-    return { label: 'Needs Focus', className: 'trend-focus', note: 'Watch punctuality and shift completion more closely.' };
+    return { label: t('trends.needsFocus'), className: 'trend-focus', note: t('trends.needsFocusNote') };
   }
-  return { label: 'Needs Attention', className: 'trend-risk', note: 'Attendance or punctuality is below target.' };
+  return { label: t('trends.needsAttention'), className: 'trend-risk', note: t('trends.needsAttentionNote') };
 }
 
 export function trendBadgeMarkup(trend) {
@@ -412,7 +421,7 @@ export function reportsEmployeeChoices(employees, departmentFilter = 'all') {
 
 export function reportEmployeeOptions(employees, selectedEmployeeId = 'all') {
   return [
-    '<option value="all">All Employees</option>',
+    `<option value="all">${escapeHtml(t('common.allEmployees'))}</option>`,
     ...employees.map((employee) => `
       <option value="${escapeHtml(employee.id)}" ${selectedEmployeeId === employee.id ? 'selected' : ''}>
         ${escapeHtml(employee.full_name)}${employee.employee_code ? ` (${escapeHtml(employee.employee_code)})` : ''}
@@ -517,7 +526,7 @@ export function buildReportsDataset(employees, attendanceRows, filters) {
       ).size;
 
       return {
-        weekday: date.toLocaleDateString('en-GB', { weekday: 'long' }),
+        weekday: date.toLocaleDateString(getLocale(), { weekday: 'long' }),
         absentCount: Math.max(filteredEmployees.length - presentCount, 0),
         occurrences: 1,
       };
@@ -539,7 +548,7 @@ export function buildReportsDataset(employees, attendanceRows, filters) {
     const presentCount = relevantRows.filter((row) => row.attendance_date === isoDate && row.check_in_time).length;
 
     return {
-      label: date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+      label: date.toLocaleDateString(getLocale(), { day: '2-digit', month: 'short' }),
       presentCount,
       absentCount: Math.max(filteredEmployees.length - presentCount, 0),
       workedHours: durationToHours(sumBy(rowsForDate, (item) => item.workedMinutes)),
@@ -714,7 +723,7 @@ export function drawWorkingHoursTrend(canvas, points) {
   context.fillRect(width - 176, 16, 12, 12);
   context.fillStyle = '#dbeafe';
   context.font = '12px Inter, sans-serif';
-  context.fillText('Hours Worked', width - 156, 26);
+  context.fillText(t('charts.hoursWorked'), width - 156, 26);
   context.strokeStyle = 'rgba(191, 219, 254, 0.78)';
   context.setLineDash([6, 4]);
   context.beginPath();
@@ -723,7 +732,7 @@ export function drawWorkingHoursTrend(canvas, points) {
   context.stroke();
   context.setLineDash([]);
   context.fillStyle = 'rgba(237, 242, 247, 0.72)';
-  context.fillText('Overtime', width - 156, 46);
+  context.fillText(t('charts.overtime'), width - 156, 46);
 }
 
 export function drawDepartmentHoursChart(canvas, points) {
@@ -790,10 +799,10 @@ export function drawDepartmentHoursChart(canvas, points) {
   context.fillRect(width - 178, 16, 12, 12);
   context.fillStyle = '#dbeafe';
   context.font = '12px Inter, sans-serif';
-  context.fillText('Expected', width - 158, 26);
+  context.fillText(t('charts.expected'), width - 158, 26);
   context.fillStyle = '#3b82f6';
   context.fillRect(width - 98, 16, 12, 12);
   context.fillStyle = '#dbeafe';
-  context.fillText('Actual', width - 78, 26);
+  context.fillText(t('charts.actual'), width - 78, 26);
 }
 

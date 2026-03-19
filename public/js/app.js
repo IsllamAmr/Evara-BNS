@@ -431,7 +431,7 @@ async function fetchMyProfile(userId) {
     .single();
 
   if (error) {
-    throw new Error(error.message || 'Unable to load your profile');
+    throw new Error(error.message || t('errors.loadProfile'));
   }
 
   return data;
@@ -446,7 +446,7 @@ async function fetchEmployees(options = {}) {
       .order('created_at', { ascending: false });
 
     if (error) {
-      throw new Error(error.message || 'Unable to load employees');
+      throw new Error(error.message || t('errors.loadEmployees'));
     }
 
     return data || [];
@@ -550,14 +550,14 @@ async function fetchEmployeeDirectoryPage(filters, paginationState, options = {}
 
     let { data, error, count } = await fetchPage(requestedPage);
     if (error) {
-      throw new Error(error.message || 'Unable to load employees');
+      throw new Error(error.message || t('errors.loadEmployees'));
     }
 
     let meta = buildPaginationMeta(count || 0, paginationState);
     if (meta.currentPage !== requestedPage) {
       const retry = await fetchPage(meta.currentPage);
       if (retry.error) {
-        throw new Error(retry.error.message || 'Unable to load employees');
+        throw new Error(retry.error.message || t('errors.loadEmployees'));
       }
       data = retry.data;
       count = retry.count;
@@ -590,7 +590,7 @@ async function fetchEmployeeDirectoryStats(options = {}) {
 
     const firstError = [totalResult.error, activeResult.error, onLeaveResult.error, activeAdminResult.error, departmentsResult.error].find(Boolean);
     if (firstError) {
-      throw new Error(firstError.message || 'Unable to load employee directory metrics');
+      throw new Error(firstError.message || t('errors.loadEmployeeMetrics'));
     }
 
     const departments = [...new Set((departmentsResult.data || []).map((item) => departmentLabel(item.department)).filter(Boolean))];
@@ -636,7 +636,7 @@ async function fetchAttendance(filters = {}) {
 
     const { data, error } = await query;
     if (error) {
-      throw new Error(error.message || 'Unable to load attendance');
+      throw new Error(error.message || t('errors.loadAttendance'));
     }
 
     return data || [];
@@ -678,14 +678,14 @@ async function fetchAttendancePage(filters = {}, paginationState = state.history
 
     let { data, error, count } = await fetchPage(requestedPage);
     if (error) {
-      throw new Error(error.message || 'Unable to load attendance');
+      throw new Error(error.message || t('errors.loadAttendance'));
     }
 
     let meta = buildPaginationMeta(count || 0, paginationState);
     if (meta.currentPage !== requestedPage) {
       const retry = await fetchPage(meta.currentPage);
       if (retry.error) {
-        throw new Error(retry.error.message || 'Unable to load attendance');
+        throw new Error(retry.error.message || t('errors.loadAttendance'));
       }
       data = retry.data;
       count = retry.count;
@@ -1056,7 +1056,7 @@ async function ensureProfileDirectory(records = []) {
     .in('id', missingIds);
 
   if (error) {
-    throw new Error(error.message || 'Unable to map attendance records');
+    throw new Error(error.message || t('errors.mapAttendance'));
   }
 
   (data || []).forEach((profile) => {
@@ -1264,12 +1264,12 @@ async function handleAuthenticatedSession(session) {
 
   if (!profile) {
     await supabase.auth.signOut();
-    throw new Error('Your profile is missing. Contact an administrator.');
+    throw new Error(t('errors.missingProfile'));
   }
 
   if (!profile.is_active) {
     await supabase.auth.signOut();
-    throw new Error('Your account is inactive. Contact an administrator.');
+    throw new Error(t('errors.inactiveAccount'));
   }
 
   state.session = session;
@@ -1381,7 +1381,7 @@ function buildUserCell(profile) {
     <div class="table-user">
       <div class="avatar-badge">${escapeHtml(toInitials(profile?.full_name || 'EV'))}</div>
       <div>
-        <strong>${escapeHtml(profile?.full_name || 'Unknown user')}</strong>
+        <strong>${escapeHtml(profile?.full_name || t('labels.unknown'))}</strong>
         <span>${escapeHtml(profile?.email || '-')}</span>
       </div>
     </div>
@@ -1459,17 +1459,17 @@ function attendanceStateBadgeMarkup(displayState) {
 function missingAttendanceOutcome(displayState, shortfallMinutes = 0) {
   switch (displayState.code) {
     case 'weekend':
-      return 'Weekly Leave';
+      return t('outcomes.weeklyLeave');
     case 'on_leave':
-      return 'On Leave';
+      return t('outcomes.onLeave');
     case 'absent':
-      return `Absent - ${formatDuration(shortfallMinutes || FULL_SHIFT_MINUTES)} shortfall`;
+      return t('outcomes.absent', { duration: formatDuration(shortfallMinutes || FULL_SHIFT_MINUTES) });
     case 'absent_so_far':
-      return 'No check-in recorded yet for today.';
+      return t('outcomes.noCheckInToday');
     case 'not_checked_in_yet':
-      return `Shift starts at ${businessStartTimeLabel()}.`;
+      return t('outcomes.shiftStartsAt', { time: businessStartTimeLabel() });
     case 'inactive':
-      return 'Attendance tracking is disabled for this account.';
+      return t('outcomes.attendanceDisabled');
     default:
       return displayState.note || displayState.label;
   }
@@ -1478,13 +1478,13 @@ function missingAttendanceOutcome(displayState, shortfallMinutes = 0) {
 function attendanceDayTypeLabel(displayState) {
   switch (displayState.code) {
     case 'weekend':
-      return 'Weekly Leave';
+      return t('states.weeklyLeave');
     case 'on_leave':
-      return 'Approved Leave';
+      return t('states.approvedLeave');
     case 'inactive':
-      return 'Inactive';
+      return t('states.inactiveAccount');
     default:
-      return 'Workday';
+      return t('states.workday');
   }
 }
 
@@ -1502,26 +1502,26 @@ function attendanceLedgerNote({ row = null, displayState, metrics = null, counts
   }
 
   if (countsAsLate && shortfallMinutes > 0) {
-    return 'Late arrival with remaining shortfall.';
+    return t('ledgerNotes.lateWithShortfall');
   }
 
   if (countsAsLate && overtimeMinutes > 0) {
-    return 'Late arrival recovered with overtime.';
+    return t('ledgerNotes.lateRecovered');
   }
 
   if (countsAsLate) {
-    return 'Late arrival recorded for this workday.';
+    return t('ledgerNotes.lateArrival');
   }
 
   if (overtimeMinutes > 0) {
-    return 'Completed the workday with overtime.';
+    return t('ledgerNotes.completedWithOvertime');
   }
 
   if (shortfallMinutes > 0) {
-    return 'Worked below the 8-hour target.';
+    return t('ledgerNotes.belowTarget');
   }
 
-  return 'Completed the scheduled workday.';
+  return t('ledgerNotes.completedDay');
 }
 
 function buildEmployeeMonthLedger(employee, attendanceRows, range) {
@@ -1696,18 +1696,18 @@ function buildPaginationMarkup(id, meta) {
   if (meta.totalItems <= meta.pageSize) {
     return `
       <div class="pagination compact">
-        <span class="pagination-summary">Showing ${escapeHtml(String(meta.totalItems))} record(s)</span>
+        <span class="pagination-summary">${escapeHtml(t('pagination.showingRecords', { count: String(meta.totalItems) }))}</span>
       </div>
     `;
   }
 
   return `
     <div class="pagination" data-pagination="${escapeHtml(id)}">
-      <span class="pagination-summary">Showing ${escapeHtml(String(meta.startItem))}-${escapeHtml(String(meta.endItem))} of ${escapeHtml(String(meta.totalItems))}</span>
+      <span class="pagination-summary">${escapeHtml(t('pagination.showingRange', { start: String(meta.startItem), end: String(meta.endItem), total: String(meta.totalItems) }))}</span>
       <div class="inline-actions">
-        <button type="button" class="btn btn-secondary" data-page-action="prev" ${meta.currentPage === 1 ? 'disabled' : ''}>Previous</button>
-        <span class="pagination-pill">Page ${escapeHtml(String(meta.currentPage))} / ${escapeHtml(String(meta.totalPages))}</span>
-        <button type="button" class="btn btn-secondary" data-page-action="next" ${meta.currentPage === meta.totalPages ? 'disabled' : ''}>Next</button>
+        <button type="button" class="btn btn-secondary" data-page-action="prev" ${meta.currentPage === 1 ? 'disabled' : ''}>${escapeHtml(t('common.previous'))}</button>
+        <span class="pagination-pill">${escapeHtml(t('pagination.pageOf', { current: String(meta.currentPage), total: String(meta.totalPages) }))}</span>
+        <button type="button" class="btn btn-secondary" data-page-action="next" ${meta.currentPage === meta.totalPages ? 'disabled' : ''}>${escapeHtml(t('common.next'))}</button>
       </div>
     </div>
   `;
@@ -1731,7 +1731,7 @@ function bindPagination(container, paginationId, paginationState, rerender) {
   });
 }
 
-function confirmAction({ eyebrow = 'Please confirm', title, message, confirmLabel = 'Confirm', tone = 'danger' }) {
+function confirmAction({ eyebrow = t('confirm.pleaseConfirm'), title, message, confirmLabel = t('confirm.confirm'), tone = 'danger' }) {
   return new Promise((resolve) => {
     openModal(`
       <div class="modal-header">
@@ -1739,13 +1739,13 @@ function confirmAction({ eyebrow = 'Please confirm', title, message, confirmLabe
           <p class="eyebrow">${escapeHtml(eyebrow)}</p>
           <h2>${escapeHtml(title)}</h2>
         </div>
-        <button id="closeModalBtn" type="button" class="ghost-inline">Close</button>
+        <button id="closeModalBtn" type="button" class="ghost-inline">${escapeHtml(t('common.close'))}</button>
       </div>
       <div class="form-alert info">${escapeHtml(message)}</div>
       <div class="modal-footer">
         <div></div>
         <div class="inline-actions">
-          <button id="cancelConfirmBtn" type="button" class="btn btn-secondary">Cancel</button>
+          <button id="cancelConfirmBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.cancel'))}</button>
           <button id="submitConfirmBtn" type="button" class="btn ${tone === 'danger' ? 'btn-danger' : 'btn-primary'}">${escapeHtml(confirmLabel)}</button>
         </div>
       </div>
@@ -1774,7 +1774,7 @@ async function renderDashboardPage() {
     );
 
   if (!warmDashboardCache) {
-    setPageLoading(container, 'Loading dashboard');
+    setPageLoading(container, t('pages.loading.dashboard'));
   }
 
   try {
@@ -1800,19 +1800,19 @@ async function renderDashboardPage() {
       const presentToday = todayDetailed.filter((entry) => entry.metrics.isPresent).length;
       const missingTodayCount = todayIsWorkday ? missingTodayRows.length : 0;
       const missingTodayLabel = !todayIsWorkday
-        ? 'Missing Today'
+        ? t('dashboard.admin.missingWeekend')
         : businessContext.hasShiftEnded
-          ? 'Absent Today'
+          ? t('dashboard.admin.missingAbsent')
           : businessContext.hasShiftStarted
-            ? 'Absent So Far'
-            : 'Not Checked In Yet';
+            ? t('dashboard.admin.missingSoFar')
+            : t('dashboard.admin.missingPending');
       const missingTodayMeta = !todayIsWorkday
-        ? 'Friday and Saturday are scheduled days off'
+        ? t('dashboard.admin.missingWeekendMeta')
         : businessContext.hasShiftEnded
-          ? 'Expected employees with no check-in by the end of the workday'
+          ? t('dashboard.admin.missingAbsentMeta')
           : businessContext.hasShiftStarted
-            ? 'Expected employees who still have no check-in recorded'
-            : `Expected employees before the shift starts at ${businessStartTimeLabel()}`;
+            ? t('dashboard.admin.missingSoFarMeta')
+            : t('dashboard.admin.missingPendingMeta', { start: businessStartTimeLabel() });
       const lateToday = todayIsWorkday
         ? todayDetailed.filter((entry) => entry.metrics.isLateArrival || entry.row.attendance_status === 'late').length
         : 0;
@@ -1839,33 +1839,33 @@ async function renderDashboardPage() {
         <div class="page-shell">
           <div class="section-header">
             <div>
-              <p class="eyebrow">Overview</p>
-              <h1>Operations dashboard</h1>
-              <p>Live employee and attendance data connected directly to Supabase. ${escapeHtml(businessScheduleLabel())}.</p>
+              <p class="eyebrow">${escapeHtml(t('dashboard.admin.eyebrow'))}</p>
+              <h1>${escapeHtml(t('dashboard.admin.title'))}</h1>
+              <p>${escapeHtml(t('dashboard.admin.intro', { schedule: businessScheduleLabel() }))}</p>
             </div>
-            <button id="dashboardRefreshBtn" type="button" class="btn btn-secondary">Refresh</button>
+            <button id="dashboardRefreshBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.refresh'))}</button>
           </div>
           <div class="summary-grid">
-            ${buildSummaryCard('Total Employees', String(employeeProfiles.length), 'Employee profiles in the workspace')}
-            ${buildSummaryCard('Active Employees', String(trackedEmployees.length), 'Accounts with attendance access enabled')}
-            ${buildSummaryCard('On Leave', String(onLeave), 'Employees currently on leave')}
-            ${buildSummaryCard('Present Today', String(presentToday), 'Attendance records created today')}
+            ${buildSummaryCard(t('dashboard.admin.totalEmployees'), String(employeeProfiles.length), t('dashboard.admin.totalEmployeesMeta'))}
+            ${buildSummaryCard(t('dashboard.admin.activeEmployees'), String(trackedEmployees.length), t('dashboard.admin.activeEmployeesMeta'))}
+            ${buildSummaryCard(t('dashboard.admin.onLeave'), String(onLeave), t('dashboard.admin.onLeaveMeta'))}
+            ${buildSummaryCard(t('dashboard.admin.presentToday'), String(presentToday), t('dashboard.admin.presentTodayMeta'))}
             ${buildSummaryCard(missingTodayLabel, String(missingTodayCount), missingTodayMeta)}
-            ${buildSummaryCard('Late Today', String(lateToday), todayIsWorkday ? `Arrivals after ${businessStartTimeLabel()}` : 'Weekend attendance is not marked late')}
-            ${buildSummaryCard('Worked Today', formatDuration(workedMinutesToday), 'Combined completed and open shift minutes')}
-            ${buildSummaryCard('8-Hour Actuals', `${fullShiftCount} full / ${openShiftCount} open`, `${formatDuration(overtimeMinutesToday)} overtime · ${formatDuration(shortfallMinutesToday)} shortfall`)}
+            ${buildSummaryCard(t('dashboard.admin.lateToday'), String(lateToday), todayIsWorkday ? t('dashboard.admin.lateTodayMeta', { start: businessStartTimeLabel() }) : t('dashboard.admin.lateTodayWeekendMeta'))}
+            ${buildSummaryCard(t('dashboard.admin.workedToday'), formatDuration(workedMinutesToday), t('dashboard.admin.workedTodayMeta'))}
+            ${buildSummaryCard(t('dashboard.admin.actualsCard'), `${fullShiftCount} full / ${openShiftCount} open`, t('dashboard.admin.actualsCardMeta', { overtime: formatDuration(overtimeMinutesToday), shortfall: formatDuration(shortfallMinutesToday) }))}
           </div>
           <section class="card-block">
             <div class="card-head">
               <div>
-                <h3>Attendance watchlist</h3>
-                <p class="card-subtle">Employees who still need a check-in today or are now absent.</p>
+                <h3>${escapeHtml(t('dashboard.admin.watchlistTitle'))}</h3>
+                <p class="card-subtle">${escapeHtml(t('dashboard.admin.watchlistText'))}</p>
               </div>
             </div>
             <div class="table-shell">
               <table>
                 <thead>
-                  <tr><th>Employee</th><th>Department</th><th>Status</th><th>Note</th></tr>
+                  <tr><th>${escapeHtml(t('common.employee'))}</th><th>${escapeHtml(t('common.department'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('common.note'))}</th></tr>
                 </thead>
                 <tbody>
                   ${todayIsWorkday && missingTodayRows.length ? missingTodayRows.slice(0, 12).map((entry) => `
@@ -1875,7 +1875,7 @@ async function renderDashboardPage() {
                       <td>${attendanceStateBadgeMarkup(entry.displayState)}</td>
                       <td>${escapeHtml(entry.displayState.note)}</td>
                     </tr>
-                  `).join('') : `<tr><td colspan="4"><div class="empty-state">${escapeHtml(todayIsWorkday ? 'All expected employees are accounted for so far.' : 'No attendance watchlist is needed on scheduled days off.')}</div></td></tr>`}
+                  `).join('') : `<tr><td colspan="4"><div class="empty-state">${escapeHtml(todayIsWorkday ? t('notes.noExpectedWatchlist') : t('notes.noWatchlistOnWeeklyLeave'))}</div></td></tr>`}
                 </tbody>
               </table>
             </div>
@@ -1883,14 +1883,14 @@ async function renderDashboardPage() {
           <section class="card-block">
             <div class="card-head">
               <div>
-                <h3>8-hour actuals today</h3>
-                <p class="card-subtle">Track who completed a full shift, who is still active, and where shortfall or overtime needs attention.</p>
+                <h3>${escapeHtml(t('dashboard.admin.actualsTitle'))}</h3>
+                <p class="card-subtle">${escapeHtml(t('dashboard.admin.actualsText'))}</p>
               </div>
             </div>
             <div class="table-shell">
               <table>
                 <thead>
-                  <tr><th>Employee</th><th>Worked</th><th>Overtime</th><th>Shortfall</th><th>Shift Outcome</th></tr>
+                  <tr><th>${escapeHtml(t('common.employee'))}</th><th>${escapeHtml(t('common.worked'))}</th><th>${escapeHtml(t('common.overtime'))}</th><th>${escapeHtml(t('common.shortfall'))}</th><th>${escapeHtml(t('dashboard.admin.actualsCard'))}</th></tr>
                 </thead>
                 <tbody>
                   ${accountabilityRows.length ? accountabilityRows.map((entry) => `
@@ -1901,7 +1901,7 @@ async function renderDashboardPage() {
                       <td>${escapeHtml(formatDuration(entry.metrics.shortfallMinutes || entry.metrics.projectedRemainingMinutes))}</td>
                       <td>${escapeHtml(attendanceOutcome(entry.metrics))}</td>
                     </tr>
-                  `).join('') : '<tr><td colspan="5"><div class="empty-state">No attendance rows have been recorded yet for today.</div></td></tr>'}
+                  `).join('') : `<tr><td colspan="5"><div class="empty-state">${escapeHtml(t('notes.noAttendanceRowsToday'))}</div></td></tr>`}
                 </tbody>
               </table>
             </div>
@@ -1910,14 +1910,14 @@ async function renderDashboardPage() {
             <section class="card-block">
               <div class="card-head">
                 <div>
-                  <h3>Recent attendance activity</h3>
-                  <p class="card-subtle">Most recent activity for ${escapeHtml(formatDate(today))}</p>
+                  <h3>${escapeHtml(t('dashboard.admin.recentTitle'))}</h3>
+                  <p class="card-subtle">${escapeHtml(t('dashboard.admin.recentText', { date: formatDate(today) }))}</p>
                 </div>
               </div>
               <div class="table-shell">
                 <table>
                   <thead>
-                    <tr><th>Employee</th><th>Department</th><th>Check In</th><th>Check Out</th><th>Status</th></tr>
+                    <tr><th>${escapeHtml(t('common.employee'))}</th><th>${escapeHtml(t('common.department'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.status'))}</th></tr>
                   </thead>
                   <tbody>
                     ${recentRows.length ? recentRows.map((row) => {
@@ -1931,7 +1931,7 @@ async function renderDashboardPage() {
                           <td>${badgeMarkup(row.attendance_status, row.attendance_status)}</td>
                         </tr>
                       `;
-                    }).join('') : '<tr><td colspan="5"><div class="empty-state">No attendance records have been created yet for today.</div></td></tr>'}
+                    }).join('') : `<tr><td colspan="5"><div class="empty-state">${escapeHtml(t('notes.noAttendanceRecordsToday'))}</div></td></tr>`}
                   </tbody>
                 </table>
               </div>
@@ -1939,8 +1939,8 @@ async function renderDashboardPage() {
             <aside class="card-block">
               <div class="card-head">
                 <div>
-                  <h3>Department pulse</h3>
-                  <p class="card-subtle">Current employee distribution</p>
+                  <h3>${escapeHtml(t('dashboard.admin.pulseTitle'))}</h3>
+                  <p class="card-subtle">${escapeHtml(t('dashboard.admin.pulseText'))}</p>
                 </div>
               </div>
               <div class="page-shell">
@@ -1957,6 +1957,7 @@ async function renderDashboardPage() {
                     </div>
                   </div>
                 `).join('') || '<div class="empty-state">No department data available yet.</div>'}
+                `).join('') || `<div class="empty-state">${escapeHtml(t('notes.noDepartmentData'))}</div>`}
               </div>
             </aside>
           </div>
@@ -1993,95 +1994,95 @@ async function renderDashboardPage() {
     const shiftShortfallMinutes = sumMetrics(monthLedger, (entry) => (!entry.countsAsAbsent ? entry.shortfallMinutes : 0));
     const monthOvertimeMinutes = sumMetrics(monthLedger, (entry) => entry.overtimeMinutes);
     const monthShortfallMinutes = absenceShortfallMinutes + shiftShortfallMinutes;
-    let balanceLabel = '8-hour target waiting to begin';
-    let balanceMeta = 'No attendance recorded yet for today.';
+    let balanceLabel = t('notes.balanceWaiting');
+    let balanceMeta = t('notes.noAttendanceToday');
 
     if (!todayRecord && missingTodayState) {
       if (missingTodayState.code === 'weekend') {
-        balanceLabel = 'Weekly Leave';
+        balanceLabel = t('states.weeklyLeave');
       } else if (missingTodayState.code === 'on_leave') {
-        balanceLabel = 'On leave';
+        balanceLabel = t('outcomes.onLeave');
       } else if (missingTodayState.code === 'absent') {
-        balanceLabel = 'Absent today';
+        balanceLabel = t('states.absentToday');
       } else if (missingTodayState.code === 'absent_so_far') {
-        balanceLabel = 'Check-in overdue';
+        balanceLabel = t('states.checkInOverdue');
       } else if (missingTodayState.code === 'not_checked_in_yet') {
-        balanceLabel = 'Check-in pending';
+        balanceLabel = t('states.checkInPending');
       } else {
         balanceLabel = missingTodayState.label;
       }
 
       balanceMeta = missingTodayState.note;
     } else if (todayMetrics?.isOpenShift) {
-      balanceLabel = `${formatDuration(todayMetrics.projectedRemainingMinutes)} remaining`;
-      balanceMeta = 'Live estimate until you reach the full 8-hour target.';
+      balanceLabel = t('notes.balanceRemaining', { duration: formatDuration(todayMetrics.projectedRemainingMinutes) });
+      balanceMeta = t('notes.balanceRemainingMeta');
     } else if (todayMetrics?.overtimeMinutes) {
-      balanceLabel = `+${formatDuration(todayMetrics.overtimeMinutes)}`;
-      balanceMeta = 'You exceeded the 8-hour target today.';
+      balanceLabel = t('notes.balanceOvertime', { duration: formatDuration(todayMetrics.overtimeMinutes) });
+      balanceMeta = t('notes.balanceOvertimeMeta');
     } else if (todayMetrics?.shortfallMinutes) {
       balanceLabel = formatDuration(todayMetrics.shortfallMinutes);
-      balanceMeta = 'Below the 8-hour target for the current shift.';
+      balanceMeta = t('notes.balanceShortfallMeta');
     } else if (todayMetrics?.isCompleteShift) {
-      balanceLabel = 'Full shift reached';
-      balanceMeta = 'You completed the 8-hour target today.';
+      balanceLabel = t('states.fullShiftReached');
+      balanceMeta = t('notes.balanceFullShiftMeta');
     }
 
     container.innerHTML = `
       <div class="page-shell">
         <div class="section-header">
           <div>
-            <p class="eyebrow">Welcome</p>
+            <p class="eyebrow">${escapeHtml(t('dashboard.employee.eyebrow'))}</p>
             <h1>${escapeHtml(state.profile.full_name)}</h1>
-            <p>Your attendance overview is ready with live 8-hour tracking and attendance actions. ${escapeHtml(businessScheduleLabel())}.</p>
+            <p>${escapeHtml(t('dashboard.employee.intro', { schedule: businessScheduleLabel() }))}</p>
           </div>
           <div class="inline-actions">
-            <button id="employeeAttendanceShortcut" type="button" class="btn btn-secondary">Open attendance</button>
+            <button id="employeeAttendanceShortcut" type="button" class="btn btn-secondary">${escapeHtml(t('common.openAttendance'))}</button>
           </div>
         </div>
         <section class="card-block">
           <div class="card-head">
             <div>
-              <h3>Today at a glance</h3>
-              <p class="card-subtle">Current status, hours worked, and today's 8-hour balance.</p>
+              <h3>${escapeHtml(t('dashboard.employee.todayTitle'))}</h3>
+              <p class="card-subtle">${escapeHtml(t('dashboard.employee.todayText'))}</p>
             </div>
           </div>
           <div class="summary-grid compact-grid">
-            ${buildSummaryCard('Today Status', todayRecord ? statusLabel(todayRecord.attendance_status) : (missingTodayState?.label || (todayIsWorkday ? 'Pending' : 'Weekly Leave')), todayRecord ? buildAttendanceRecordNote(todayRecord) : (missingTodayState?.note || (todayIsWorkday ? 'No attendance recorded yet' : 'Friday and Saturday are counted as weekly leave')))}
-            ${buildSummaryCard('Worked Today', formatDuration(todayMetrics?.workedMinutes || 0), todayMetrics ? attendanceOutcome(todayMetrics) : (missingTodayState?.note || (todayIsWorkday ? 'No attendance recorded yet' : 'No required shift scheduled today')))}
-            ${buildSummaryCard('Today Balance', balanceLabel, balanceMeta)}
+            ${buildSummaryCard(t('dashboard.employee.todayStatus'), todayRecord ? statusLabel(todayRecord.attendance_status) : (missingTodayState?.label || (todayIsWorkday ? t('states.pending') : t('states.weeklyLeave'))), todayRecord ? buildAttendanceRecordNote(todayRecord) : (missingTodayState?.note || (todayIsWorkday ? t('notes.noAttendanceToday') : t('schedule.weeklyLeaveHint'))))}
+            ${buildSummaryCard(t('dashboard.employee.workedToday'), formatDuration(todayMetrics?.workedMinutes || 0), todayMetrics ? attendanceOutcome(todayMetrics) : (missingTodayState?.note || (todayIsWorkday ? t('notes.noAttendanceToday') : t('notes.noRequiredShift'))))}
+            ${buildSummaryCard(t('dashboard.employee.todayBalance'), balanceLabel, balanceMeta)}
           </div>
         </section>
         <section class="card-block">
           <div class="card-head">
             <div>
-              <h3>Month at a glance</h3>
-              <p class="card-subtle">Attendance days, absences, weekly leave, and a clear shortfall breakdown.</p>
+              <h3>${escapeHtml(t('dashboard.employee.monthTitle'))}</h3>
+              <p class="card-subtle">${escapeHtml(t('dashboard.employee.monthText'))}</p>
             </div>
           </div>
-          <p class="inline-note">Total shortfall = absence shortfall + shift shortfall. Weekly leave does not count as absence.</p>
+          <p class="inline-note">${escapeHtml(t('notes.totalShortfallHint'))}</p>
           <div class="summary-grid">
-            ${buildSummaryCard('Attended Days', String(checkedDays), 'Days with a recorded check-in since the start of this month')}
-            ${buildSummaryCard('Absent Days', String(absentDays), 'Workdays with no attendance record')}
-            ${buildSummaryCard('Weekly Leave Days', String(weeklyLeaveDays), 'Friday and Saturday since the start of this month')}
-            ${buildSummaryCard('Full Shift Days', String(fullShiftDays), 'Completed workdays with no shortfall')}
-            ${buildSummaryCard('Late Arrivals', String(lateDays), `Workdays started after ${businessStartTimeLabel()}`)}
-            ${buildSummaryCard('Absence Shortfall', formatDuration(absenceShortfallMinutes), `${absentDays} absent day(s) at 8 hours each`)}
-            ${buildSummaryCard('Shift Shortfall', formatDuration(shiftShortfallMinutes), `${partialShortfallDays} attended day(s) below the 8-hour target`)}
-            ${buildSummaryCard('Overtime This Month', formatDuration(monthOvertimeMinutes), 'Minutes worked above the daily 8-hour baseline')}
-            ${buildSummaryCard('Total Shortfall', formatDuration(monthShortfallMinutes), 'Combined absence and worked-time shortfall')}
+            ${buildSummaryCard(t('dashboard.employee.attendedDays'), String(checkedDays), t('notes.checkedSinceMonthStart'))}
+            ${buildSummaryCard(t('dashboard.employee.absentDays'), String(absentDays), t('notes.workdaysWithoutAttendance'))}
+            ${buildSummaryCard(t('dashboard.employee.weeklyLeaveDays'), String(weeklyLeaveDays), t('notes.weeklyLeaveSinceMonthStart'))}
+            ${buildSummaryCard(t('dashboard.employee.fullShiftDays'), String(fullShiftDays), t('notes.completedWithoutShortfall'))}
+            ${buildSummaryCard(t('dashboard.employee.lateArrivals'), String(lateDays), t('notes.lateAfterStart', { start: businessStartTimeLabel() }))}
+            ${buildSummaryCard(t('dashboard.employee.absenceShortfall'), formatDuration(absenceShortfallMinutes), t('notes.absenceCardMeta', { days: String(absentDays) }))}
+            ${buildSummaryCard(t('dashboard.employee.shiftShortfall'), formatDuration(shiftShortfallMinutes), t('notes.shiftShortfallMeta', { days: String(partialShortfallDays) }))}
+            ${buildSummaryCard(t('dashboard.employee.overtimeThisMonth'), formatDuration(monthOvertimeMinutes), t('notes.overtimeMonthMeta'))}
+            ${buildSummaryCard(t('dashboard.employee.totalShortfall'), formatDuration(monthShortfallMinutes), t('notes.combinedShortfall'))}
           </div>
         </section>
         <section class="card-block">
           <div class="card-head">
             <div>
-              <h3>Monthly attendance ledger</h3>
-              <p class="card-subtle">Every day from the start of this month through today, with clear day type and hour impact.</p>
+              <h3>${escapeHtml(t('dashboard.employee.ledgerTitle'))}</h3>
+              <p class="card-subtle">${escapeHtml(t('dashboard.employee.ledgerText'))}</p>
             </div>
           </div>
           <div class="table-shell">
             <table>
               <thead>
-                <tr><th>Date</th><th>Day Type</th><th>Status</th><th>Check In</th><th>Check Out</th><th>Worked</th><th>Shortfall</th><th>Overtime</th><th>Note</th></tr>
+                <tr><th>${escapeHtml(t('common.date'))}</th><th>${escapeHtml(t('common.dayType'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.worked'))}</th><th>${escapeHtml(t('common.shortfall'))}</th><th>${escapeHtml(t('common.overtime'))}</th><th>${escapeHtml(t('common.note'))}</th></tr>
               </thead>
               <tbody>
                 ${monthLedger.length ? monthLedger.map((entry) => {
@@ -2098,7 +2099,7 @@ async function renderDashboardPage() {
                     <td>${escapeHtml(entry.noteLabel)}</td>
                   </tr>
                 `;
-                }).join('') : '<tr><td colspan="9"><div class="empty-state">No attendance records available yet for this month.</div></td></tr>'}
+                }).join('') : `<tr><td colspan="9"><div class="empty-state">${escapeHtml(t('notes.noMonthRecords'))}</div></td></tr>`}
               </tbody>
             </table>
           </div>
@@ -2127,7 +2128,7 @@ function filteredEmployees() {
 async function renderEmployeesPage() {
   const container = elements.pages.employees;
   if (!isAdmin()) {
-    setPageError(container, 'Only admins can access employee management.');
+    setPageError(container, t('errors.adminEmployeesOnly'));
     return;
   }
   const employeesPageKey = buildCacheKey('employeeDirectoryPage', {
@@ -2137,7 +2138,7 @@ async function renderEmployeesPage() {
   });
   const statsKey = buildCacheKey('employeeDirectoryStats', { all: true });
   if (!(getFreshCachedValue(employeesPageKey, QUERY_CACHE_TTL_MS.employeeDirectory) && getFreshCachedValue(statsKey, QUERY_CACHE_TTL_MS.employeeStats))) {
-    setPageLoading(container, 'Loading employees');
+    setPageLoading(container, t('pages.loading.employees'));
   }
 
   try {
@@ -2167,7 +2168,7 @@ async function renderProfilePage() {
     limit: 30,
   });
   if (!getFreshCachedValue(profileKey, QUERY_CACHE_TTL_MS.profile)) {
-    setPageLoading(container, 'Loading profile');
+    setPageLoading(container, t('pages.loading.profile'));
   }
 
   try {
@@ -2191,57 +2192,57 @@ async function renderProfilePage() {
       <div class="page-shell">
         <div class="section-header">
           <div>
-            <p class="eyebrow">Identity</p>
+            <p class="eyebrow">${escapeHtml(t('profilePage.eyebrow'))}</p>
             <h1>${escapeHtml(state.profile.full_name)}</h1>
-            <p>Keep your account details, attendance status, and access information in one place.</p>
+            <p>${escapeHtml(t('profilePage.intro'))}</p>
           </div>
           <div class="inline-actions">
-            <button id="openHistoryFromProfileBtn" type="button" class="btn btn-secondary">Open history</button>
-            <button id="openAttendanceFromProfileBtn" type="button" class="btn btn-primary">Open attendance</button>
+            <button id="openHistoryFromProfileBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.openHistory'))}</button>
+            <button id="openAttendanceFromProfileBtn" type="button" class="btn btn-primary">${escapeHtml(t('common.openAttendance'))}</button>
           </div>
         </div>
         <div class="summary-grid">
-          ${buildSummaryCard('Role', roleLabel(state.profile.role), state.profile.is_active ? 'Access enabled' : 'Access disabled')}
-          ${buildSummaryCard('Department', departmentLabel(state.profile.department), state.profile.position || 'No position assigned')}
-          ${buildSummaryCard('Checked Days', String(checkedDays), 'Last 30 calendar days')}
-          ${buildSummaryCard('Late Days', String(lateDays), latestRecord ? `Latest ${statusLabel(latestRecord.attendance_status)}` : 'No attendance yet')}
-          ${buildSummaryCard('This Month', `${monthlyRatio}%`, `${monthlyPresentDays} present day(s) in ${currentMonth.label}`)}
-          ${buildSummaryCard('Avg Check In', monthlyAverageCheckIn, 'Current month average')}
+          ${buildSummaryCard(t('profilePage.roleCard'), roleLabel(state.profile.role), state.profile.is_active ? t('profilePage.roleActive') : t('profilePage.roleInactive'))}
+          ${buildSummaryCard(t('profilePage.departmentCard'), departmentLabel(state.profile.department), state.profile.position || t('notes.noPositionAssigned'))}
+          ${buildSummaryCard(t('profilePage.checkedDays'), String(checkedDays), t('profilePage.checkedDaysMeta'))}
+          ${buildSummaryCard(t('profilePage.lateDays'), String(lateDays), latestRecord ? t('notes.latestStatus', { status: statusLabel(latestRecord.attendance_status) }) : t('notes.profileNoAttendanceYet'))}
+          ${buildSummaryCard(t('profilePage.thisMonth'), `${monthlyRatio}%`, t('notes.presentDaysInMonth', { days: String(monthlyPresentDays), month: currentMonth.label }))}
+          ${buildSummaryCard(t('profilePage.avgCheckIn'), monthlyAverageCheckIn, t('profilePage.avgCheckInMeta'))}
         </div>
         <div class="content-grid">
           <section class="card-block">
             <div class="card-head">
               <div>
-                <h3>Profile details</h3>
-                <p class="card-subtle">Live profile data from Supabase</p>
+                <h3>${escapeHtml(t('profilePage.profileDetails'))}</h3>
+                <p class="card-subtle">${escapeHtml(t('profilePage.profileDetailsText'))}</p>
               </div>
             </div>
             <div class="form-grid profile-grid">
-              <div class="status-card compact"><div><span class="status-label">Employee Code</span><strong>${escapeHtml(state.profile.employee_code || '-')}</strong></div></div>
-              <div class="status-card compact"><div><span class="status-label">Email</span><strong>${escapeHtml(state.profile.email)}</strong></div></div>
-              <div class="status-card compact"><div><span class="status-label">Phone</span><strong>${escapeHtml(state.profile.phone || '-')}</strong></div></div>
-              <div class="status-card compact"><div><span class="status-label">Position</span><strong>${escapeHtml(state.profile.position || '-')}</strong></div></div>
-              <div class="status-card compact"><div><span class="status-label">Status</span><strong>${escapeHtml(statusLabel(state.profile.status))}</strong></div></div>
-              <div class="status-card compact"><div><span class="status-label">Account Access</span><strong>${escapeHtml(state.profile.is_active ? 'Active' : 'Inactive')}</strong></div></div>
-              <div class="status-card compact"><div><span class="status-label">Created</span><strong>${escapeHtml(formatDateTime(state.profile.created_at))}</strong></div></div>
-              <div class="status-card compact"><div><span class="status-label">Updated</span><strong>${escapeHtml(formatDateTime(state.profile.updated_at))}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.employeeCode'))}</span><strong>${escapeHtml(state.profile.employee_code || '-')}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.email'))}</span><strong>${escapeHtml(state.profile.email)}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.phone'))}</span><strong>${escapeHtml(state.profile.phone || '-')}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.position'))}</span><strong>${escapeHtml(state.profile.position || '-')}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.status'))}</span><strong>${escapeHtml(statusLabel(state.profile.status))}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('profilePage.accountAccess'))}</span><strong>${escapeHtml(state.profile.is_active ? statusLabel('active') : statusLabel('inactive'))}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.created'))}</span><strong>${escapeHtml(formatDateTime(state.profile.created_at))}</strong></div></div>
+              <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.updated'))}</span><strong>${escapeHtml(formatDateTime(state.profile.updated_at))}</strong></div></div>
             </div>
           </section>
           <section class="card-block">
             <div class="card-head">
               <div>
-                <h3>Recent attendance snapshot</h3>
-                <p class="card-subtle">Your latest 8 attendance rows</p>
+                <h3>${escapeHtml(t('profilePage.recentSnapshot'))}</h3>
+                <p class="card-subtle">${escapeHtml(t('profilePage.recentSnapshotText'))}</p>
               </div>
             </div>
             <div class="summary-grid compact-grid">
-              ${buildSummaryCard('Completed Days', String(completedDays), 'Rows with check-out time')}
-              ${buildSummaryCard('Latest Check In', latestRecord?.check_in_time ? formatTime(latestRecord.check_in_time) : '-', latestRecord ? formatDate(latestRecord.attendance_date) : 'No row yet')}
+              ${buildSummaryCard(t('profilePage.completedDays'), String(completedDays), t('profilePage.completedDaysMeta'))}
+              ${buildSummaryCard(t('profilePage.latestCheckIn'), latestRecord?.check_in_time ? formatTime(latestRecord.check_in_time) : '-', latestRecord ? formatDate(latestRecord.attendance_date) : t('notes.profileNoRowYet'))}
             </div>
             <div class="table-shell">
               <table>
                 <thead>
-                  <tr><th>Date</th><th>Check In</th><th>Check Out</th><th>Status</th></tr>
+                  <tr><th>${escapeHtml(t('common.date'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.status'))}</th></tr>
                 </thead>
                 <tbody>
                   ${records.slice(0, 8).length ? records.slice(0, 8).map((row) => `
@@ -2251,7 +2252,7 @@ async function renderProfilePage() {
                       <td>${escapeHtml(formatTime(row.check_out_time))}</td>
                       <td>${badgeMarkup(row.attendance_status, row.attendance_status)}</td>
                     </tr>
-                  `).join('') : '<tr><td colspan="4"><div class="empty-state">Your attendance rows will appear here as soon as they are recorded.</div></td></tr>'}
+                  `).join('') : `<tr><td colspan="4"><div class="empty-state">${escapeHtml(t('notes.profileSnapshotEmpty'))}</div></td></tr>`}
                 </tbody>
               </table>
             </div>
@@ -2270,14 +2271,14 @@ async function renderProfilePage() {
 async function renderReportsPage() {
   const container = elements.pages.reports;
   if (!isAdmin()) {
-    setPageError(container, 'Only admins can access reports and analytics.');
+    setPageError(container, t('errors.adminReportsOnly'));
     return;
   }
   const range = monthRange(state.reportsFilters.month);
   const reportsAttendanceKey = buildCacheKey('attendance', { from: range.from, to: range.to });
   const reportsEmployeesKey = buildCacheKey('employees', { all: true });
   if (!(getFreshCachedValue(reportsAttendanceKey, QUERY_CACHE_TTL_MS.reports) && getFreshCachedValue(reportsEmployeesKey, QUERY_CACHE_TTL_MS.employees))) {
-    setPageLoading(container, 'Loading reports');
+    setPageLoading(container, t('pages.loading.reports'));
   }
 
   try {
@@ -2322,77 +2323,77 @@ async function renderReportsPage() {
       <div class="page-shell">
         <div class="section-header">
           <div>
-            <p class="eyebrow">Insights</p>
-            <h1>Reports & Analytics</h1>
-            <p>Track worked hours, overtime, shortfall, punctuality, and department-level performance from one control page. ${escapeHtml(businessScheduleLabel())}.</p>
+            <p class="eyebrow">${escapeHtml(t('reportsPage.eyebrow'))}</p>
+            <h1>${escapeHtml(t('reportsPage.title'))}</h1>
+            <p>${escapeHtml(t('reportsPage.intro', { schedule: businessScheduleLabel() }))}</p>
           </div>
           <div class="inline-actions">
-            <button id="reportsExportBtn" type="button" class="btn btn-secondary">Export Report CSV</button>
-            ${selectedEmployee ? '<button id="reportsTimesheetExportBtn" type="button" class="btn btn-primary">Export Timesheet CSV</button>' : ''}
+            <button id="reportsExportBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.exportReportCsv'))}</button>
+            ${selectedEmployee ? `<button id="reportsTimesheetExportBtn" type="button" class="btn btn-primary">${escapeHtml(t('common.exportTimesheetCsv'))}</button>` : ''}
           </div>
         </div>
         <section class="card-block">
           <div class="toolbar toolbar-wide">
             <input id="reportsMonth" type="month" value="${escapeHtml(state.reportsFilters.month)}" />
             <select id="reportsDepartment">
-              <option value="all">All Departments</option>
+              <option value="all">${escapeHtml(t('common.allDepartments'))}</option>
               ${departmentChoices.map((department) => `<option value="${escapeHtml(department)}" ${state.reportsFilters.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
             </select>
             <select id="reportsEmployee">
               ${reportEmployeeOptions(employeeChoices, state.reportsFilters.employeeId)}
             </select>
-            <button id="reportsApplyBtn" type="button" class="btn btn-secondary">Apply</button>
-            <button id="reportsRefreshBtn" type="button" class="btn btn-secondary">Refresh</button>
+            <button id="reportsApplyBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.apply'))}</button>
+            <button id="reportsRefreshBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.refresh'))}</button>
           </div>
-          <p class="inline-note">Reporting period: ${escapeHtml(report.range.label)} · Employees in scope: ${escapeHtml(String(report.filteredEmployees.length))}</p>
+          <p class="inline-note">${escapeHtml(t('reportsPage.period'))}: ${escapeHtml(report.range.label)} · ${escapeHtml(t('reportsPage.employeesInScope'))}: ${escapeHtml(String(report.filteredEmployees.length))}</p>
         </section>
         <div class="summary-grid">
-          ${buildSummaryCard('Total Hours Worked', formatDuration(report.totals.totalHoursWorkedMinutes), 'Across the current report scope')}
-          ${buildSummaryCard('Total Overtime', formatDuration(report.totals.totalOvertimeMinutes), 'Minutes above the 8-hour daily baseline')}
-          ${buildSummaryCard('Total Shortfall', formatDuration(report.totals.totalShortfallMinutes), 'Missing time below the 8-hour daily target')}
-          ${buildSummaryCard('Attendance Rate', `${report.totals.attendanceRate}%`, `${report.totals.totalPresentDays} present day(s) out of ${report.totals.totalExpectedDays || 0}`)}
-          ${buildSummaryCard('On-Time Arrival', `${report.totals.onTimeArrivalRate}%`, `Arrivals at or before ${businessStartTimeLabel()} on Sunday to Thursday`)}
-          ${buildSummaryCard('Peak Absence Day', peakWeekday ? peakWeekday.weekday : 'N/A', peakWeekday ? `${peakWeekday.absentCount} total absences` : 'No absence trend yet')}
+          ${buildSummaryCard(t('reportsPage.totalHoursWorked'), formatDuration(report.totals.totalHoursWorkedMinutes), t('reportsPage.totalHoursWorkedMeta'))}
+          ${buildSummaryCard(t('reportsPage.totalOvertime'), formatDuration(report.totals.totalOvertimeMinutes), t('reportsPage.totalOvertimeMeta'))}
+          ${buildSummaryCard(t('reportsPage.totalShortfall'), formatDuration(report.totals.totalShortfallMinutes), t('reportsPage.totalShortfallMeta'))}
+          ${buildSummaryCard(t('reportsPage.attendanceRate'), `${report.totals.attendanceRate}%`, t('reportsPage.attendanceRateMeta', { present: String(report.totals.totalPresentDays), expected: String(report.totals.totalExpectedDays || 0) }))}
+          ${buildSummaryCard(t('reportsPage.onTimeArrival'), `${report.totals.onTimeArrivalRate}%`, t('reportsPage.onTimeArrivalMeta', { start: businessStartTimeLabel() }))}
+          ${buildSummaryCard(t('reportsPage.peakAbsenceDay'), peakWeekday ? peakWeekday.weekday : t('common.notAvailable'), peakWeekday ? t('reportsPage.peakAbsenceDayMeta', { count: String(peakWeekday.absentCount) }) : t('reportsPage.peakAbsenceDayEmpty'))}
         </div>
         <div class="content-grid">
           <section class="card-block">
             <div class="card-head">
               <div>
-                <h3>Working hours trend</h3>
-                <p class="card-subtle">Daily worked hours and overtime across the selected month.</p>
+                <h3>${escapeHtml(t('reportsPage.workingHoursTrendTitle'))}</h3>
+                <p class="card-subtle">${escapeHtml(t('reportsPage.workingHoursTrendText'))}</p>
               </div>
             </div>
             ${report.dailyTrend.length ? `
               <div class="chart-shell">
-                <canvas id="reportsHoursCanvas" aria-label="Working hours trend chart"></canvas>
+                <canvas id="reportsHoursCanvas" aria-label="${escapeHtml(t('reportsPage.workingHoursTrendAria'))}"></canvas>
               </div>
-            ` : '<div class="empty-state">No working-hours data is available for this period.</div>'}
+            ` : `<div class="empty-state">${escapeHtml(t('notes.reportsNoWorkingHours'))}</div>`}
           </section>
           <section class="card-block">
             <div class="card-head">
               <div>
-                <h3>Department hours comparison</h3>
-                <p class="card-subtle">Actual hours versus expected hours for each department in scope.</p>
+                <h3>${escapeHtml(t('reportsPage.departmentHoursTitle'))}</h3>
+                <p class="card-subtle">${escapeHtml(t('reportsPage.departmentHoursText'))}</p>
               </div>
             </div>
             ${report.departmentHours.length ? `
               <div class="chart-shell">
-                <canvas id="reportsDepartmentCanvas" aria-label="Department hours comparison chart"></canvas>
+                <canvas id="reportsDepartmentCanvas" aria-label="${escapeHtml(t('reportsPage.departmentHoursAria'))}"></canvas>
               </div>
-            ` : '<div class="empty-state">No department comparison is available for this scope.</div>'}
+            ` : `<div class="empty-state">${escapeHtml(t('notes.reportsNoDepartmentComparison'))}</div>`}
           </section>
         </div>
         <section class="card-block">
           <div class="card-head">
             <div>
-              <h3>Detailed monthly employee report</h3>
-              <p class="card-subtle">Attendance days, hours, overtime, and trend classification for each employee in scope.</p>
+              <h3>${escapeHtml(t('reportsPage.detailedTitle'))}</h3>
+              <p class="card-subtle">${escapeHtml(t('reportsPage.detailedText'))}</p>
             </div>
           </div>
           <div class="table-shell">
             <table>
               <thead>
-                <tr><th>Employee Name</th><th>Days Present</th><th>Days Absent</th><th>Late Arrivals</th><th>Total Hours</th><th>Expected Hours</th><th>Overtime</th><th>Status/Trend</th></tr>
+                <tr><th>${escapeHtml(t('reportsPage.employeeName'))}</th><th>${escapeHtml(t('reportsPage.daysPresent'))}</th><th>${escapeHtml(t('reportsPage.daysAbsent'))}</th><th>${escapeHtml(t('reportsPage.lateArrivals'))}</th><th>${escapeHtml(t('reportsPage.totalHours'))}</th><th>${escapeHtml(t('reportsPage.expectedHours'))}</th><th>${escapeHtml(t('common.overtime'))}</th><th>${escapeHtml(t('reportsPage.statusTrend'))}</th></tr>
               </thead>
               <tbody>
                 ${report.byEmployee.length ? report.byEmployee.map((item) => `
@@ -2407,11 +2408,11 @@ async function renderReportsPage() {
                     <td>
                       <div class="report-trend-cell">
                         ${trendBadgeMarkup(item.trend)}
-                        <span class="inline-note">${escapeHtml(`${item.attendanceRate}% attendance · ${item.onTimeArrivalRate}% on-time`)}</span>
+                        <span class="inline-note">${escapeHtml(t('reportsPage.attendanceAndOnTime', { attendance: `${item.attendanceRate}%`, ontime: `${item.onTimeArrivalRate}%` }))}</span>
                       </div>
                     </td>
                   </tr>
-                `).join('') : '<tr><td colspan="8"><div class="empty-state">No employee attendance data is available for this period.</div></td></tr>'}
+                `).join('') : `<tr><td colspan="8"><div class="empty-state">${escapeHtml(t('notes.reportsNoEmployeeData'))}</div></td></tr>`}
               </tbody>
             </table>
           </div>
@@ -2420,33 +2421,33 @@ async function renderReportsPage() {
           <section class="card-block">
             <div class="card-head">
               <div>
-                <h3>Top attendance ranking</h3>
-                <p class="card-subtle">Employees ranked by attendance rate, on-time arrivals, and completed hours.</p>
+                <h3>${escapeHtml(t('reportsPage.rankingTitle'))}</h3>
+                <p class="card-subtle">${escapeHtml(t('reportsPage.rankingText'))}</p>
               </div>
             </div>
             <div class="page-shell">
               ${report.topPerformers.length ? report.topPerformers.map((item, index) => `
                 <div class="status-card compact">
                   <div>
-                    <span class="status-label">Rank ${index + 1}</span>
+                    <span class="status-label">${escapeHtml(t('reportsPage.rank', { index: String(index + 1) }))}</span>
                     <strong>${escapeHtml(item.employee.full_name)}</strong>
-                    <p class="inline-note">${escapeHtml(`${item.attendanceRate}% attendance · ${item.onTimeArrivalRate}% on-time · ${formatDuration(item.workedMinutes)}`)}</p>
+                    <p class="inline-note">${escapeHtml(t('reportsPage.rankingMeta', { attendance: `${item.attendanceRate}%`, ontime: `${item.onTimeArrivalRate}%`, worked: formatDuration(item.workedMinutes) }))}</p>
                   </div>
                 </div>
-              `).join('') : '<div class="empty-state">No ranking is available yet.</div>'}
+              `).join('') : `<div class="empty-state">${escapeHtml(t('notes.reportsNoRanking'))}</div>`}
             </div>
           </section>
           <section class="card-block">
             <div class="card-head">
               <div>
-                <h3>Peak absence weekdays</h3>
-                <p class="card-subtle">Total absences grouped by weekday for the selected month.</p>
+                <h3>${escapeHtml(t('reportsPage.weekdayTitle'))}</h3>
+                <p class="card-subtle">${escapeHtml(t('reportsPage.weekdayText'))}</p>
               </div>
             </div>
             <div class="table-shell">
               <table>
                 <thead>
-                  <tr><th>Weekday</th><th>Total Absences</th><th>Occurrences</th></tr>
+                  <tr><th>${escapeHtml(t('reportsPage.weekday'))}</th><th>${escapeHtml(t('reportsPage.totalAbsences'))}</th><th>${escapeHtml(t('reportsPage.occurrences'))}</th></tr>
                 </thead>
                 <tbody>
                   ${report.weekdayRows.length ? report.weekdayRows.map((item) => `
@@ -2455,7 +2456,7 @@ async function renderReportsPage() {
                       <td>${escapeHtml(String(item.absentCount))}</td>
                       <td>${escapeHtml(String(item.occurrences))}</td>
                     </tr>
-                  `).join('') : '<tr><td colspan="3"><div class="empty-state">No weekday absence trend is available yet.</div></td></tr>'}
+                  `).join('') : `<tr><td colspan="3"><div class="empty-state">${escapeHtml(t('notes.reportsNoWeekdayTrend'))}</div></td></tr>`}
                 </tbody>
               </table>
             </div>
@@ -2464,14 +2465,14 @@ async function renderReportsPage() {
         <section class="card-block">
           <div class="card-head">
               <div>
-                <h3>Average check-in and check-out times</h3>
-                <p class="card-subtle">Average times are based on attendance rows with recorded timestamps in Africa/Cairo. Weekly days off: Friday and Saturday.</p>
+                <h3>${escapeHtml(t('reportsPage.averageTimesTitle'))}</h3>
+                <p class="card-subtle">${escapeHtml(t('reportsPage.averageTimesText'))}</p>
               </div>
           </div>
           <div class="table-shell">
             <table>
               <thead>
-                <tr><th>Employee</th><th>Average Check In</th><th>Average Check Out</th><th>On-Time Arrival</th><th>Complete Shifts</th></tr>
+                <tr><th>${escapeHtml(t('common.employee'))}</th><th>${escapeHtml(t('reportsPage.averageCheckIn'))}</th><th>${escapeHtml(t('reportsPage.averageCheckOut'))}</th><th>${escapeHtml(t('reportsPage.onTimeRate'))}</th><th>${escapeHtml(t('reportsPage.completeShifts'))}</th></tr>
               </thead>
               <tbody>
                 ${report.byEmployee.length ? report.byEmployee.map((item) => `
@@ -2482,7 +2483,7 @@ async function renderReportsPage() {
                     <td>${escapeHtml(`${item.onTimeArrivalRate}%`)}</td>
                     <td>${escapeHtml(String(item.detailedRows.filter((entry) => entry.metrics.isCompleteShift).length))}</td>
                   </tr>
-                `).join('') : '<tr><td colspan="5"><div class="empty-state">No time analytics are available for this period.</div></td></tr>'}
+                `).join('') : `<tr><td colspan="5"><div class="empty-state">${escapeHtml(t('notes.reportsNoTimeAnalytics'))}</div></td></tr>`}
               </tbody>
             </table>
           </div>
@@ -2490,28 +2491,28 @@ async function renderReportsPage() {
         <section class="card-block">
           <div class="card-head">
             <div>
-              <h3>Employee timesheet</h3>
-              <p class="card-subtle">Choose a specific employee from the filter above to inspect the same monthly breakdown the employee sees.</p>
+              <h3>${escapeHtml(t('reportsPage.timesheetTitle'))}</h3>
+              <p class="card-subtle">${escapeHtml(t('reportsPage.timesheetText'))}</p>
             </div>
           </div>
           ${selectedEmployee ? `
-            <p class="inline-note">This selected-employee view separates weekly leave, full absences, and worked-time shortfall.</p>
+            <p class="inline-note">${escapeHtml(t('reportsPage.selectedHint'))}</p>
             <div class="summary-grid">
-              ${buildSummaryCard('Selected Employee', selectedEmployee.employee.full_name, departmentLabel(selectedEmployee.employee.department))}
-              ${buildSummaryCard('Attended Days', String(selectedEmployeeCheckedDays), 'Days with a recorded check-in in the selected month')}
-              ${buildSummaryCard('Absent Days', String(selectedEmployeeAbsentDays), 'Workdays with no attendance record')}
-              ${buildSummaryCard('Weekly Leave Days', String(selectedEmployeeWeeklyLeaveDays), 'Friday and Saturday in the selected month')}
-              ${buildSummaryCard('Full Shift Days', String(selectedEmployeeFullShiftDays), 'Completed workdays with no shortfall')}
-              ${buildSummaryCard('Late Arrivals', String(selectedEmployeeLateDays), `Workdays started after ${businessStartTimeLabel()}`)}
-              ${buildSummaryCard('Absence Shortfall', formatDuration(selectedEmployeeAbsenceShortfallMinutes), `${selectedEmployeeAbsentDays} absent day(s) at 8 hours each`)}
-              ${buildSummaryCard('Shift Shortfall', formatDuration(selectedEmployeeShiftShortfallMinutes), `${selectedEmployeePartialShortfallDays} attended day(s) below the 8-hour target`)}
-              ${buildSummaryCard('Overtime', formatDuration(selectedEmployee.overtimeMinutes), 'Minutes worked above the daily 8-hour baseline')}
-              ${buildSummaryCard('Total Shortfall', formatDuration(selectedEmployee.shortfallMinutes), 'Combined absence and worked-time shortfall')}
+              ${buildSummaryCard(t('reportsPage.selectedEmployee'), selectedEmployee.employee.full_name, departmentLabel(selectedEmployee.employee.department))}
+              ${buildSummaryCard(t('dashboard.employee.attendedDays'), String(selectedEmployeeCheckedDays), t('notes.checkedSinceMonthStart'))}
+              ${buildSummaryCard(t('dashboard.employee.absentDays'), String(selectedEmployeeAbsentDays), t('notes.workdaysWithoutAttendance'))}
+              ${buildSummaryCard(t('dashboard.employee.weeklyLeaveDays'), String(selectedEmployeeWeeklyLeaveDays), t('notes.weeklyLeaveSinceMonthStart'))}
+              ${buildSummaryCard(t('dashboard.employee.fullShiftDays'), String(selectedEmployeeFullShiftDays), t('notes.completedWithoutShortfall'))}
+              ${buildSummaryCard(t('dashboard.employee.lateArrivals'), String(selectedEmployeeLateDays), t('notes.lateAfterStart', { start: businessStartTimeLabel() }))}
+              ${buildSummaryCard(t('dashboard.employee.absenceShortfall'), formatDuration(selectedEmployeeAbsenceShortfallMinutes), t('notes.absenceCardMeta', { days: String(selectedEmployeeAbsentDays) }))}
+              ${buildSummaryCard(t('dashboard.employee.shiftShortfall'), formatDuration(selectedEmployeeShiftShortfallMinutes), t('notes.shiftShortfallMeta', { days: String(selectedEmployeePartialShortfallDays) }))}
+              ${buildSummaryCard(t('common.overtime'), formatDuration(selectedEmployee.overtimeMinutes), t('notes.overtimeMonthMeta'))}
+              ${buildSummaryCard(t('dashboard.employee.totalShortfall'), formatDuration(selectedEmployee.shortfallMinutes), t('notes.combinedShortfall'))}
             </div>
             <div class="table-shell">
               <table>
                 <thead>
-                  <tr><th>Date</th><th>Day Type</th><th>Status</th><th>Check In</th><th>Check Out</th><th>Worked</th><th>Shortfall</th><th>Overtime</th><th>Note</th></tr>
+                  <tr><th>${escapeHtml(t('common.date'))}</th><th>${escapeHtml(t('common.dayType'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.worked'))}</th><th>${escapeHtml(t('common.shortfall'))}</th><th>${escapeHtml(t('common.overtime'))}</th><th>${escapeHtml(t('common.note'))}</th></tr>
                 </thead>
                 <tbody>
                   ${selectedEmployeeLedger.length ? selectedEmployeeLedger.map((entry) => `
@@ -2526,11 +2527,11 @@ async function renderReportsPage() {
                       <td>${escapeHtml(formatDuration(entry.overtimeMinutes))}</td>
                       <td>${escapeHtml(entry.noteLabel)}</td>
                     </tr>
-                  `).join('') : '<tr><td colspan="9"><div class="empty-state">No attendance rows are available for this employee in the selected period.</div></td></tr>'}
+                  `).join('') : `<tr><td colspan="9"><div class="empty-state">${escapeHtml(t('notes.noMonthRecords'))}</div></td></tr>`}
                 </tbody>
               </table>
             </div>
-          ` : '<div class="empty-state">Select a specific employee to view a detailed timesheet for the selected month.</div>'}
+          ` : `<div class="empty-state">${escapeHtml(t('notes.reportsSelectEmployee'))}</div>`}
         </section>
       </div>
     `;
@@ -2560,14 +2561,14 @@ async function renderReportsPage() {
     });
     container.querySelector('#reportsExportBtn')?.addEventListener('click', () => {
       exportReportsCsv(report, state.reportsFilters);
-      showToast('Reports CSV exported successfully.', 'success');
+      showToast(t('toasts.reportsExported'), 'success');
     });
     container.querySelector('#reportsTimesheetExportBtn')?.addEventListener('click', () => {
       if (!selectedEmployee) {
         return;
       }
       exportEmployeeTimesheetCsv(selectedEmployee, state.reportsFilters);
-      showToast('Employee timesheet CSV exported successfully.', 'success');
+      showToast(t('toasts.timesheetExported'), 'success');
     });
     drawWorkingHoursTrend(container.querySelector('#reportsHoursCanvas'), report.dailyTrend);
     drawDepartmentHoursChart(container.querySelector('#reportsDepartmentCanvas'), report.departmentHours);
@@ -2589,45 +2590,45 @@ function drawEmployeesPage() {
     <div class="page-shell">
       <div class="section-header">
         <div>
-          <p class="eyebrow">Administration</p>
-          <h1>Employee Management</h1>
-          <p>Manage employees, departments, and account access without mixing admin accounts into employee totals.</p>
+          <p class="eyebrow">${escapeHtml(t('employeePage.eyebrow'))}</p>
+          <h1>${escapeHtml(t('employeePage.title'))}</h1>
+          <p>${escapeHtml(t('employeePage.intro'))}</p>
         </div>
-        <button id="openAddEmployeeBtn" type="button" class="btn btn-primary">Add Employee</button>
+        <button id="openAddEmployeeBtn" type="button" class="btn btn-primary">${escapeHtml(t('common.addEmployee'))}</button>
       </div>
       <div class="summary-grid">
-        ${buildSummaryCard('Total Employees', String(state.employeeDirectoryStats.totalEmployees), `Employee profiles only · ${activeAdminCount} active admin account(s)`)}
-        ${buildSummaryCard('Active Employees', String(activeCount), 'Profiles with active access')}
-        ${buildSummaryCard('On Leave', String(onLeaveCount), 'Profiles marked as on leave')}
-        ${buildSummaryCard('Departments', String(departments.length), 'Distinct departments represented')}
+        ${buildSummaryCard(t('dashboard.admin.totalEmployees'), String(state.employeeDirectoryStats.totalEmployees), t('employeePage.totalEmployeesMeta', { count: String(activeAdminCount) }))}
+        ${buildSummaryCard(t('employeePage.activeEmployees'), String(activeCount), t('employeePage.activeEmployeesMeta'))}
+        ${buildSummaryCard(t('employeePage.onLeave'), String(onLeaveCount), t('employeePage.onLeaveMeta'))}
+        ${buildSummaryCard(t('employeePage.departments'), String(departments.length), t('employeePage.departmentsMeta'))}
       </div>
       <section class="card-block">
         <div class="toolbar toolbar-wide">
-          <input id="employeeSearch" type="search" placeholder="Search by code, name, email, or department" value="${escapeHtml(state.employeeFilters.search)}" />
+          <input id="employeeSearch" type="search" placeholder="${escapeHtml(t('employeePage.searchPlaceholder'))}" value="${escapeHtml(state.employeeFilters.search)}" />
           <select id="departmentFilter">
-            <option value="all">All Departments</option>
+            <option value="all">${escapeHtml(t('common.allDepartments'))}</option>
             ${departments.map((department) => `<option value="${escapeHtml(department)}" ${state.employeeFilters.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
           </select>
           <select id="statusFilter">
-            <option value="all">All Statuses</option>
+            <option value="all">${escapeHtml(t('common.allStatuses'))}</option>
             ${['active', 'inactive', 'on_leave'].map((status) => `<option value="${status}" ${state.employeeFilters.status === status ? 'selected' : ''}>${escapeHtml(statusLabel(status))}</option>`).join('')}
           </select>
-          <button id="refreshEmployeesBtn" type="button" class="btn btn-secondary">Refresh</button>
-          <button id="exportEmployeesBtn" type="button" class="btn btn-secondary">Export CSV</button>
+          <button id="refreshEmployeesBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.refresh'))}</button>
+          <button id="exportEmployeesBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.exportCsv'))}</button>
         </div>
         <div class="table-shell">
           <table>
             <thead>
               <tr>
-                <th>Employee Code</th>
-                <th>Full Name</th>
-                <th>Email</th>
-                <th>Phone</th>
-                <th>Department</th>
-                <th>Position</th>
-                <th>Status</th>
-                <th>Role</th>
-                <th>Actions</th>
+                <th>${escapeHtml(t('common.employeeCode'))}</th>
+                <th>${escapeHtml(t('common.fullName'))}</th>
+                <th>${escapeHtml(t('common.email'))}</th>
+                <th>${escapeHtml(t('common.phone'))}</th>
+                <th>${escapeHtml(t('common.department'))}</th>
+                <th>${escapeHtml(t('common.position'))}</th>
+                <th>${escapeHtml(t('common.status'))}</th>
+                <th>${escapeHtml(t('common.role'))}</th>
+                <th>${escapeHtml(t('common.actions'))}</th>
               </tr>
             </thead>
             <tbody>
@@ -2635,9 +2636,9 @@ function drawEmployeesPage() {
                 const isSelf = employee.id === state.profile?.id;
                 const isLastActiveAdmin = employee.role === 'admin' && employee.is_active && activeAdminCount <= 1;
                 const protectionReason = isSelf
-                  ? 'You cannot disable or delete your own account.'
+                  ? t('employeePage.deactivateDeleteSelf')
                   : isLastActiveAdmin
-                    ? 'At least one active admin account must remain in the system.'
+                    ? t('employeePage.lastActiveAdmin')
                     : '';
 
                 return `
@@ -2652,15 +2653,15 @@ function drawEmployeesPage() {
                   <td>${badgeMarkup(employee.role, employee.role)}</td>
                   <td>
                     <div class="table-actions">
-                      <button class="btn btn-secondary" data-action="view" data-id="${employee.id}">View</button>
-                      <button class="btn btn-secondary" data-action="edit" data-id="${employee.id}">Edit</button>
-                      <button class="btn btn-secondary" data-action="toggle" data-id="${employee.id}" ${isSelf || isLastActiveAdmin ? 'disabled' : ''} title="${escapeHtml(protectionReason)}">${employee.is_active ? 'Deactivate' : 'Activate'}</button>
-                      <button class="btn btn-danger" data-action="delete" data-id="${employee.id}" ${isSelf || isLastActiveAdmin ? 'disabled' : ''} title="${escapeHtml(protectionReason)}">Delete</button>
+                      <button class="btn btn-secondary" data-action="view" data-id="${employee.id}">${escapeHtml(t('common.view'))}</button>
+                      <button class="btn btn-secondary" data-action="edit" data-id="${employee.id}">${escapeHtml(t('common.edit'))}</button>
+                      <button class="btn btn-secondary" data-action="toggle" data-id="${employee.id}" ${isSelf || isLastActiveAdmin ? 'disabled' : ''} title="${escapeHtml(protectionReason)}">${escapeHtml(employee.is_active ? t('common.deactivate') : t('common.activate'))}</button>
+                      <button class="btn btn-danger" data-action="delete" data-id="${employee.id}" ${isSelf || isLastActiveAdmin ? 'disabled' : ''} title="${escapeHtml(protectionReason)}">${escapeHtml(t('common.delete'))}</button>
                     </div>
                   </td>
                 </tr>
               `;
-              }).join('') : '<tr><td colspan="9"><div class="empty-state">No employees match the current filters.</div></td></tr>'}
+              }).join('') : `<tr><td colspan="9"><div class="empty-state">${escapeHtml(t('notes.employeesNoMatch'))}</div></td></tr>`}
             </tbody>
           </table>
         </div>
@@ -2713,7 +2714,7 @@ function drawEmployeesPage() {
       return matchesSearch && matchesDepartment && matchesStatus;
     });
     exportEmployeesCsv(filteredList);
-    showToast('Employees CSV exported successfully.', 'success');
+    showToast(t('toasts.employeesExported'), 'success');
   });
   bindPagination(container, 'employeesPager', state.employeePagination, () => {
     renderEmployeesPage().catch((error) => setPageError(container, error.message));
@@ -2753,59 +2754,59 @@ function employeeFormMarkup(mode, employee = null) {
   return `
     <div class="modal-header">
       <div>
-        <p class="eyebrow">${isEdit ? 'Update employee' : 'Create employee'}</p>
-        <h2>${isEdit ? escapeHtml(employee.full_name) : 'Add Employee'}</h2>
+        <p class="eyebrow">${isEdit ? escapeHtml(t('employeePage.updateEmployee')) : escapeHtml(t('employeePage.createEmployee'))}</p>
+        <h2>${isEdit ? escapeHtml(employee.full_name) : escapeHtml(t('employeePage.addEmployeeTitle'))}</h2>
       </div>
-      <button id="closeModalBtn" type="button" class="ghost-inline">Close</button>
+      <button id="closeModalBtn" type="button" class="ghost-inline">${escapeHtml(t('common.close'))}</button>
     </div>
     <form id="employeeForm" class="stack-form">
       <div class="form-grid">
         <div class="form-group">
-          <label for="employee_full_name">Full Name</label>
+          <label for="employee_full_name">${escapeHtml(t('common.fullName'))}</label>
           <input id="employee_full_name" name="full_name" value="${escapeHtml(employee?.full_name || '')}" required />
         </div>
         <div class="form-group">
-          <label for="employee_code">Employee Code</label>
+          <label for="employee_code">${escapeHtml(t('common.employeeCode'))}</label>
           <input id="employee_code" name="employee_code" value="${escapeHtml(employee?.employee_code || '')}" required />
         </div>
         <div class="form-group">
-          <label for="employee_email">Email</label>
+          <label for="employee_email">${escapeHtml(t('common.email'))}</label>
           <input id="employee_email" name="email" type="email" value="${escapeHtml(employee?.email || '')}" required />
         </div>
         <div class="form-group">
-          <label for="employee_phone">Phone</label>
+          <label for="employee_phone">${escapeHtml(t('common.phone'))}</label>
           <input id="employee_phone" name="phone" value="${escapeHtml(employee?.phone || '')}" />
         </div>
         <div class="form-group">
-          <label for="employee_department">Department</label>
+          <label for="employee_department">${escapeHtml(t('common.department'))}</label>
           <select id="employee_department" name="department">
-            <option value="">Select Department</option>
+            <option value="">${escapeHtml(t('employeePage.selectDepartment'))}</option>
             ${departments.map((department) => `<option value="${escapeHtml(department)}" ${(employee?.department || '') === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
-          <label for="employee_position">Position</label>
+          <label for="employee_position">${escapeHtml(t('common.position'))}</label>
           <input id="employee_position" name="position" value="${escapeHtml(employee?.position || '')}" />
         </div>
         <div class="form-group">
-          <label for="employee_role">Role</label>
+          <label for="employee_role">${escapeHtml(t('common.role'))}</label>
           <select id="employee_role" name="role">
             ${['employee', 'admin'].map((role) => `<option value="${role}" ${(employee?.role || 'employee') === role ? 'selected' : ''}>${escapeHtml(roleLabel(role))}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
-          <label for="employee_status">Status</label>
+          <label for="employee_status">${escapeHtml(t('common.status'))}</label>
           <select id="employee_status" name="status">
             ${['active', 'inactive', 'on_leave'].map((status) => `<option value="${status}" ${(employee?.status || 'active') === status ? 'selected' : ''}>${escapeHtml(statusLabel(status))}</option>`).join('')}
           </select>
         </div>
         ${isEdit ? '' : `
           <div class="form-group">
-            <label for="employee_password">Password</label>
+            <label for="employee_password">${escapeHtml(t('common.password'))}</label>
             <input id="employee_password" name="password" type="password" required />
           </div>
           <div class="form-group">
-            <label for="employee_password_confirm">Confirm Password</label>
+            <label for="employee_password_confirm">${escapeHtml(t('common.confirmPassword'))}</label>
             <input id="employee_password_confirm" name="password_confirm" type="password" required />
           </div>
         `}
@@ -2813,11 +2814,11 @@ function employeeFormMarkup(mode, employee = null) {
       <div id="employeeFormError" class="form-alert error hidden"></div>
       <div class="modal-footer">
         <div class="inline-actions">
-          ${isEdit ? `<button id="resetEmployeePasswordBtn" type="button" class="btn btn-secondary">Reset Password</button>` : ''}
+          ${isEdit ? `<button id="resetEmployeePasswordBtn" type="button" class="btn btn-secondary">${escapeHtml(t('employeePage.resetPassword'))}</button>` : ''}
         </div>
         <div class="inline-actions">
-          <button type="button" id="cancelEmployeeFormBtn" class="btn btn-secondary">Cancel</button>
-          <button id="submitEmployeeFormBtn" type="submit" class="btn btn-primary">${isEdit ? 'Save Changes' : 'Create Employee'}</button>
+          <button type="button" id="cancelEmployeeFormBtn" class="btn btn-secondary">${escapeHtml(t('common.cancel'))}</button>
+          <button id="submitEmployeeFormBtn" type="submit" class="btn btn-primary">${isEdit ? escapeHtml(t('common.saveChanges')) : escapeHtml(t('common.createEmployee'))}</button>
         </div>
       </div>
     </form>
@@ -2852,28 +2853,28 @@ function openEmployeeView(employee) {
   openModal(`
     <div class="modal-header">
       <div>
-        <p class="eyebrow">Employee profile</p>
+        <p class="eyebrow">${escapeHtml(t('employeePage.viewProfile'))}</p>
         <h2>${escapeHtml(employee.full_name)}</h2>
       </div>
-      <button id="closeModalBtn" type="button" class="ghost-inline">Close</button>
+      <button id="closeModalBtn" type="button" class="ghost-inline">${escapeHtml(t('common.close'))}</button>
     </div>
     <div class="form-grid">
-      <div class="status-card compact"><div><span class="status-label">Employee Code</span><strong>${escapeHtml(employee.employee_code || '-')}</strong></div></div>
-      <div class="status-card compact"><div><span class="status-label">Role</span><strong>${escapeHtml(roleLabel(employee.role))}</strong></div></div>
-      <div class="status-card compact"><div><span class="status-label">Email</span><strong>${escapeHtml(employee.email)}</strong></div></div>
-      <div class="status-card compact"><div><span class="status-label">Phone</span><strong>${escapeHtml(employee.phone || '-')}</strong></div></div>
-      <div class="status-card compact"><div><span class="status-label">Department</span><strong>${escapeHtml(departmentLabel(employee.department))}</strong></div></div>
-      <div class="status-card compact"><div><span class="status-label">Position</span><strong>${escapeHtml(employee.position || '-')}</strong></div></div>
-      <div class="status-card compact"><div><span class="status-label">Status</span><strong>${escapeHtml(statusLabel(employee.status))}</strong></div></div>
-      <div class="status-card compact"><div><span class="status-label">Created</span><strong>${escapeHtml(formatDateTime(employee.created_at))}</strong></div></div>
+      <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.employeeCode'))}</span><strong>${escapeHtml(employee.employee_code || '-')}</strong></div></div>
+      <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.role'))}</span><strong>${escapeHtml(roleLabel(employee.role))}</strong></div></div>
+      <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.email'))}</span><strong>${escapeHtml(employee.email)}</strong></div></div>
+      <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.phone'))}</span><strong>${escapeHtml(employee.phone || '-')}</strong></div></div>
+      <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.department'))}</span><strong>${escapeHtml(departmentLabel(employee.department))}</strong></div></div>
+      <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.position'))}</span><strong>${escapeHtml(employee.position || '-')}</strong></div></div>
+      <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.status'))}</span><strong>${escapeHtml(statusLabel(employee.status))}</strong></div></div>
+      <div class="status-card compact"><div><span class="status-label">${escapeHtml(t('common.created'))}</span><strong>${escapeHtml(formatDateTime(employee.created_at))}</strong></div></div>
     </div>
     <div class="modal-footer">
       <div class="inline-actions">
-        <button id="viewEditEmployeeBtn" type="button" class="btn btn-secondary">Edit</button>
-        ${isAdmin() && isEmployeeProfile(employee) ? '<button id="viewManualAttendanceBtn" type="button" class="btn btn-secondary">Add Manual Record</button>' : ''}
+        <button id="viewEditEmployeeBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.edit'))}</button>
+        ${isAdmin() && isEmployeeProfile(employee) ? `<button id="viewManualAttendanceBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.addManualRecord'))}</button>` : ''}
       </div>
       <div class="inline-actions">
-        <button id="closeEmployeeViewBtn" type="button" class="btn btn-primary">Done</button>
+        <button id="closeEmployeeViewBtn" type="button" class="btn btn-primary">${escapeHtml(t('common.done'))}</button>
       </div>
     </div>
   `);
@@ -2908,7 +2909,7 @@ function openEmployeeForm(mode, employee = null) {
 
     const payload = collectEmployeeForm(form);
     if (!payload.full_name || !payload.employee_code || !payload.email) {
-      showFormError('employeeFormError', 'Full name, employee code, and email are required.');
+      showFormError('employeeFormError', t('errors.requiredEmployeeFields'));
       return;
     }
 
@@ -2916,18 +2917,18 @@ function openEmployeeForm(mode, employee = null) {
       const password = form.password.value;
       const confirmPassword = form.password_confirm.value;
       if (!isStrongPassword(password)) {
-        showFormError('employeeFormError', 'Password must be at least 8 characters and include upper, lower, number, and symbol.');
+        showFormError('employeeFormError', t('errors.strongPassword'));
         return;
       }
       if (password !== confirmPassword) {
-        showFormError('employeeFormError', 'Password confirmation does not match.');
+        showFormError('employeeFormError', t('errors.passwordMismatch'));
         return;
       }
       payload.password = password;
     }
 
     submitButton.disabled = true;
-    submitButton.textContent = mode === 'create' ? 'Creating' : 'Saving';
+    submitButton.textContent = mode === 'create' ? t('employeePage.createLabel') : t('employeePage.saveLabel');
 
     try {
       await apiRequest(mode === 'create' ? '/admin/employees' : `/admin/employees/${employee.id}`, {
@@ -2936,12 +2937,12 @@ function openEmployeeForm(mode, employee = null) {
       });
       invalidateEmployeeCache();
       closeModal();
-      showToast(mode === 'create' ? 'Employee created successfully.' : 'Employee updated successfully.', 'success');
+      showToast(mode === 'create' ? t('toasts.employeeCreated') : t('toasts.employeeUpdated'), 'success');
       await renderEmployeesPage();
     } catch (error) {
       showFormError('employeeFormError', error.message);
       submitButton.disabled = false;
-      submitButton.textContent = mode === 'create' ? 'Create Employee' : 'Save Changes';
+      submitButton.textContent = mode === 'create' ? t('common.createEmployee') : t('common.saveChanges');
     }
   });
 }
@@ -2950,26 +2951,26 @@ function openResetPasswordModal(employee) {
   openModal(`
     <div class="modal-header">
       <div>
-        <p class="eyebrow">Reset password</p>
+        <p class="eyebrow">${escapeHtml(t('employeePage.resetPassword'))}</p>
         <h2>${escapeHtml(employee.full_name)}</h2>
       </div>
-      <button id="closeModalBtn" type="button" class="ghost-inline">Close</button>
+      <button id="closeModalBtn" type="button" class="ghost-inline">${escapeHtml(t('common.close'))}</button>
     </div>
     <form id="resetPasswordForm" class="stack-form">
       <div class="form-group">
-        <label for="reset_password">New Password</label>
+        <label for="reset_password">${escapeHtml(t('common.password'))}</label>
         <input id="reset_password" type="password" required />
       </div>
       <div class="form-group">
-        <label for="reset_password_confirm">Confirm Password</label>
+        <label for="reset_password_confirm">${escapeHtml(t('common.confirmPassword'))}</label>
         <input id="reset_password_confirm" type="password" required />
       </div>
       <div id="resetPasswordError" class="form-alert error hidden"></div>
       <div class="modal-footer">
         <div></div>
         <div class="inline-actions">
-          <button id="cancelResetPasswordBtn" type="button" class="btn btn-secondary">Cancel</button>
-          <button id="submitResetPasswordBtn" type="submit" class="btn btn-primary">Reset Password</button>
+          <button id="cancelResetPasswordBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.cancel'))}</button>
+          <button id="submitResetPasswordBtn" type="submit" class="btn btn-primary">${escapeHtml(t('employeePage.resetPassword'))}</button>
         </div>
       </div>
     </form>
@@ -2984,17 +2985,17 @@ function openResetPasswordModal(employee) {
     const confirmPassword = document.getElementById('reset_password_confirm').value;
 
     if (!isStrongPassword(password)) {
-      showFormError('resetPasswordError', 'Password must be at least 8 characters and include upper, lower, number, and symbol.');
+      showFormError('resetPasswordError', t('errors.strongPassword'));
       return;
     }
     if (password !== confirmPassword) {
-      showFormError('resetPasswordError', 'Password confirmation does not match.');
+      showFormError('resetPasswordError', t('errors.passwordMismatch'));
       return;
     }
 
     const submitButton = document.getElementById('submitResetPasswordBtn');
     submitButton.disabled = true;
-    submitButton.textContent = 'Resetting';
+    submitButton.textContent = t('employeePage.resetting');
 
     try {
       await apiRequest(`/admin/employees/${employee.id}/reset-password`, {
@@ -3002,11 +3003,11 @@ function openResetPasswordModal(employee) {
         body: { new_password: password },
       });
       closeModal();
-      showToast('Password reset successfully.', 'success');
+      showToast(t('toasts.passwordReset'), 'success');
     } catch (error) {
       showFormError('resetPasswordError', error.message);
       submitButton.disabled = false;
-      submitButton.textContent = 'Reset Password';
+      submitButton.textContent = t('employeePage.resetPassword');
     }
   });
 }
@@ -3025,49 +3026,49 @@ function openManualAttendanceForm(options = {}) {
   openModal(`
     <div class="modal-header">
       <div>
-        <p class="eyebrow">Manual attendance</p>
-        <h2>Add attendance record</h2>
+        <p class="eyebrow">${escapeHtml(t('employeePage.manualAttendance'))}</p>
+        <h2>${escapeHtml(t('employeePage.addAttendanceRecord'))}</h2>
       </div>
-      <button id="closeModalBtn" type="button" class="ghost-inline">Close</button>
+      <button id="closeModalBtn" type="button" class="ghost-inline">${escapeHtml(t('common.close'))}</button>
     </div>
     <form id="manualAttendanceForm" class="stack-form">
       <div class="form-grid">
         <div class="form-group full">
-          <label for="manual_user_id">Employee</label>
+          <label for="manual_user_id">${escapeHtml(t('common.employee'))}</label>
           <select id="manual_user_id" name="user_id" required>
-            <option value="">Select employee</option>
+            <option value="">${escapeHtml(t('common.employee'))}</option>
             ${employees.map((employee) => `<option value="${employee.id}" ${defaultUserId === employee.id ? 'selected' : ''}>${escapeHtml(employee.full_name)}${employee.employee_code ? ` - ${escapeHtml(employee.employee_code)}` : ''}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
-          <label for="manual_attendance_date">Attendance Date</label>
+          <label for="manual_attendance_date">${escapeHtml(t('common.date'))}</label>
           <input id="manual_attendance_date" name="attendance_date" type="date" value="${escapeHtml(defaultAttendanceDate)}" required />
         </div>
         <div class="form-group">
-          <label for="manual_attendance_status">Status</label>
+          <label for="manual_attendance_status">${escapeHtml(t('common.status'))}</label>
           <select id="manual_attendance_status" name="attendance_status">
             ${['present', 'late', 'checked_out', 'absent'].map((status) => `<option value="${status}">${escapeHtml(statusLabel(status))}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
-          <label for="manual_check_in_time">Check In</label>
+          <label for="manual_check_in_time">${escapeHtml(t('common.checkIn'))}</label>
           <input id="manual_check_in_time" name="check_in_time" type="datetime-local" />
         </div>
         <div class="form-group">
-          <label for="manual_check_out_time">Check Out</label>
+          <label for="manual_check_out_time">${escapeHtml(t('common.checkOut'))}</label>
           <input id="manual_check_out_time" name="check_out_time" type="datetime-local" />
         </div>
         <div class="form-group full">
-          <label for="manual_device_info">Notes / Device Info</label>
-          <textarea id="manual_device_info" name="device_info" rows="3" placeholder="Optional note for this manual update"></textarea>
+          <label for="manual_device_info">${escapeHtml(t('employeePage.notesDeviceInfo'))}</label>
+          <textarea id="manual_device_info" name="device_info" rows="3" placeholder="${escapeHtml(t('employeePage.optionalManualNote'))}"></textarea>
         </div>
       </div>
       <div id="manualAttendanceError" class="form-alert error hidden"></div>
       <div class="modal-footer">
         <div></div>
         <div class="inline-actions">
-          <button id="cancelManualAttendanceBtn" type="button" class="btn btn-secondary">Cancel</button>
-          <button id="submitManualAttendanceBtn" type="submit" class="btn btn-primary">Save Attendance</button>
+          <button id="cancelManualAttendanceBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.cancel'))}</button>
+          <button id="submitManualAttendanceBtn" type="submit" class="btn btn-primary">${escapeHtml(t('common.saveAttendance'))}</button>
         </div>
       </div>
     </form>
@@ -3084,33 +3085,33 @@ function openManualAttendanceForm(options = {}) {
     const checkOutTime = toIsoFromDateTimeLocal(form.check_out_time.value);
 
     if (!form.user_id.value || !form.attendance_date.value) {
-      showFormError('manualAttendanceError', 'Employee and attendance date are required.');
+      showFormError('manualAttendanceError', t('employeePage.employeeAndDateRequired'));
       return;
     }
     if (form.attendance_status.value === 'absent' && (checkInTime || checkOutTime)) {
-      showFormError('manualAttendanceError', 'Absent records cannot include check-in or check-out times.');
+      showFormError('manualAttendanceError', t('employeePage.absentNoTimes'));
       return;
     }
     if ((form.attendance_status.value === 'present' || form.attendance_status.value === 'late') && !checkInTime) {
-      showFormError('manualAttendanceError', 'Present or late records require a check-in time.');
+      showFormError('manualAttendanceError', t('employeePage.presentNeedsCheckIn'));
       return;
     }
     if (form.attendance_status.value === 'checked_out' && (!checkInTime || !checkOutTime)) {
-      showFormError('manualAttendanceError', 'Checked-out records require both check-in and check-out times.');
+      showFormError('manualAttendanceError', t('employeePage.checkedOutNeedsBoth'));
       return;
     }
     if (checkOutTime && !checkInTime) {
-      showFormError('manualAttendanceError', 'Check-out cannot be saved before check-in.');
+      showFormError('manualAttendanceError', t('employeePage.checkoutNeedsCheckIn'));
       return;
     }
     if (checkInTime && checkOutTime && new Date(checkOutTime) < new Date(checkInTime)) {
-      showFormError('manualAttendanceError', 'Check-out must be later than check-in.');
+      showFormError('manualAttendanceError', t('employeePage.checkoutAfterCheckIn'));
       return;
     }
 
     const submitButton = document.getElementById('submitManualAttendanceBtn');
     submitButton.disabled = true;
-    submitButton.textContent = 'Saving';
+    submitButton.textContent = t('employeePage.saveLabel');
 
     try {
       await apiRequest('/attendance/manual', {
@@ -3126,12 +3127,12 @@ function openManualAttendanceForm(options = {}) {
       });
       invalidateAttendanceCache();
       closeModal(true);
-      showToast('Manual attendance saved successfully.', 'success');
+      showToast(t('toasts.manualAttendanceSaved'), 'success');
       await onSaved();
     } catch (error) {
       showFormError('manualAttendanceError', error.message);
       submitButton.disabled = false;
-      submitButton.textContent = 'Save Attendance';
+      submitButton.textContent = t('common.saveAttendance');
     }
   });
 }
@@ -3139,21 +3140,21 @@ function openManualAttendanceForm(options = {}) {
 async function handleEmployeeToggle(employee) {
   const activeAdminCount = state.employees.filter((item) => item.role === 'admin' && item.is_active).length;
   if (employee.id === state.profile?.id) {
-    showToast('You cannot disable your own account.', 'error');
+    showToast(t('errors.disableSelf'), 'error');
     return;
   }
   if (employee.role === 'admin' && employee.is_active && activeAdminCount <= 1) {
-    showToast('At least one active admin account must remain in the system.', 'error');
+    showToast(t('errors.lastActiveAdmin'), 'error');
     return;
   }
 
   const confirmed = await confirmAction({
-    eyebrow: 'Account access',
-    title: `${employee.is_active ? 'Deactivate' : 'Activate'} ${employee.full_name}?`,
+    eyebrow: t('confirm.accountAccess'),
+    title: employee.is_active ? t('confirm.deactivateTitle', { name: employee.full_name }) : t('confirm.activateTitle', { name: employee.full_name }),
     message: employee.is_active
-      ? 'This employee will lose access to the system until you reactivate the account.'
-      : 'This employee will regain access and can sign in again.',
-    confirmLabel: employee.is_active ? 'Deactivate account' : 'Activate account',
+      ? t('confirm.deactivateMessage')
+      : t('confirm.activateMessage'),
+    confirmLabel: employee.is_active ? t('confirm.deactivateConfirm') : t('confirm.activateConfirm'),
   });
   if (!confirmed) {
     return;
@@ -3163,26 +3164,26 @@ async function handleEmployeeToggle(employee) {
     method: 'PATCH',
   });
   invalidateEmployeeCache();
-  showToast(`${employee.full_name} status updated.`, 'success');
+  showToast(t('toasts.employeeStatusUpdated', { name: employee.full_name }), 'success');
   await renderEmployeesPage();
 }
 
 async function handleEmployeeDelete(employee) {
   const activeAdminCount = state.employees.filter((item) => item.role === 'admin' && item.is_active).length;
   if (employee.id === state.profile?.id) {
-    showToast('You cannot delete your own account.', 'error');
+    showToast(t('errors.deleteSelf'), 'error');
     return;
   }
   if (employee.role === 'admin' && employee.is_active && activeAdminCount <= 1) {
-    showToast('At least one active admin account must remain in the system.', 'error');
+    showToast(t('errors.lastActiveAdmin'), 'error');
     return;
   }
 
   const confirmed = await confirmAction({
-    eyebrow: 'Delete employee',
-    title: `Delete ${employee.full_name}?`,
-    message: 'This permanently removes the auth account, profile, and linked attendance rows.',
-    confirmLabel: 'Delete permanently',
+    eyebrow: t('confirm.deleteEyebrow'),
+    title: t('confirm.deleteTitle', { name: employee.full_name }),
+    message: t('confirm.deleteMessage'),
+    confirmLabel: t('confirm.deleteConfirm'),
   });
   if (!confirmed) {
     return;
@@ -3192,7 +3193,7 @@ async function handleEmployeeDelete(employee) {
     method: 'DELETE',
   });
   invalidateEmployeeCache();
-  showToast(`${employee.full_name} deleted successfully.`, 'success');
+  showToast(t('toasts.employeeDeleted', { name: employee.full_name }), 'success');
   await renderEmployeesPage();
 }
 async function renderAttendancePage() {
@@ -3211,7 +3212,7 @@ async function renderAttendancePage() {
       && hasWarmHealth
     );
   if (!warmAttendanceCache) {
-    setPageLoading(container, 'Loading attendance');
+    setPageLoading(container, t('pages.loading.attendance'));
   }
 
   try {
@@ -3236,47 +3237,47 @@ async function renderAttendancePage() {
       const lateCount = employeeTodayRecords.filter((item) => item.attendance_status === 'late').length;
       const missingCount = businessContext.isScheduledWorkday ? missingRoster.length : 0;
       const missingLabel = !businessContext.isScheduledWorkday
-        ? 'Missing'
+        ? t('attendancePage.missingWeekend')
         : businessContext.hasShiftEnded
-          ? 'Absent'
+          ? t('attendancePage.missingAbsent')
           : businessContext.hasShiftStarted
-            ? 'Absent So Far'
-            : 'Not Checked In Yet';
+            ? t('attendancePage.missingSoFar')
+            : t('attendancePage.missingPending');
       const missingMeta = !businessContext.isScheduledWorkday
-        ? 'No attendance is expected on scheduled days off'
+        ? t('attendancePage.missingWeekendMeta')
         : businessContext.hasShiftEnded
-          ? 'Employees with no check-in by the end of the workday'
+          ? t('attendancePage.missingAbsentMeta')
           : businessContext.hasShiftStarted
-            ? 'Employees who still have no check-in recorded'
-            : `Employees expected before ${businessStartTimeLabel()}`;
+            ? t('attendancePage.missingSoFarMeta')
+            : t('attendancePage.missingPendingMeta', { start: businessStartTimeLabel() });
 
       container.innerHTML = `
         <div class="page-shell">
           <div class="section-header">
             <div>
-              <p class="eyebrow">Live operations</p>
-              <h1>Attendance for ${escapeHtml(formatDate(today))}</h1>
-              <p>Monitor check-ins and check-outs as they happen, export records, and add manual entries when needed. ${escapeHtml(businessScheduleLabel())}.</p>
+              <p class="eyebrow">${escapeHtml(t('attendancePage.adminEyebrow'))}</p>
+              <h1>${escapeHtml(t('attendancePage.adminTitle', { date: formatDate(today) }))}</h1>
+              <p>${escapeHtml(t('attendancePage.adminIntro', { schedule: businessScheduleLabel() }))}</p>
               ${restrictionNote ? `<p class="inline-note attention-note">${escapeHtml(restrictionNote)}</p>` : ''}
             </div>
             <div class="inline-actions">
-              <button id="manualAttendanceBtn" type="button" class="btn btn-primary">Add Manual Record</button>
-              <button id="exportAttendanceBtn" type="button" class="btn btn-secondary">Export CSV</button>
-              <button id="attendanceRefreshBtn" type="button" class="btn btn-secondary">Refresh</button>
+              <button id="manualAttendanceBtn" type="button" class="btn btn-primary">${escapeHtml(t('common.addManualRecord'))}</button>
+              <button id="exportAttendanceBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.exportCsv'))}</button>
+              <button id="attendanceRefreshBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.refresh'))}</button>
             </div>
           </div>
           <div class="summary-grid">
-            ${buildSummaryCard('Present', String(checkedInCount), 'Employees with a recorded check-in today')}
+            ${buildSummaryCard(t('attendancePage.present'), String(checkedInCount), t('attendancePage.presentMeta'))}
             ${buildSummaryCard(missingLabel, String(missingCount), missingMeta)}
-            ${buildSummaryCard('Checked Out', String(checkedOut), 'Completed workdays today')}
-            ${buildSummaryCard('In Office', String(stillInside), 'Checked in without check-out')}
-            ${buildSummaryCard('Late', String(lateCount), 'Rows marked late by RPC logic')}
+            ${buildSummaryCard(t('attendancePage.checkedOut'), String(checkedOut), t('attendancePage.checkedOutMeta'))}
+            ${buildSummaryCard(t('attendancePage.inOffice'), String(stillInside), t('attendancePage.inOfficeMeta'))}
+            ${buildSummaryCard(t('attendancePage.late'), String(lateCount), t('attendancePage.lateMeta'))}
           </div>
           <section class="card-block">
             <div class="table-shell">
               <table>
                 <thead>
-                  <tr><th>Employee</th><th>Department</th><th>Check In</th><th>Check Out</th><th>Status</th><th>Device</th></tr>
+                  <tr><th>${escapeHtml(t('common.employee'))}</th><th>${escapeHtml(t('common.department'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('common.device'))}</th></tr>
                 </thead>
                 <tbody>
                   ${todayRoster.length ? todayRoster.map((entry) => {
@@ -3291,7 +3292,7 @@ async function renderAttendancePage() {
                         <td>${escapeHtml(entry.device_info ? entry.device_info.slice(0, 72) : entry.displayState.note || '-')}</td>
                       </tr>
                     `;
-                  }).join('') : '<tr><td colspan="6"><div class="empty-state">No employee attendance data is available yet for today.</div></td></tr>'}
+                  }).join('') : `<tr><td colspan="6"><div class="empty-state">${escapeHtml(t('notes.noEmployeeAttendanceToday'))}</div></td></tr>`}
                 </tbody>
               </table>
             </div>
@@ -3309,7 +3310,7 @@ async function renderAttendancePage() {
       });
       container.querySelector('#exportAttendanceBtn')?.addEventListener('click', () => {
         exportAttendanceCsv(todayRoster, { resolveProfile: employeeById, fallbackProfile: state.profile });
-        showToast('Attendance CSV exported successfully.', 'success');
+        showToast(t('toasts.attendanceExported'), 'success');
       });
       return;
     }
@@ -3325,38 +3326,38 @@ async function renderAttendancePage() {
     const canCheckOut = Boolean(todayRecord?.check_in_time) && !todayRecord?.check_out_time;
 
     container.innerHTML = `
-      <div class="page-shell">
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">Personal attendance</p>
-            <h1>Check in and check out</h1>
-            <p>Your attendance actions are written securely through Supabase. ${escapeHtml(businessScheduleLabel())}.</p>
+        <div class="page-shell">
+          <div class="section-header">
+            <div>
+            <p class="eyebrow">${escapeHtml(t('attendancePage.employeeEyebrow'))}</p>
+            <h1>${escapeHtml(t('attendancePage.employeeTitle'))}</h1>
+            <p>${escapeHtml(t('attendancePage.employeeIntro', { schedule: businessScheduleLabel() }))}</p>
             ${restrictionNote ? `<p class="inline-note attention-note">${escapeHtml(restrictionNote)}</p>` : ''}
           </div>
         </div>
         <section class="status-card">
           <div>
-            <span class="status-label">Today status</span>
-            <strong>${escapeHtml(todayRecord ? statusLabel(todayRecord.attendance_status) : (missingTodayState?.label || 'Pending'))}</strong>
-            <p class="inline-note">${escapeHtml(todayRecord ? buildAttendanceRecordNote(todayRecord) : (missingTodayState?.note || 'No attendance has been submitted yet.'))}</p>
+            <span class="status-label">${escapeHtml(t('common.todayStatus'))}</span>
+            <strong>${escapeHtml(todayRecord ? statusLabel(todayRecord.attendance_status) : (missingTodayState?.label || t('states.pending')))}</strong>
+            <p class="inline-note">${escapeHtml(todayRecord ? buildAttendanceRecordNote(todayRecord) : (missingTodayState?.note || t('attendancePage.noSubmittedAttendance')))}</p>
           </div>
           <div class="inline-actions">
-            ${canCheckIn ? '<button id="employeeCheckInBtn" type="button" class="btn btn-primary">Check In</button>' : ''}
-            ${canCheckOut ? '<button id="employeeCheckOutBtn" type="button" class="btn btn-secondary">Check Out</button>' : ''}
-            <button id="attendanceRefreshBtn" type="button" class="btn btn-secondary">Refresh</button>
+            ${canCheckIn ? `<button id="employeeCheckInBtn" type="button" class="btn btn-primary">${escapeHtml(t('common.checkIn'))}</button>` : ''}
+            ${canCheckOut ? `<button id="employeeCheckOutBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.checkOut'))}</button>` : ''}
+            <button id="attendanceRefreshBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.refresh'))}</button>
           </div>
         </section>
         <section class="card-block">
           <div class="card-head">
             <div>
-              <h3>Recent history</h3>
-              <p class="card-subtle">Your last 14 attendance rows</p>
+              <h3>${escapeHtml(t('attendancePage.personalRecentTitle'))}</h3>
+              <p class="card-subtle">${escapeHtml(t('attendancePage.personalRecentText'))}</p>
             </div>
           </div>
           <div class="table-shell">
             <table>
               <thead>
-                <tr><th>Date</th><th>Check In</th><th>Check Out</th><th>Status</th></tr>
+                <tr><th>${escapeHtml(t('common.date'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.status'))}</th></tr>
               </thead>
               <tbody>
                 ${recentRecords.length ? recentRecords.map((row) => `
@@ -3366,7 +3367,7 @@ async function renderAttendancePage() {
                     <td>${escapeHtml(formatTime(row.check_out_time))}</td>
                     <td>${badgeMarkup(row.attendance_status, row.attendance_status)}</td>
                   </tr>
-                `).join('') : '<tr><td colspan="4"><div class="empty-state">No attendance history found yet.</div></td></tr>'}
+                `).join('') : `<tr><td colspan="4"><div class="empty-state">${escapeHtml(t('notes.noHistoryRecords'))}</div></td></tr>`}
               </tbody>
             </table>
           </div>
@@ -3391,7 +3392,7 @@ async function submitAttendanceAction(type) {
 
     await apiRequest(`/attendance/${type}`, { method: 'POST', body: context });
     invalidateAttendanceCache();
-    showToast(type === 'checkin' ? 'Check-in recorded successfully.' : 'Check-out recorded successfully.', 'success');
+    showToast(type === 'checkin' ? t('toasts.checkInSuccess') : t('toasts.checkOutSuccess'), 'success');
     await renderAttendancePage();
     await refreshTopbarMessage();
   } catch (error) {
@@ -3412,7 +3413,7 @@ async function renderHistoryPage() {
     pageSize: state.historyPagination.pageSize,
   });
   if (!getFreshCachedValue(historyKey, QUERY_CACHE_TTL_MS.attendancePage)) {
-    setPageLoading(container, 'Loading history');
+    setPageLoading(container, t('pages.loading.history'));
   }
 
   try {
@@ -3429,27 +3430,27 @@ async function renderHistoryPage() {
       <div class="page-shell">
         <div class="section-header">
           <div>
-            <p class="eyebrow">Records</p>
-            <h1>Attendance History</h1>
-            <p>Filter live attendance rows by date range and status.</p>
+            <p class="eyebrow">${escapeHtml(t('historyPage.eyebrow'))}</p>
+            <h1>${escapeHtml(t('historyPage.title'))}</h1>
+            <p>${escapeHtml(t('historyPage.intro'))}</p>
           </div>
-          ${isAdmin() ? '<button id="historyManualAttendanceBtn" type="button" class="btn btn-primary">Add Manual Record</button>' : ''}
+          ${isAdmin() ? `<button id="historyManualAttendanceBtn" type="button" class="btn btn-primary">${escapeHtml(t('common.addManualRecord'))}</button>` : ''}
         </div>
         <section class="card-block">
           <div class="toolbar toolbar-wide">
             <input id="historyFrom" type="date" value="${escapeHtml(state.historyFilters.from)}" />
             <input id="historyTo" type="date" value="${escapeHtml(state.historyFilters.to)}" />
             <select id="historyStatus">
-              <option value="all">All Statuses</option>
+              <option value="all">${escapeHtml(t('common.allStatuses'))}</option>
               ${['present', 'late', 'checked_out', 'absent'].map((status) => `<option value="${status}" ${state.historyFilters.status === status ? 'selected' : ''}>${escapeHtml(statusLabel(status))}</option>`).join('')}
             </select>
-            <button id="historySearchBtn" type="button" class="btn btn-secondary">Apply</button>
-            <button id="historyExportBtn" type="button" class="btn btn-secondary">Export CSV</button>
+            <button id="historySearchBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.apply'))}</button>
+            <button id="historyExportBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.exportCsv'))}</button>
           </div>
           <div class="table-shell">
             <table>
               <thead>
-                <tr><th>Employee</th><th>Date</th><th>Check In</th><th>Check Out</th><th>Status</th><th>IP Address</th></tr>
+                <tr><th>${escapeHtml(t('common.employee'))}</th><th>${escapeHtml(t('common.date'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('historyPage.ipAddress'))}</th></tr>
               </thead>
               <tbody>
                 ${pageData.items.length ? pageData.items.map((row) => {
@@ -3464,7 +3465,7 @@ async function renderHistoryPage() {
                       <td>${escapeHtml(row.ip_address || '-')}</td>
                     </tr>
                   `;
-                }).join('') : '<tr><td colspan="6"><div class="empty-state">No attendance rows found for the current filters.</div></td></tr>'}
+                }).join('') : `<tr><td colspan="6"><div class="empty-state">${escapeHtml(t('notes.noFilteredRecords'))}</div></td></tr>`}
               </tbody>
             </table>
           </div>
@@ -3502,7 +3503,7 @@ async function renderHistoryPage() {
       });
       await ensureProfileDirectory(records);
       exportAttendanceCsv(records, { resolveProfile: employeeById, fallbackProfile: state.profile });
-      showToast('Attendance history CSV exported successfully.', 'success');
+      showToast(t('toasts.historyExported'), 'success');
     });
     bindPagination(container, 'historyPager', state.historyPagination, () => {
       renderHistoryPage().catch((error) => setPageError(container, error.message));
@@ -3515,11 +3516,11 @@ async function renderHistoryPage() {
 async function renderQrPage() {
   const container = elements.pages.qr;
   if (!isAdmin()) {
-    setPageError(container, 'Only admins can open the QR access page.');
+    setPageError(container, t('errors.adminQrOnly'));
     return;
   }
   if (!getFreshCachedValue(buildCacheKey('qr', { current: true }), QUERY_CACHE_TTL_MS.qr)) {
-    setPageLoading(container, 'Generating QR code');
+    setPageLoading(container, t('pages.loading.qr'));
   }
 
   try {
@@ -3529,26 +3530,26 @@ async function renderQrPage() {
       <div class="page-shell">
         <div class="section-header">
           <div>
-            <p class="eyebrow">QR attendance</p>
-            <h1>Share mobile check-in access</h1>
-            <p>Employees can scan this code to open the online attendance route directly.</p>
+            <p class="eyebrow">${escapeHtml(t('qrPage.eyebrow'))}</p>
+            <h1>${escapeHtml(t('qrPage.title'))}</h1>
+            <p>${escapeHtml(t('qrPage.intro'))}</p>
           </div>
-          <button id="qrRefreshBtn" type="button" class="btn btn-secondary">Regenerate</button>
+          <button id="qrRefreshBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.regenerate'))}</button>
         </div>
         <section class="card-block">
           <div class="page-shell">
             <div class="qr-frame">
-              <img src="${escapeHtml(qr.qr_image)}" alt="EVARA BNS attendance QR code" />
+              <img src="${escapeHtml(qr.qr_image)}" alt="${escapeHtml(t('qrPage.imageAlt'))}" />
             </div>
             <div class="status-card compact">
               <div>
-                <span class="status-label">Check-in URL</span>
+                <span class="status-label">${escapeHtml(t('qrPage.checkinUrl'))}</span>
                 <strong>${escapeHtml(qr.checkin_url)}</strong>
-                <p class="inline-note">Generated ${escapeHtml(formatDateTime(qr.generated_at))}</p>
+                <p class="inline-note">${escapeHtml(t('notes.latestGenerated', { date: formatDateTime(qr.generated_at) }))}</p>
               </div>
             </div>
             <div class="inline-actions">
-              <button id="downloadQrBtn" type="button" class="btn btn-primary">Download QR</button>
+              <button id="downloadQrBtn" type="button" class="btn btn-primary">${escapeHtml(t('common.downloadQr'))}</button>
             </div>
           </div>
         </section>
