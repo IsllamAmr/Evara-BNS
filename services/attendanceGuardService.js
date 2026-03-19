@@ -103,6 +103,11 @@ function isLocationAllowed(latitude, longitude) {
     return false;
   }
 
+  // Validate coordinate ranges to prevent edge case calculations
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    return false;
+  }
+
   return distanceInMeters(latitude, longitude, GEOFENCE_LAT, GEOFENCE_LNG) <= GEOFENCE_RADIUS_METERS;
 }
 

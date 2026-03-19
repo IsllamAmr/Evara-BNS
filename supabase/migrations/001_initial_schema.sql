@@ -20,9 +20,9 @@ create table if not exists public.profiles (
 create table if not exists public.attendance (
   id bigint generated always as identity primary key,
   user_id uuid not null references public.profiles(id) on delete cascade,
-  attendance_date date not null,
-  check_in_time timestamptz null,
-  check_out_time timestamptz null,
+  attendance_date date not null, -- Business date in Africa/Cairo timezone
+  check_in_time timestamptz null, -- UTC timestamp of actual check-in
+  check_out_time timestamptz null, -- UTC timestamp of actual check-out
   attendance_status text not null default 'present' check (attendance_status in ('present', 'absent', 'late', 'checked_out')),
   ip_address text null,
   device_info text null,
@@ -146,7 +146,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select role from public.profiles where id = auth.uid();
+  select coalesce((select role from public.profiles where id = auth.uid()), 'deleted');
 $$;
 
 create or replace function public.is_current_user_active()
@@ -252,7 +252,7 @@ declare
   current_timestamp_utc timestamptz := timezone('utc', now());
   business_date date := timezone('Africa/Cairo', now())::date;
   computed_status text := case
-    when timezone('Africa/Cairo', now())::time > time '09:15' then 'late'
+    when timezone('Africa/Cairo', now())::time > time '10:00' then 'late'
     else 'present'
   end;
 begin

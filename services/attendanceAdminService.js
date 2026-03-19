@@ -72,6 +72,19 @@ async function createOrUpdateManualAttendance(payload, actorProfile) {
     throw new AppError('check_out_time must be after check_in_time', 422);
   }
 
+  // Validate duration doesn't exceed 24 hours
+  if (checkInTime && checkOutTime) {
+    const duration = new Date(checkOutTime) - new Date(checkInTime);
+    if (duration > 24 * 60 * 60 * 1000) {
+      throw new AppError('Attendance duration cannot exceed 24 hours', 422);
+    }
+  }
+
+  // Validate checkout is not in the future
+  if (checkOutTime && new Date(checkOutTime) > new Date()) {
+    throw new AppError('check_out_time cannot be in the future', 422);
+  }
+
   if (attendanceStatus === 'absent' && (checkInTime || checkOutTime)) {
     throw new AppError('Absent attendance cannot include check-in or check-out times', 422);
   }

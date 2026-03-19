@@ -29,7 +29,13 @@ async function attachUserFromToken(req, res, next, required) {
 
     if (authError || !authUser) {
       if (required) {
-        return sendError(res, 'Invalid or expired session', 401);
+        // Classify error types for better debugging
+        const isServerError = authError?.status >= 500;
+        const errorMessage = isServerError
+          ? 'Authentication service temporarily unavailable'
+          : 'Invalid or expired session';
+        const statusCode = isServerError ? 503 : 401;
+        return sendError(res, errorMessage, statusCode);
       }
 
       return next();
@@ -44,6 +50,15 @@ async function attachUserFromToken(req, res, next, required) {
     if (profileError || !profile) {
       if (required) {
         return sendError(res, 'Your profile is missing or inaccessible', 401);
+      }
+
+      return next();
+    }
+
+    // Check if user account is active
+    if (!profile.is_active) {
+      if (required) {
+        return sendError(res, 'Your account has been deactivated', 401);
       }
 
       return next();

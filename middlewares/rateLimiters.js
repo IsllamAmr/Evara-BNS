@@ -27,6 +27,12 @@ const adminWriteLimiter = buildLimiter({
   message: 'Too many admin actions. Please wait and try again.',
 });
 
+const employeeCreationLimiter = buildLimiter({
+  windowMs: 60 * 1000, // 1 minute window
+  max: 5, // Max 5 employee creations per minute
+  message: 'Too many employee creations. Please wait 1 minute and try again.',
+});
+
 const attendanceActionLimiter = buildLimiter({
   windowMs: Number(process.env.ATTENDANCE_RATE_LIMIT_WINDOW_MS) || 5 * 60 * 1000,
   max: Number(process.env.ATTENDANCE_RATE_LIMIT_MAX || 30),
@@ -37,4 +43,5 @@ module.exports = {
   adminWriteLimiter,
   apiLimiter,
   attendanceActionLimiter,
+  employeeCreationLimiter,
 };

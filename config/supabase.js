@@ -31,6 +31,7 @@ function createClientOptions(extraHeaders = {}) {
     },
     global: {
       headers: extraHeaders,
+      timeout: 30000, // 30 second timeout
     },
   };
 }

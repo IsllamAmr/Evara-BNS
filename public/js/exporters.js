@@ -10,7 +10,12 @@ import {
 import { attendanceOutcome, formatDuration, FULL_SHIFT_MINUTES } from './reporting.js';
 
 function csvValue(value) {
-  return `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const str = String(value ?? '');
+  // Prevent CSV formula injection by prefixing dangerous values with '
+  if (/^[=+@-]/.test(str)) {
+    return `"'${str.replace(/"/g, '""')}"`;
+  }
+  return `"${str.replace(/"/g, '""')}"`;
 }
 
 function downloadCsvFile(filename, headers, rows) {

@@ -6,12 +6,20 @@ import {
 } from './shared.js';
 import { getLocale, t } from './i18n.js';
 
-export const BUSINESS_TIME_ZONE = 'Africa/Cairo';
-export const FULL_SHIFT_MINUTES = 8 * 60;
-export const SHIFT_START_MINUTES = 10 * 60;
+// Configurable business schedule - can be loaded from API in future
+export const BUSINESS_CONFIG = {
+  TIME_ZONE: 'Africa/Cairo',
+  FULL_SHIFT_HOURS: 8,
+  SHIFT_START_HOUR: 10,
+  WORKDAY_INDEXES: [0, 1, 2, 3, 4], // Sunday to Thursday
+};
+
+export const BUSINESS_TIME_ZONE = BUSINESS_CONFIG.TIME_ZONE;
+export const FULL_SHIFT_MINUTES = BUSINESS_CONFIG.FULL_SHIFT_HOURS * 60;
+export const SHIFT_START_MINUTES = BUSINESS_CONFIG.SHIFT_START_HOUR * 60;
 export const SHIFT_END_MINUTES = SHIFT_START_MINUTES + FULL_SHIFT_MINUTES;
 const ON_TIME_THRESHOLD_MINUTES = SHIFT_START_MINUTES;
-const BUSINESS_WORKDAY_INDEXES = new Set([0, 1, 2, 3, 4]);
+const BUSINESS_WORKDAY_INDEXES = new Set(BUSINESS_CONFIG.WORKDAY_INDEXES);
 
 function formatDateInput(date) {
   const year = date.getFullYear();

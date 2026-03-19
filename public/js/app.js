@@ -73,9 +73,11 @@ const DEPARTMENT_OPTIONS = [
 
 const EMPLOYEE_PAGE_SIZE = 10;
 const HISTORY_PAGE_SIZE = 12;
-const EMPLOYEE_CACHE_TTL_MS = 60 * 1000;
+const EMPLOYEE_CACHE_TTL_MS = 30 * 1000; // Reduced from 60s to improve cache freshness
 const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const INPUT_DEBOUNCE_MS = 220;
+const SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8 hours
+const SESSION_WARNING_MS = 5 * 60 * 1000; // 5 minutes before timeout
 const QUERY_CACHE_TTL_MS = {
   employees: EMPLOYEE_CACHE_TTL_MS,
   employeeDirectory: 20 * 1000,
@@ -89,6 +91,8 @@ const QUERY_CACHE_TTL_MS = {
 const state = {
   session: null,
   profile: null,
+  sessionLastActivity: Date.now(),
+  sessionWarningShown: false,
   currentPage: 'dashboard',
   employees: [],
   employeesFetchedAt: 0,
@@ -189,6 +193,40 @@ const queryCache = new Map();
 let prefetchTimerId = null;
 
 boot();
+
+function updateSessionActivity() {
+  state.sessionLastActivity = Date.now();
+  state.sessionWarningShown = false;
+}
+
+function checkSessionTimeout() {
+  if (!state.session) return;
+
+  const now = Date.now();
+  const timeSinceActivity = now - state.sessionLastActivity;
+
+  if (timeSinceActivity >= SESSION_TIMEOUT_MS) {
+    // Session expired
+    handleLogout().catch(() => {});
+    showToast('Your session has expired. Please log in again.', 'warning');
+    return;
+  }
+
+  if (!state.sessionWarningShown && timeSinceActivity >= (SESSION_TIMEOUT_MS - SESSION_WARNING_MS)) {
+    // Show warning 5 minutes before expiry
+    const remainingMinutes = Math.ceil((SESSION_TIMEOUT_MS - timeSinceActivity) / 60000);
+    showToast(`Your session will expire in ${remainingMinutes} minute(s).`, 'warning');
+    state.sessionWarningShown = true;
+  }
+}
+
+// Check session timeout every minute
+setInterval(checkSessionTimeout, 60 * 1000);
+
+// Update activity on user interactions
+document.addEventListener('click', updateSessionActivity);
+document.addEventListener('keydown', updateSessionActivity);
+document.addEventListener('scroll', updateSessionActivity);
 
 function todayIso() {
   return todayBusinessIso();
@@ -299,6 +337,9 @@ function clearRealtimeSubscriptions() {
   });
   realtimeChannels = [];
 
+  // Ensure all subscriptions are cleaned up
+  supabase?.removeAllChannels();
+
   if (state.liveRefreshTimer) {
     window.clearTimeout(state.liveRefreshTimer);
     state.liveRefreshTimer = null;
@@ -309,6 +350,7 @@ function resetSessionState() {
   clearRealtimeSubscriptions();
   state.session = null;
   state.profile = null;
+  state.sessionWarningShown = false;
   state.employees = [];
   state.employeesFetchedAt = 0;
   state.profileMap = new Map();
@@ -3569,7 +3611,6 @@ async function renderQrPage() {
     setPageError(container, error.message);
   }
 }
-
 
 
 

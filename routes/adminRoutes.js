@@ -9,7 +9,7 @@ const {
 } = require('../controllers/adminController');
 const { protect } = require('../middlewares/authMiddleware');
 const { requireAdmin } = require('../middlewares/roleMiddleware');
-const { adminWriteLimiter } = require('../middlewares/rateLimiters');
+const { adminWriteLimiter, employeeCreationLimiter } = require('../middlewares/rateLimiters');
 const { handleValidation } = require('../middlewares/validationMiddleware');
 
 const router = express.Router();
@@ -18,6 +18,7 @@ router.use(protect, requireAdmin, adminWriteLimiter);
 
 router.post(
   '/employees',
+  employeeCreationLimiter,
   [
     body('employee_code').notEmpty().withMessage('employee_code is required'),
     body('full_name').notEmpty().withMessage('full_name is required'),
@@ -30,7 +31,36 @@ router.post(
         minNumbers: 1,
         minSymbols: 1,
       })
-      .withMessage('password must be at least 8 chars and include upper, lower, number, and symbol'),
+      .withMessage('password must be at least 8 chars and include upper, lower, number, and symbol')
+      .custom((value) => {
+        const commonPatterns = [
+          /^password/i,
+          /^123456/,
+          /^qwerty/i,
+          /^admin/i,
+          /^user/i,
+          /^login/i,
+          /^welcome/i,
+          /^abc123/i,
+          /^111111/,
+          /^000000/,
+          /(.)\1{2,}/, // repeated characters
+          /1234/,
+          /abcd/i,
+        ];
+
+        if (commonPatterns.some(pattern => pattern.test(value))) {
+          throw new Error('Password is too common or contains repeated patterns');
+        }
+
+        // Check for sequential characters
+        const hasSequential = /(.)\1\1|123|234|345|456|567|678|789|abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz/i.test(value);
+        if (hasSequential) {
+          throw new Error('Password cannot contain sequential characters');
+        }
+
+        return true;
+      }),
     body('role').isIn(['admin', 'employee']).withMessage('role must be admin or employee'),
     body('status').isIn(['active', 'inactive', 'on_leave']).withMessage('status is invalid'),
   ],

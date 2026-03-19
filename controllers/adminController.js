@@ -3,7 +3,7 @@ const adminService = require('../services/adminService');
 const { sendSuccess } = require('../utils/responseHelper');
 
 const createEmployee = asyncHandler(async (req, res) => {
-  const employee = await adminService.createEmployee(req.body);
+  const employee = await adminService.createEmployee(req.body, req.user);
 
   return sendSuccess(
     res,
@@ -35,7 +35,8 @@ const deleteEmployee = asyncHandler(async (req, res) => {
 const resetEmployeePassword = asyncHandler(async (req, res) => {
   const employee = await adminService.resetEmployeePassword(
     req.params.id,
-    req.body.new_password || req.body.password
+    req.body.new_password || req.body.password,
+    req.user
   );
 
   return sendSuccess(res, {

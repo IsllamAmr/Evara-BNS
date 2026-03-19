@@ -39,7 +39,7 @@ function buildProfilePayload(id, payload, existingProfile = {}) {
     email: normalizeEmail(payload.email || existingProfile.email),
     role: payload.role || existingProfile.role || 'employee',
     is_active: isActive,
-    employee_code: normalizeOptionalText(payload.employee_code ?? existingProfile.employee_code),
+    employee_code: normalizeText(payload.employee_code ?? existingProfile.employee_code),
     phone: normalizeOptionalText(payload.phone ?? existingProfile.phone),
     department: normalizeOptionalText(payload.department ?? existingProfile.department),
     position: normalizeOptionalText(payload.position ?? existingProfile.position),
@@ -60,6 +60,20 @@ async function findProfileById(id) {
   }
 
   return data;
+}
+
+async function logAdminAction(actorProfile, action, details) {
+  const supabaseAdmin = getSupabaseAdmin();
+  const { error } = await supabaseAdmin.from('logs').insert({
+    user_id: actorProfile?.id || null,
+    action,
+    details: JSON.stringify(details),
+    created_at: new Date().toISOString(),
+  });
+
+  if (error) {
+    console.error(`Failed to write admin audit log for ${action}:`, error.message);
+  }
 }
 
 async function countActiveAdmins() {
@@ -139,7 +153,7 @@ function mapAdminMetadata(profilePayload) {
   };
 }
 
-async function createEmployee(payload) {
+async function createEmployee(payload, actorProfile) {
   const supabaseAdmin = getSupabaseAdmin();
   const email = normalizeEmail(payload.email);
   const role = payload.role || 'employee';
@@ -151,6 +165,16 @@ async function createEmployee(payload) {
 
   if (!fullName) {
     throw new AppError('full_name is required', 422);
+  }
+
+  if (!normalizeText(payload.employee_code)) {
+    throw new AppError('employee_code is required', 422);
+  }
+
+  // Validate employee_code format: alphanumeric, 3-10 characters
+  const employeeCode = normalizeText(payload.employee_code);
+  if (!/^[A-Za-z0-9]{3,10}$/.test(employeeCode)) {
+    throw new AppError('employee_code must be 3-10 alphanumeric characters', 422);
   }
 
   await assertUniqueProfileFields({
@@ -200,6 +224,14 @@ async function createEmployee(payload) {
     throw new AppError(profileError.message, 400);
   }
 
+  // Log the employee creation
+  await logAdminAction(actorProfile, 'employee_created', {
+    target_id: userId,
+    email,
+    role,
+    employee_code: payload.employee_code,
+  });
+
   return findProfileById(userId);
 }
 
@@ -222,6 +254,15 @@ async function updateEmployee(id, payload, actorProfile) {
 
   const nextEmail = payload.email ? normalizeEmail(payload.email) : existingProfile.email;
   const nextEmployeeCode = payload.employee_code ?? existingProfile.employee_code;
+
+  if (!normalizeText(nextEmployeeCode)) {
+    throw new AppError('employee_code is required', 422);
+  }
+
+  // Validate employee_code format: alphanumeric, 3-10 characters
+  if (!/^[A-Za-z0-9]{3,10}$/.test(normalizeText(nextEmployeeCode))) {
+    throw new AppError('employee_code must be 3-10 alphanumeric characters', 422);
+  }
 
   await assertUniqueProfileFields({
     email: nextEmail,
@@ -257,10 +298,16 @@ async function updateEmployee(id, payload, actorProfile) {
     throw new AppError(profileError.message, 400);
   }
 
+  // Log the employee update
+  await logAdminAction(actorProfile, 'employee_updated', {
+    target_id: id,
+    changes: payload,
+  });
+
   return findProfileById(id);
 }
 
-async function resetEmployeePassword(id, password) {
+async function resetEmployeePassword(id, password, actorProfile) {
   const supabaseAdmin = getSupabaseAdmin();
   const existingProfile = await findProfileById(id);
 
@@ -272,6 +319,12 @@ async function resetEmployeePassword(id, password) {
   if (error) {
     throw new AppError(error.message, 400);
   }
+
+  // Log the password reset
+  await logAdminAction(actorProfile, 'employee_password_reset', {
+    target_id: id,
+    email: existingProfile.email,
+  });
 
   return existingProfile;
 }
@@ -302,11 +355,28 @@ async function toggleEmployeeStatus(id, actorProfile) {
     .update({
       is_active: nextIsActive,
       status: nextStatus,
+      updated_at: new Date().toISOString(),
     })
-    .eq('id', id);
+    .eq('id', id)
+    .eq('updated_at', existingProfile.updated_at);
 
   if (profileError) {
     throw new AppError(profileError.message, 400);
+  }
+
+  // Check if the update actually happened (optimistic locking)
+  const { data: updatedProfile, error: verifyError } = await supabaseAdmin
+    .from('profiles')
+    .select('is_active, status, updated_at')
+    .eq('id', id)
+    .single();
+
+  if (verifyError || !updatedProfile) {
+    throw new AppError('Failed to verify profile update', 500);
+  }
+
+  if (updatedProfile.is_active !== nextIsActive) {
+    throw new AppError('Profile was modified by another request. Please try again.', 409);
   }
 
   const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
@@ -322,6 +392,13 @@ async function toggleEmployeeStatus(id, actorProfile) {
   if (authError) {
     throw new AppError(authError.message, 400);
   }
+
+  // Log the status toggle
+  await logAdminAction(actorProfile, 'employee_status_toggled', {
+    target_id: id,
+    previous_status: existingProfile.is_active,
+    new_status: nextIsActive,
+  });
 
   return findProfileById(id);
 }
@@ -344,6 +421,15 @@ async function deleteEmployee(id, actorProfile) {
   if (error) {
     throw new AppError(error.message, 400);
   }
+
+  // Log the employee deletion
+  await logAdminAction(actorProfile, 'employee_deleted', {
+    target_id: id,
+    email: existingProfile.email,
+    role: existingProfile.role,
+  });
+
+  return { id, deleted: true };
 }
 
 module.exports = {
@@ -354,4 +440,3 @@ module.exports = {
   toggleEmployeeStatus,
   updateEmployee,
 };
-
