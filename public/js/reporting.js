@@ -83,6 +83,121 @@ export function businessScheduleLabel() {
   return `Sunday to Thursday - ${businessStartTimeLabel()} to ${businessEndTimeLabel()}`;
 }
 
+export function getBusinessDayContext(now = new Date()) {
+  const todayIso = isoDateInTimeZone(now, BUSINESS_TIME_ZONE);
+  const businessDate = dateFromIsoDate(todayIso);
+  const currentBusinessMinutes = minutesFromTimestamp(now, BUSINESS_TIME_ZONE);
+  const isScheduledWorkday = businessDate ? isWorkday(businessDate) : true;
+  const hasShiftStarted = Number.isFinite(currentBusinessMinutes) && currentBusinessMinutes >= SHIFT_START_MINUTES;
+  const hasShiftEnded = Number.isFinite(currentBusinessMinutes) && currentBusinessMinutes >= SHIFT_END_MINUTES;
+
+  return {
+    todayIso,
+    businessDate,
+    currentBusinessMinutes,
+    isScheduledWorkday,
+    hasShiftStarted,
+    hasShiftEnded,
+  };
+}
+
+export function deriveMissingAttendanceState({
+  attendanceDate,
+  employeeStatus = 'active',
+  isActive = true,
+  now = new Date(),
+} = {}) {
+  const context = getBusinessDayContext(now);
+  const targetDate = attendanceDate || context.todayIso;
+  const targetDateObject = dateFromIsoDate(targetDate);
+
+  if (!isActive || employeeStatus === 'inactive') {
+    return {
+      code: 'inactive',
+      label: 'Inactive',
+      note: 'Attendance tracking is disabled for this account.',
+      badgeType: 'inactive',
+      countsAsMissing: false,
+      countsAsAbsent: false,
+    };
+  }
+
+  if (employeeStatus === 'on_leave') {
+    return {
+      code: 'on_leave',
+      label: 'On Leave',
+      note: 'This employee is currently marked as on leave.',
+      badgeType: 'on_leave',
+      countsAsMissing: false,
+      countsAsAbsent: false,
+    };
+  }
+
+  if (!targetDateObject || !isWorkday(targetDateObject)) {
+    return {
+      code: 'weekend',
+      label: 'Weekend',
+      note: 'No attendance is required on scheduled days off.',
+      badgeType: 'pending',
+      countsAsMissing: false,
+      countsAsAbsent: false,
+    };
+  }
+
+  if (targetDate < context.todayIso) {
+    return {
+      code: 'absent',
+      label: 'Absent',
+      note: 'No check-in was recorded for this workday.',
+      badgeType: 'absent',
+      countsAsMissing: true,
+      countsAsAbsent: true,
+    };
+  }
+
+  if (targetDate > context.todayIso) {
+    return {
+      code: 'upcoming',
+      label: 'Upcoming',
+      note: 'This attendance day has not started yet.',
+      badgeType: 'pending',
+      countsAsMissing: false,
+      countsAsAbsent: false,
+    };
+  }
+
+  if (!context.hasShiftStarted) {
+    return {
+      code: 'not_checked_in_yet',
+      label: 'Not Checked In Yet',
+      note: `No check-in has been recorded yet. The shift starts at ${businessStartTimeLabel()}.`,
+      badgeType: 'pending',
+      countsAsMissing: true,
+      countsAsAbsent: false,
+    };
+  }
+
+  if (!context.hasShiftEnded) {
+    return {
+      code: 'absent_so_far',
+      label: 'Absent So Far',
+      note: 'No check-in has been recorded yet for today.',
+      badgeType: 'late',
+      countsAsMissing: true,
+      countsAsAbsent: false,
+    };
+  }
+
+  return {
+    code: 'absent',
+    label: 'Absent',
+    note: `No check-in was recorded before the workday ended at ${businessEndTimeLabel()}.`,
+    badgeType: 'absent',
+    countsAsMissing: true,
+    countsAsAbsent: true,
+  };
+}
+
 export function enumerateDates(startDate, endDate) {
   const dates = [];
   const cursor = new Date(startDate);

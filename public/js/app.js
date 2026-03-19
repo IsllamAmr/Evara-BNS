@@ -12,11 +12,13 @@ import {
   businessStartTimeLabel,
   buildAttendanceRowMetrics,
   buildReportsDataset,
+  deriveMissingAttendanceState,
   drawDepartmentHoursChart,
   drawWorkingHoursTrend,
   enumerateDates,
   formatAverageTime,
   formatDuration,
+  getBusinessDayContext,
   isWorkday,
   minutesFromTimestamp,
   monthRange,
@@ -1388,6 +1390,126 @@ function badgeMarkup(type, value, label = null) {
   return `<span class="badge ${escapeHtml(type)}">${escapeHtml(label || statusLabel(value))}</span>`;
 }
 
+function buildAttendanceRecordNote(row) {
+  if (!row) {
+    return '';
+  }
+
+  if (row.attendance_status === 'absent' && !row.check_in_time) {
+    return 'Marked absent for this workday.';
+  }
+
+  const parts = [];
+  if (row.check_in_time) {
+    parts.push(`Check in ${formatTime(row.check_in_time)}`);
+  }
+  if (row.check_out_time) {
+    parts.push(`check out ${formatTime(row.check_out_time)}`);
+  }
+
+  return parts.length ? parts.join(', ') : 'Attendance row exists, but no check-in has been recorded yet.';
+}
+
+function isTrackedAttendanceEmployee(employee) {
+  return Boolean(employee?.is_active);
+}
+
+function isExpectedAttendanceEmployee(employee) {
+  return Boolean(employee?.is_active && employee?.status !== 'inactive' && employee?.status !== 'on_leave');
+}
+
+function getAttendanceDisplayState({ employee = null, row = null, attendanceDate = todayIso() } = {}) {
+  if (row) {
+    return {
+      code: row.attendance_status,
+      label: statusLabel(row.attendance_status),
+      note: buildAttendanceRecordNote(row),
+      badgeType: row.attendance_status,
+      countsAsMissing: false,
+      countsAsAbsent: row.attendance_status === 'absent',
+    };
+  }
+
+  return deriveMissingAttendanceState({
+    attendanceDate,
+    employeeStatus: employee?.status,
+    isActive: employee?.is_active !== false,
+  });
+}
+
+function attendanceStateBadgeMarkup(displayState) {
+  return badgeMarkup(displayState.badgeType || displayState.code, displayState.code, displayState.label);
+}
+
+function attendanceRosterRank(entry) {
+  if (!entry.row) {
+    switch (entry.displayState.code) {
+      case 'absent':
+        return 0;
+      case 'absent_so_far':
+        return 1;
+      case 'not_checked_in_yet':
+        return 2;
+      case 'on_leave':
+        return 7;
+      case 'weekend':
+        return 8;
+      case 'inactive':
+        return 9;
+      default:
+        return 6;
+    }
+  }
+
+  const metrics = buildAttendanceRowMetrics(entry.row);
+  if (metrics.isOpenShift && entry.row.attendance_status === 'late') {
+    return 3;
+  }
+  if (metrics.isOpenShift) {
+    return 4;
+  }
+  if (entry.row.attendance_status === 'late') {
+    return 5;
+  }
+  if (entry.row.check_out_time) {
+    return 6;
+  }
+
+  return 5;
+}
+
+function buildTodayAttendanceRoster(employees, attendanceRows, attendanceDate) {
+  const attendanceByUserId = new Map(attendanceRows.map((row) => [row.user_id, row]));
+
+  return employees
+    .filter(isTrackedAttendanceEmployee)
+    .map((employee) => {
+      const row = attendanceByUserId.get(employee.id) || null;
+      const displayState = getAttendanceDisplayState({ employee, row, attendanceDate });
+
+      return {
+        profile: employee,
+        row,
+        displayState,
+        user_id: employee.id,
+        attendance_date: attendanceDate,
+        check_in_time: row?.check_in_time || null,
+        check_out_time: row?.check_out_time || null,
+        attendance_status: row?.attendance_status || displayState.code,
+        ip_address: row?.ip_address || null,
+        device_info: row?.device_info || displayState.note,
+      };
+    })
+    .sort((left, right) => {
+      const rankDelta = attendanceRosterRank(left) - attendanceRosterRank(right);
+      if (rankDelta !== 0) {
+        return rankDelta;
+      }
+
+      return (left.profile?.full_name || '').localeCompare(right.profile?.full_name || '');
+    });
+}
+
 function buildPaginationMeta(totalItems, paginationState) {
   const totalPages = Math.max(1, Math.ceil(totalItems / paginationState.pageSize));
   const currentPage = Math.min(Math.max(paginationState.page, 1), totalPages);
@@ -1505,21 +1627,38 @@ async function renderDashboardPage() {
 
   try {
     if (isAdmin()) {
-      const todayIsWorkday = isWorkday(new Date(`${today}T12:00:00`));
+      const businessContext = getBusinessDayContext();
+      const todayIsWorkday = businessContext.isScheduledWorkday;
       const [employees, todayAttendance] = await Promise.all([
         loadEmployees(),
         fetchAttendance({ date: today, limit: 250 }),
       ]);
 
-      const activeEmployees = employees.filter((employee) => employee.is_active);
-      const onLeave = employees.filter((employee) => employee.status === 'on_leave').length;
+      const trackedEmployees = employees.filter(isTrackedAttendanceEmployee);
+      const onLeave = trackedEmployees.filter((employee) => employee.status === 'on_leave').length;
       const todayDetailed = todayAttendance.map((row) => ({
         row,
         profile: employeeById(row.user_id),
         metrics: buildAttendanceRowMetrics(row),
       }));
+      const todayRoster = buildTodayAttendanceRoster(trackedEmployees, todayAttendance, today);
+      const missingTodayRows = todayRoster.filter((entry) => !entry.row && entry.displayState.countsAsMissing);
       const presentToday = todayDetailed.filter((entry) => entry.metrics.isPresent).length;
-      const absentToday = todayIsWorkday ? Math.max(activeEmployees.length - presentToday, 0) : 0;
+      const missingTodayCount = todayIsWorkday ? missingTodayRows.length : 0;
+      const missingTodayLabel = !todayIsWorkday
+        ? 'Missing Today'
+        : businessContext.hasShiftEnded
+          ? 'Absent Today'
+          : businessContext.hasShiftStarted
+            ? 'Absent So Far'
+            : 'Not Checked In Yet';
+      const missingTodayMeta = !todayIsWorkday
+        ? 'Friday and Saturday are scheduled days off'
+        : businessContext.hasShiftEnded
+          ? 'Expected employees with no check-in by the end of the workday'
+          : businessContext.hasShiftStarted
+            ? 'Expected employees who still have no check-in recorded'
+            : `Expected employees before the shift starts at ${businessStartTimeLabel()}`;
       const lateToday = todayIsWorkday
         ? todayDetailed.filter((entry) => entry.metrics.isLateArrival || entry.row.attendance_status === 'late').length
         : 0;
@@ -1554,14 +1693,39 @@ async function renderDashboardPage() {
           </div>
           <div class="summary-grid">
             ${buildSummaryCard('Total Employees', String(employees.length), 'All profiles in the workspace')}
-            ${buildSummaryCard('Active Employees', String(activeEmployees.length), 'Ready for attendance today')}
+            ${buildSummaryCard('Active Employees', String(trackedEmployees.length), 'Accounts with attendance access enabled')}
             ${buildSummaryCard('On Leave', String(onLeave), 'Employees currently on leave')}
             ${buildSummaryCard('Present Today', String(presentToday), 'Attendance records created today')}
-            ${buildSummaryCard('Absent Today', String(absentToday), todayIsWorkday ? 'Active employees with no check-in yet' : 'Friday and Saturday are scheduled days off')}
+            ${buildSummaryCard(missingTodayLabel, String(missingTodayCount), missingTodayMeta)}
             ${buildSummaryCard('Late Today', String(lateToday), todayIsWorkday ? `Arrivals after ${businessStartTimeLabel()}` : 'Weekend attendance is not marked late')}
             ${buildSummaryCard('Worked Today', formatDuration(workedMinutesToday), 'Combined completed and open shift minutes')}
             ${buildSummaryCard('8-Hour Actuals', `${fullShiftCount} full / ${openShiftCount} open`, `${formatDuration(overtimeMinutesToday)} overtime · ${formatDuration(shortfallMinutesToday)} shortfall`)}
           </div>
+          <section class="card-block">
+            <div class="card-head">
+              <div>
+                <h3>Attendance watchlist</h3>
+                <p class="card-subtle">Employees who still need a check-in today or are now absent.</p>
+              </div>
+            </div>
+            <div class="table-shell">
+              <table>
+                <thead>
+                  <tr><th>Employee</th><th>Department</th><th>Status</th><th>Note</th></tr>
+                </thead>
+                <tbody>
+                  ${todayIsWorkday && missingTodayRows.length ? missingTodayRows.slice(0, 12).map((entry) => `
+                    <tr>
+                      <td>${buildUserCell(entry.profile)}</td>
+                      <td>${escapeHtml(departmentLabel(entry.profile?.department))}</td>
+                      <td>${attendanceStateBadgeMarkup(entry.displayState)}</td>
+                      <td>${escapeHtml(entry.displayState.note)}</td>
+                    </tr>
+                  `).join('') : `<tr><td colspan="4"><div class="empty-state">${escapeHtml(todayIsWorkday ? 'All expected employees are accounted for so far.' : 'No attendance watchlist is needed on scheduled days off.')}</div></td></tr>`}
+                </tbody>
+              </table>
+            </div>
+          </section>
           <section class="card-block">
             <div class="card-head">
               <div>
@@ -1658,6 +1822,12 @@ async function renderDashboardPage() {
       fetchAttendance({ userId: state.profile.id, from: currentMonth.from, to: currentMonth.to, limit: 60 }),
     ]);
     const todayRecord = todayAttendance[0] || null;
+    const missingTodayState = todayRecord
+      ? null
+      : getAttendanceDisplayState({
+        employee: state.profile,
+        attendanceDate: today,
+      });
     const todayMetrics = todayRecord ? buildAttendanceRowMetrics(todayRecord) : null;
     const checkedDays = recentAttendance.filter((row) => row.check_in_time).length;
     const lateDays = recentAttendance.filter((row) => row.attendance_status === 'late').length;
@@ -1671,9 +1841,22 @@ async function renderDashboardPage() {
     let balanceLabel = '8-hour target waiting to begin';
     let balanceMeta = 'No attendance recorded yet for today.';
 
-    if (!todayIsWorkday && !todayRecord) {
-      balanceLabel = 'Weekend';
-      balanceMeta = 'Friday and Saturday are your scheduled days off.';
+    if (!todayRecord && missingTodayState) {
+      if (missingTodayState.code === 'weekend') {
+        balanceLabel = 'Weekend';
+      } else if (missingTodayState.code === 'on_leave') {
+        balanceLabel = 'On leave';
+      } else if (missingTodayState.code === 'absent') {
+        balanceLabel = 'Absent today';
+      } else if (missingTodayState.code === 'absent_so_far') {
+        balanceLabel = 'Check-in overdue';
+      } else if (missingTodayState.code === 'not_checked_in_yet') {
+        balanceLabel = 'Check-in pending';
+      } else {
+        balanceLabel = missingTodayState.label;
+      }
+
+      balanceMeta = missingTodayState.note;
     } else if (todayMetrics?.isOpenShift) {
       balanceLabel = `${formatDuration(todayMetrics.projectedRemainingMinutes)} remaining`;
       balanceMeta = 'Live estimate until you reach the full 8-hour target.';
@@ -1701,8 +1884,8 @@ async function renderDashboardPage() {
           </div>
         </div>
         <div class="summary-grid">
-          ${buildSummaryCard('Today Status', todayRecord ? statusLabel(todayRecord.attendance_status) : (todayIsWorkday ? 'Pending' : 'Weekend'), todayRecord ? `Checked in ${formatTime(todayRecord.check_in_time)}` : (todayIsWorkday ? 'No attendance recorded yet' : 'Friday and Saturday are counted as weekly days off'))}
-          ${buildSummaryCard('Worked Today', formatDuration(todayMetrics?.workedMinutes || 0), todayMetrics ? attendanceOutcome(todayMetrics) : (todayIsWorkday ? 'No attendance recorded yet' : 'No required shift scheduled today'))}
+          ${buildSummaryCard('Today Status', todayRecord ? statusLabel(todayRecord.attendance_status) : (missingTodayState?.label || (todayIsWorkday ? 'Pending' : 'Weekend')), todayRecord ? buildAttendanceRecordNote(todayRecord) : (missingTodayState?.note || (todayIsWorkday ? 'No attendance recorded yet' : 'Friday and Saturday are counted as weekly days off')))}
+          ${buildSummaryCard('Worked Today', formatDuration(todayMetrics?.workedMinutes || 0), todayMetrics ? attendanceOutcome(todayMetrics) : (missingTodayState?.note || (todayIsWorkday ? 'No attendance recorded yet' : 'No required shift scheduled today')))}
           ${buildSummaryCard('Today Balance', balanceLabel, balanceMeta)}
           ${buildSummaryCard('Full Shifts This Month', String(fullShiftDays), `${checkedDays} checked day(s) in your recent history`)}
           ${buildSummaryCard('Overtime This Month', formatDuration(monthOvertimeMinutes), 'Minutes above the daily 8-hour baseline')}
@@ -2829,9 +3012,29 @@ async function renderAttendancePage() {
     if (isAdmin()) {
       await loadEmployees();
       await ensureProfileDirectory(todayRecords);
+      const businessContext = getBusinessDayContext();
+      const todayRoster = buildTodayAttendanceRoster(state.employees, todayRecords, today);
+      const expectedRoster = todayRoster.filter((entry) => isExpectedAttendanceEmployee(entry.profile));
+      const missingRoster = expectedRoster.filter((entry) => !entry.row && entry.displayState.countsAsMissing);
+      const checkedInCount = todayRecords.filter((item) => item.check_in_time).length;
       const checkedOut = todayRecords.filter((item) => item.check_out_time).length;
       const stillInside = todayRecords.filter((item) => item.check_in_time && !item.check_out_time).length;
       const lateCount = todayRecords.filter((item) => item.attendance_status === 'late').length;
+      const missingCount = businessContext.isScheduledWorkday ? missingRoster.length : 0;
+      const missingLabel = !businessContext.isScheduledWorkday
+        ? 'Missing'
+        : businessContext.hasShiftEnded
+          ? 'Absent'
+          : businessContext.hasShiftStarted
+            ? 'Absent So Far'
+            : 'Not Checked In Yet';
+      const missingMeta = !businessContext.isScheduledWorkday
+        ? 'No attendance is expected on scheduled days off'
+        : businessContext.hasShiftEnded
+          ? 'Employees with no check-in by the end of the workday'
+          : businessContext.hasShiftStarted
+            ? 'Employees who still have no check-in recorded'
+            : `Employees expected before ${businessStartTimeLabel()}`;
 
       container.innerHTML = `
         <div class="page-shell">
@@ -2849,7 +3052,8 @@ async function renderAttendancePage() {
             </div>
           </div>
           <div class="summary-grid">
-            ${buildSummaryCard('Present', String(todayRecords.length), 'Attendance rows recorded today')}
+            ${buildSummaryCard('Present', String(checkedInCount), 'Employees with a recorded check-in today')}
+            ${buildSummaryCard(missingLabel, String(missingCount), missingMeta)}
             ${buildSummaryCard('Checked Out', String(checkedOut), 'Completed workdays today')}
             ${buildSummaryCard('In Office', String(stillInside), 'Checked in without check-out')}
             ${buildSummaryCard('Late', String(lateCount), 'Rows marked late by RPC logic')}
@@ -2861,19 +3065,19 @@ async function renderAttendancePage() {
                   <tr><th>Employee</th><th>Department</th><th>Check In</th><th>Check Out</th><th>Status</th><th>Device</th></tr>
                 </thead>
                 <tbody>
-                  ${todayRecords.length ? todayRecords.map((row) => {
-                    const profile = employeeById(row.user_id);
+                  ${todayRoster.length ? todayRoster.map((entry) => {
+                    const profile = entry.profile || employeeById(entry.user_id);
                     return `
                       <tr>
                         <td>${buildUserCell(profile)}</td>
                         <td>${escapeHtml(departmentLabel(profile?.department))}</td>
-                        <td>${escapeHtml(formatTime(row.check_in_time))}</td>
-                        <td>${escapeHtml(formatTime(row.check_out_time))}</td>
-                        <td>${badgeMarkup(row.attendance_status, row.attendance_status)}</td>
-                        <td>${escapeHtml(row.device_info ? row.device_info.slice(0, 48) : '-')}</td>
+                        <td>${escapeHtml(formatTime(entry.check_in_time))}</td>
+                        <td>${escapeHtml(formatTime(entry.check_out_time))}</td>
+                        <td>${attendanceStateBadgeMarkup(entry.displayState)}</td>
+                        <td>${escapeHtml(entry.device_info ? entry.device_info.slice(0, 72) : entry.displayState.note || '-')}</td>
                       </tr>
                     `;
-                  }).join('') : '<tr><td colspan="6"><div class="empty-state">No attendance records recorded today.</div></td></tr>'}
+                  }).join('') : '<tr><td colspan="6"><div class="empty-state">No employee attendance data is available yet for today.</div></td></tr>'}
                 </tbody>
               </table>
             </div>
@@ -2890,13 +3094,19 @@ async function renderAttendancePage() {
         });
       });
       container.querySelector('#exportAttendanceBtn')?.addEventListener('click', () => {
-        exportAttendanceCsv(todayRecords, { resolveProfile: employeeById, fallbackProfile: state.profile });
+        exportAttendanceCsv(todayRoster, { resolveProfile: employeeById, fallbackProfile: state.profile });
         showToast('Attendance CSV exported successfully.', 'success');
       });
       return;
     }
 
     const todayRecord = todayRecords[0] || null;
+    const missingTodayState = todayRecord
+      ? null
+      : getAttendanceDisplayState({
+        employee: state.profile,
+        attendanceDate: today,
+      });
     const canCheckIn = !todayRecord?.check_in_time;
     const canCheckOut = Boolean(todayRecord?.check_in_time) && !todayRecord?.check_out_time;
 
@@ -2913,8 +3123,8 @@ async function renderAttendancePage() {
         <section class="status-card">
           <div>
             <span class="status-label">Today status</span>
-            <strong>${escapeHtml(todayRecord ? statusLabel(todayRecord.attendance_status) : 'Pending')}</strong>
-            <p class="inline-note">${escapeHtml(todayRecord ? `Check in ${formatTime(todayRecord.check_in_time)}${todayRecord.check_out_time ? `, check out ${formatTime(todayRecord.check_out_time)}` : ''}` : 'No attendance has been submitted yet.')}</p>
+            <strong>${escapeHtml(todayRecord ? statusLabel(todayRecord.attendance_status) : (missingTodayState?.label || 'Pending'))}</strong>
+            <p class="inline-note">${escapeHtml(todayRecord ? buildAttendanceRecordNote(todayRecord) : (missingTodayState?.note || 'No attendance has been submitted yet.'))}</p>
           </div>
           <div class="inline-actions">
             ${canCheckIn ? '<button id="employeeCheckInBtn" type="button" class="btn btn-primary">Check In</button>' : ''}
