@@ -1475,6 +1475,55 @@ function missingAttendanceOutcome(displayState, shortfallMinutes = 0) {
   }
 }
 
+function attendanceDayTypeLabel(displayState) {
+  switch (displayState.code) {
+    case 'weekend':
+      return 'Weekly Leave';
+    case 'on_leave':
+      return 'Approved Leave';
+    case 'inactive':
+      return 'Inactive';
+    default:
+      return 'Workday';
+  }
+}
+
+function attendanceLedgerNote({ row = null, displayState, metrics = null, countsAsLate = false, countsAsAbsent = false, shortfallMinutes = 0, overtimeMinutes = 0 }) {
+  if (countsAsAbsent) {
+    return displayState.note || `Absent - ${formatDuration(shortfallMinutes || FULL_SHIFT_MINUTES)} shortfall`;
+  }
+
+  if (!row || !metrics) {
+    return displayState.note || displayState.label;
+  }
+
+  if (metrics.isOpenShift) {
+    return attendanceOutcome(metrics);
+  }
+
+  if (countsAsLate && shortfallMinutes > 0) {
+    return 'Late arrival with remaining shortfall.';
+  }
+
+  if (countsAsLate && overtimeMinutes > 0) {
+    return 'Late arrival recovered with overtime.';
+  }
+
+  if (countsAsLate) {
+    return 'Late arrival recorded for this workday.';
+  }
+
+  if (overtimeMinutes > 0) {
+    return 'Completed the workday with overtime.';
+  }
+
+  if (shortfallMinutes > 0) {
+    return 'Worked below the 8-hour target.';
+  }
+
+  return 'Completed the scheduled workday.';
+}
+
 function buildEmployeeMonthLedger(employee, attendanceRows, range) {
   const attendanceByDate = new Map(attendanceRows.map((row) => [row.attendance_date, row]));
 
@@ -1490,22 +1539,33 @@ function buildEmployeeMonthLedger(employee, attendanceRows, range) {
         const metrics = buildAttendanceRowMetrics(row);
         const countsAsAbsent = displayState.countsAsAbsent || (row.attendance_status === 'absent' && !row.check_in_time);
         const shortfallMinutes = countsAsAbsent ? FULL_SHIFT_MINUTES : metrics.shortfallMinutes;
+        const countsAsLate = Boolean(metrics.isLateArrival || row.attendance_status === 'late');
 
         return {
           attendanceDate,
           row,
           metrics,
           displayState,
+          dayTypeLabel: attendanceDayTypeLabel(displayState),
           workedMinutes: metrics.workedMinutes,
           overtimeMinutes: metrics.overtimeMinutes,
           shortfallMinutes,
           countsAsCheckedDay: Boolean(row.check_in_time),
-          countsAsLate: Boolean(metrics.isLateArrival || row.attendance_status === 'late'),
+          countsAsLate,
           countsAsAbsent,
           countsAsFullShift: Boolean(metrics.isCompleteShift && shortfallMinutes === 0),
           outcomeLabel: countsAsAbsent
             ? missingAttendanceOutcome(displayState, shortfallMinutes)
             : attendanceOutcome(metrics),
+          noteLabel: attendanceLedgerNote({
+            row,
+            displayState,
+            metrics,
+            countsAsLate,
+            countsAsAbsent,
+            shortfallMinutes,
+            overtimeMinutes: metrics.overtimeMinutes,
+          }),
         };
       }
 
@@ -1516,6 +1576,7 @@ function buildEmployeeMonthLedger(employee, attendanceRows, range) {
         row: null,
         metrics: null,
         displayState,
+        dayTypeLabel: attendanceDayTypeLabel(displayState),
         workedMinutes: 0,
         overtimeMinutes: 0,
         shortfallMinutes,
@@ -1524,6 +1585,11 @@ function buildEmployeeMonthLedger(employee, attendanceRows, range) {
         countsAsAbsent: displayState.countsAsAbsent,
         countsAsFullShift: false,
         outcomeLabel: missingAttendanceOutcome(displayState, shortfallMinutes),
+        noteLabel: attendanceLedgerNote({
+          displayState,
+          countsAsAbsent: displayState.countsAsAbsent,
+          shortfallMinutes,
+        }),
       };
     });
 }
@@ -1922,8 +1988,11 @@ async function renderDashboardPage() {
     const absentDays = monthLedger.filter((entry) => entry.countsAsAbsent).length;
     const weeklyLeaveDays = monthLedger.filter((entry) => entry.displayState.code === 'weekend').length;
     const fullShiftDays = monthLedger.filter((entry) => entry.countsAsFullShift).length;
+    const partialShortfallDays = monthLedger.filter((entry) => !entry.countsAsAbsent && entry.shortfallMinutes > 0).length;
+    const absenceShortfallMinutes = sumMetrics(monthLedger, (entry) => (entry.countsAsAbsent ? entry.shortfallMinutes : 0));
+    const shiftShortfallMinutes = sumMetrics(monthLedger, (entry) => (!entry.countsAsAbsent ? entry.shortfallMinutes : 0));
     const monthOvertimeMinutes = sumMetrics(monthLedger, (entry) => entry.overtimeMinutes);
-    const monthShortfallMinutes = sumMetrics(monthLedger, (entry) => entry.shortfallMinutes);
+    const monthShortfallMinutes = absenceShortfallMinutes + shiftShortfallMinutes;
     let balanceLabel = '8-hour target waiting to begin';
     let balanceMeta = 'No attendance recorded yet for today.';
 
@@ -1969,40 +2038,67 @@ async function renderDashboardPage() {
             <button id="employeeAttendanceShortcut" type="button" class="btn btn-secondary">Open attendance</button>
           </div>
         </div>
+        <section class="card-block">
+          <div class="card-head">
+            <div>
+              <h3>Today at a glance</h3>
+              <p class="card-subtle">Current status, hours worked, and today's 8-hour balance.</p>
+            </div>
+          </div>
+          <div class="summary-grid compact-grid">
+            ${buildSummaryCard('Today Status', todayRecord ? statusLabel(todayRecord.attendance_status) : (missingTodayState?.label || (todayIsWorkday ? 'Pending' : 'Weekly Leave')), todayRecord ? buildAttendanceRecordNote(todayRecord) : (missingTodayState?.note || (todayIsWorkday ? 'No attendance recorded yet' : 'Friday and Saturday are counted as weekly leave')))}
+            ${buildSummaryCard('Worked Today', formatDuration(todayMetrics?.workedMinutes || 0), todayMetrics ? attendanceOutcome(todayMetrics) : (missingTodayState?.note || (todayIsWorkday ? 'No attendance recorded yet' : 'No required shift scheduled today')))}
+            ${buildSummaryCard('Today Balance', balanceLabel, balanceMeta)}
+          </div>
+        </section>
+        <section class="card-block">
+          <div class="card-head">
+            <div>
+              <h3>Month at a glance</h3>
+              <p class="card-subtle">Attendance days, absences, weekly leave, and a clear shortfall breakdown.</p>
+            </div>
+          </div>
+          <p class="inline-note">Total shortfall = absence shortfall + shift shortfall. Weekly leave does not count as absence.</p>
           <div class="summary-grid">
-          ${buildSummaryCard('Today Status', todayRecord ? statusLabel(todayRecord.attendance_status) : (missingTodayState?.label || (todayIsWorkday ? 'Pending' : 'Weekly Leave')), todayRecord ? buildAttendanceRecordNote(todayRecord) : (missingTodayState?.note || (todayIsWorkday ? 'No attendance recorded yet' : 'Friday and Saturday are counted as weekly leave')))}
-          ${buildSummaryCard('Worked Today', formatDuration(todayMetrics?.workedMinutes || 0), todayMetrics ? attendanceOutcome(todayMetrics) : (missingTodayState?.note || (todayIsWorkday ? 'No attendance recorded yet' : 'No required shift scheduled today')))}
-          ${buildSummaryCard('Today Balance', balanceLabel, balanceMeta)}
-          ${buildSummaryCard('Full Shifts This Month', String(fullShiftDays), `${checkedDays} attended day(s) since the start of this month`)}
-          ${buildSummaryCard('Absent This Month', String(absentDays), `${weeklyLeaveDays} weekly leave day(s) so far this month`)}
-          ${buildSummaryCard('Overtime This Month', formatDuration(monthOvertimeMinutes), 'Minutes above the daily 8-hour baseline')}
-          ${buildSummaryCard('Shortfall This Month', formatDuration(monthShortfallMinutes), `${absentDays} absent day(s) and ${lateDays} late day(s) so far this month`)}
-        </div>
+            ${buildSummaryCard('Attended Days', String(checkedDays), 'Days with a recorded check-in since the start of this month')}
+            ${buildSummaryCard('Absent Days', String(absentDays), 'Workdays with no attendance record')}
+            ${buildSummaryCard('Weekly Leave Days', String(weeklyLeaveDays), 'Friday and Saturday since the start of this month')}
+            ${buildSummaryCard('Full Shift Days', String(fullShiftDays), 'Completed workdays with no shortfall')}
+            ${buildSummaryCard('Late Arrivals', String(lateDays), `Workdays started after ${businessStartTimeLabel()}`)}
+            ${buildSummaryCard('Absence Shortfall', formatDuration(absenceShortfallMinutes), `${absentDays} absent day(s) at 8 hours each`)}
+            ${buildSummaryCard('Shift Shortfall', formatDuration(shiftShortfallMinutes), `${partialShortfallDays} attended day(s) below the 8-hour target`)}
+            ${buildSummaryCard('Overtime This Month', formatDuration(monthOvertimeMinutes), 'Minutes worked above the daily 8-hour baseline')}
+            ${buildSummaryCard('Total Shortfall', formatDuration(monthShortfallMinutes), 'Combined absence and worked-time shortfall')}
+          </div>
+        </section>
         <section class="card-block">
           <div class="card-head">
             <div>
               <h3>Monthly attendance ledger</h3>
-              <p class="card-subtle">Every day from the start of this month through today, including weekly leave and absences.</p>
+              <p class="card-subtle">Every day from the start of this month through today, with clear day type and hour impact.</p>
             </div>
           </div>
           <div class="table-shell">
             <table>
               <thead>
-                <tr><th>Date</th><th>Check In</th><th>Check Out</th><th>Status</th><th>Worked</th><th>Outcome</th></tr>
+                <tr><th>Date</th><th>Day Type</th><th>Status</th><th>Check In</th><th>Check Out</th><th>Worked</th><th>Shortfall</th><th>Overtime</th><th>Note</th></tr>
               </thead>
               <tbody>
                 ${monthLedger.length ? monthLedger.map((entry) => {
                   return `
                   <tr>
                     <td>${escapeHtml(formatDate(entry.attendanceDate))}</td>
+                    <td>${escapeHtml(entry.dayTypeLabel)}</td>
+                    <td>${attendanceStateBadgeMarkup(entry.displayState)}</td>
                     <td>${escapeHtml(formatTime(entry.row?.check_in_time))}</td>
                     <td>${escapeHtml(formatTime(entry.row?.check_out_time))}</td>
-                    <td>${attendanceStateBadgeMarkup(entry.displayState)}</td>
                     <td>${escapeHtml(formatDuration(entry.workedMinutes))}</td>
-                    <td>${escapeHtml(entry.outcomeLabel)}</td>
+                    <td>${escapeHtml(formatDuration(entry.shortfallMinutes))}</td>
+                    <td>${escapeHtml(formatDuration(entry.overtimeMinutes))}</td>
+                    <td>${escapeHtml(entry.noteLabel)}</td>
                   </tr>
                 `;
-                }).join('') : '<tr><td colspan="6"><div class="empty-state">No attendance records available yet for this month.</div></td></tr>'}
+                }).join('') : '<tr><td colspan="9"><div class="empty-state">No attendance records available yet for this month.</div></td></tr>'}
               </tbody>
             </table>
           </div>
@@ -2204,6 +2300,23 @@ async function renderReportsPage() {
     const departmentChoices = reportsDepartmentChoices(eligibleEmployees);
     const employeeChoices = reportsEmployeeChoices(eligibleEmployees, state.reportsFilters.department);
     const selectedEmployee = report.selectedEmployeeReport;
+    const selectedEmployeeLedger = selectedEmployee
+      ? buildEmployeeMonthLedger(selectedEmployee.employee, selectedEmployee.rows, report.range)
+      : [];
+    const selectedEmployeeCheckedDays = selectedEmployeeLedger.filter((entry) => entry.countsAsCheckedDay).length;
+    const selectedEmployeeLateDays = selectedEmployeeLedger.filter((entry) => entry.countsAsLate).length;
+    const selectedEmployeeAbsentDays = selectedEmployeeLedger.filter((entry) => entry.countsAsAbsent).length;
+    const selectedEmployeeWeeklyLeaveDays = selectedEmployeeLedger.filter((entry) => entry.displayState.code === 'weekend').length;
+    const selectedEmployeeFullShiftDays = selectedEmployeeLedger.filter((entry) => entry.countsAsFullShift).length;
+    const selectedEmployeePartialShortfallDays = selectedEmployeeLedger.filter((entry) => !entry.countsAsAbsent && entry.shortfallMinutes > 0).length;
+    const selectedEmployeeAbsenceShortfallMinutes = sumMetrics(
+      selectedEmployeeLedger,
+      (entry) => (entry.countsAsAbsent ? entry.shortfallMinutes : 0)
+    );
+    const selectedEmployeeShiftShortfallMinutes = sumMetrics(
+      selectedEmployeeLedger,
+      (entry) => (!entry.countsAsAbsent ? entry.shortfallMinutes : 0)
+    );
 
     container.innerHTML = `
       <div class="page-shell">
@@ -2378,34 +2491,42 @@ async function renderReportsPage() {
           <div class="card-head">
             <div>
               <h3>Employee timesheet</h3>
-              <p class="card-subtle">Choose a specific employee from the filter above to inspect daily hours and shift outcomes.</p>
+              <p class="card-subtle">Choose a specific employee from the filter above to inspect the same monthly breakdown the employee sees.</p>
             </div>
           </div>
           ${selectedEmployee ? `
-            <div class="summary-grid compact-grid">
+            <p class="inline-note">This selected-employee view separates weekly leave, full absences, and worked-time shortfall.</p>
+            <div class="summary-grid">
               ${buildSummaryCard('Selected Employee', selectedEmployee.employee.full_name, departmentLabel(selectedEmployee.employee.department))}
-              ${buildSummaryCard('Total Hours', formatDuration(selectedEmployee.workedMinutes), `${selectedEmployee.presentDays} present day(s)`)}
-              ${buildSummaryCard('Overtime', formatDuration(selectedEmployee.overtimeMinutes), `${selectedEmployee.lateArrivals} late arrival(s)`)}
-              ${buildSummaryCard('Shortfall', formatDuration(selectedEmployee.shortfallMinutes), `${selectedEmployee.absentDays} absence day(s)`)}
+              ${buildSummaryCard('Attended Days', String(selectedEmployeeCheckedDays), 'Days with a recorded check-in in the selected month')}
+              ${buildSummaryCard('Absent Days', String(selectedEmployeeAbsentDays), 'Workdays with no attendance record')}
+              ${buildSummaryCard('Weekly Leave Days', String(selectedEmployeeWeeklyLeaveDays), 'Friday and Saturday in the selected month')}
+              ${buildSummaryCard('Full Shift Days', String(selectedEmployeeFullShiftDays), 'Completed workdays with no shortfall')}
+              ${buildSummaryCard('Late Arrivals', String(selectedEmployeeLateDays), `Workdays started after ${businessStartTimeLabel()}`)}
+              ${buildSummaryCard('Absence Shortfall', formatDuration(selectedEmployeeAbsenceShortfallMinutes), `${selectedEmployeeAbsentDays} absent day(s) at 8 hours each`)}
+              ${buildSummaryCard('Shift Shortfall', formatDuration(selectedEmployeeShiftShortfallMinutes), `${selectedEmployeePartialShortfallDays} attended day(s) below the 8-hour target`)}
+              ${buildSummaryCard('Overtime', formatDuration(selectedEmployee.overtimeMinutes), 'Minutes worked above the daily 8-hour baseline')}
+              ${buildSummaryCard('Total Shortfall', formatDuration(selectedEmployee.shortfallMinutes), 'Combined absence and worked-time shortfall')}
             </div>
             <div class="table-shell">
               <table>
                 <thead>
-                  <tr><th>Date</th><th>Arrival</th><th>Check In</th><th>Check Out</th><th>Total Hours</th><th>Overtime</th><th>Shortfall</th><th>Shift Result</th></tr>
+                  <tr><th>Date</th><th>Day Type</th><th>Status</th><th>Check In</th><th>Check Out</th><th>Worked</th><th>Shortfall</th><th>Overtime</th><th>Note</th></tr>
                 </thead>
                 <tbody>
-                  ${selectedEmployee.detailedRows.length ? selectedEmployee.detailedRows.map((entry) => `
+                  ${selectedEmployeeLedger.length ? selectedEmployeeLedger.map((entry) => `
                     <tr>
-                      <td>${escapeHtml(formatDate(entry.row.attendance_date))}</td>
-                      <td>${entry.metrics.isPresent ? trendBadgeMarkup(entry.metrics.isLateArrival ? { label: 'Late', className: 'trend-focus' } : { label: 'On Time', className: 'trend-exceptional' }) : '<span class="badge trend-risk">No Check-in</span>'}</td>
-                      <td>${escapeHtml(formatTime(entry.row.check_in_time))}</td>
-                      <td>${escapeHtml(formatTime(entry.row.check_out_time))}</td>
-                      <td>${escapeHtml(formatDuration(entry.metrics.workedMinutes))}</td>
-                      <td>${escapeHtml(formatDuration(entry.metrics.overtimeMinutes))}</td>
-                      <td>${escapeHtml(formatDuration(entry.metrics.shortfallMinutes))}</td>
-                      <td>${escapeHtml(attendanceOutcome(entry.metrics))}</td>
+                      <td>${escapeHtml(formatDate(entry.attendanceDate))}</td>
+                      <td>${escapeHtml(entry.dayTypeLabel)}</td>
+                      <td>${attendanceStateBadgeMarkup(entry.displayState)}</td>
+                      <td>${escapeHtml(formatTime(entry.row?.check_in_time))}</td>
+                      <td>${escapeHtml(formatTime(entry.row?.check_out_time))}</td>
+                      <td>${escapeHtml(formatDuration(entry.workedMinutes))}</td>
+                      <td>${escapeHtml(formatDuration(entry.shortfallMinutes))}</td>
+                      <td>${escapeHtml(formatDuration(entry.overtimeMinutes))}</td>
+                      <td>${escapeHtml(entry.noteLabel)}</td>
                     </tr>
-                  `).join('') : '<tr><td colspan="8"><div class="empty-state">No attendance rows are available for this employee in the selected period.</div></td></tr>'}
+                  `).join('') : '<tr><td colspan="9"><div class="empty-state">No attendance rows are available for this employee in the selected period.</div></td></tr>'}
                 </tbody>
               </table>
             </div>
