@@ -1948,7 +1948,10 @@ async function renderDashboardPage() {
                   const key = departmentLabel(employee.department);
                   acc[key] = (acc[key] || 0) + 1;
                   return acc;
-                }, {})).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([department, count]) => `
+                }, {}))
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 6)
+                  .map(([department, count]) => `
                   <div class="status-card compact">
                     <div>
                       <span class="status-label">Department</span>
@@ -1956,7 +1959,6 @@ async function renderDashboardPage() {
                       <p class="inline-note">${escapeHtml(String(count))} team member(s)</p>
                     </div>
                   </div>
-                `).join('') || '<div class="empty-state">No department data available yet.</div>'}
                 `).join('') || `<div class="empty-state">${escapeHtml(t('notes.noDepartmentData'))}</div>`}
               </div>
             </aside>
