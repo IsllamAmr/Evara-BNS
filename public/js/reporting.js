@@ -136,8 +136,8 @@ export function deriveMissingAttendanceState({
   if (!targetDateObject || !isWorkday(targetDateObject)) {
     return {
       code: 'weekend',
-      label: 'Weekend',
-      note: 'No attendance is required on scheduled days off.',
+      label: 'Weekly Leave',
+      note: 'Friday and Saturday are counted as weekly leave.',
       badgeType: 'pending',
       countsAsMissing: false,
       countsAsAbsent: false,
@@ -425,7 +425,7 @@ export function buildReportsDataset(employees, attendanceRows, filters) {
   const range = monthRange(filters.month);
   const workdays = enumerateDates(range.startDate, range.endDate).filter(isWorkday);
   const workdaySet = new Set(workdays.map((date) => formatDateInput(date)));
-  const eligibleEmployees = employees.filter((employee) => employee.is_active && employee.status !== 'inactive');
+  const eligibleEmployees = employees.filter((employee) => employee.role === 'employee' && employee.is_active && employee.status !== 'inactive');
   const filteredEmployees = eligibleEmployees.filter((employee) => {
     if (filters.department !== 'all' && departmentLabel(employee.department) !== filters.department) {
       return false;
@@ -458,7 +458,8 @@ export function buildReportsDataset(employees, attendanceRows, filters) {
     const onTimeArrivals = workdayRows.filter((item) => item.metrics.isOnTimeArrival).length;
     const workedMinutes = sumBy(detailedRows, (item) => item.metrics.workedMinutes);
     const overtimeMinutes = sumBy(detailedRows, (item) => item.metrics.overtimeMinutes);
-    const shortfallMinutes = sumBy(workdayRows, (item) => item.metrics.shortfallMinutes);
+    const shortfallMinutes = sumBy(workdayRows.filter((item) => item.metrics.isPresent), (item) => item.metrics.shortfallMinutes)
+      + (absentDays * FULL_SHIFT_MINUTES);
     const expectedMinutes = workdays.length * FULL_SHIFT_MINUTES;
     const averageCheckIn = average(workdayRows.map((item) => item.metrics.checkInMinutes));
     const averageCheckOut = average(detailedRows.map((item) => item.metrics.checkOutMinutes));

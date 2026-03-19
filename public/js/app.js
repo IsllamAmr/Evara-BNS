@@ -16,6 +16,7 @@ import {
   drawDepartmentHoursChart,
   drawWorkingHoursTrend,
   enumerateDates,
+  FULL_SHIFT_MINUTES,
   formatAverageTime,
   formatDuration,
   getBusinessDayContext,
@@ -39,6 +40,7 @@ import {
   departmentLabel,
   escapeHtml,
   formatDate,
+  formatDateInput,
   formatDateTime,
   formatTime,
   isStrongPassword,
@@ -579,11 +581,11 @@ async function fetchEmployeeDirectoryStats(options = {}) {
       activeAdminResult,
       departmentsResult,
     ] = await Promise.all([
-      supabase.from('profiles').select('id', { count: 'exact', head: true }),
-      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_active', true),
-      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('status', 'on_leave'),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'employee'),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'employee').eq('is_active', true),
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'employee').eq('status', 'on_leave'),
       supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'admin').eq('is_active', true),
-      supabase.from('profiles').select('department').not('department', 'is', null).order('department', { ascending: true }),
+      supabase.from('profiles').select('department').eq('role', 'employee').not('department', 'is', null).order('department', { ascending: true }),
     ]);
 
     const firstError = [totalResult.error, activeResult.error, onLeaveResult.error, activeAdminResult.error, departmentsResult.error].find(Boolean);
@@ -1410,12 +1412,25 @@ function buildAttendanceRecordNote(row) {
   return parts.length ? parts.join(', ') : 'Attendance row exists, but no check-in has been recorded yet.';
 }
 
+function isEmployeeProfile(profile) {
+  return profile?.role === 'employee';
+}
+
 function isTrackedAttendanceEmployee(employee) {
-  return Boolean(employee?.is_active);
+  return Boolean(isEmployeeProfile(employee) && employee?.is_active);
 }
 
 function isExpectedAttendanceEmployee(employee) {
-  return Boolean(employee?.is_active && employee?.status !== 'inactive' && employee?.status !== 'on_leave');
+  return Boolean(
+    isEmployeeProfile(employee)
+    && employee?.is_active
+    && employee?.status !== 'inactive'
+    && employee?.status !== 'on_leave'
+  );
+}
+
+function isEmployeeAttendanceRow(row) {
+  return Boolean(row && isEmployeeProfile(employeeById(row.user_id)));
 }
 
 function getAttendanceDisplayState({ employee = null, row = null, attendanceDate = todayIso() } = {}) {
@@ -1439,6 +1454,78 @@ function getAttendanceDisplayState({ employee = null, row = null, attendanceDate
 
 function attendanceStateBadgeMarkup(displayState) {
   return badgeMarkup(displayState.badgeType || displayState.code, displayState.code, displayState.label);
+}
+
+function missingAttendanceOutcome(displayState, shortfallMinutes = 0) {
+  switch (displayState.code) {
+    case 'weekend':
+      return 'Weekly Leave';
+    case 'on_leave':
+      return 'On Leave';
+    case 'absent':
+      return `Absent - ${formatDuration(shortfallMinutes || FULL_SHIFT_MINUTES)} shortfall`;
+    case 'absent_so_far':
+      return 'No check-in recorded yet for today.';
+    case 'not_checked_in_yet':
+      return `Shift starts at ${businessStartTimeLabel()}.`;
+    case 'inactive':
+      return 'Attendance tracking is disabled for this account.';
+    default:
+      return displayState.note || displayState.label;
+  }
+}
+
+function buildEmployeeMonthLedger(employee, attendanceRows, range) {
+  const attendanceByDate = new Map(attendanceRows.map((row) => [row.attendance_date, row]));
+
+  return enumerateDates(range.startDate, range.endDate)
+    .slice()
+    .reverse()
+    .map((date) => {
+      const attendanceDate = formatDateInput(date);
+      const row = attendanceByDate.get(attendanceDate) || null;
+      const displayState = getAttendanceDisplayState({ employee, row, attendanceDate });
+
+      if (row) {
+        const metrics = buildAttendanceRowMetrics(row);
+        const countsAsAbsent = displayState.countsAsAbsent || (row.attendance_status === 'absent' && !row.check_in_time);
+        const shortfallMinutes = countsAsAbsent ? FULL_SHIFT_MINUTES : metrics.shortfallMinutes;
+
+        return {
+          attendanceDate,
+          row,
+          metrics,
+          displayState,
+          workedMinutes: metrics.workedMinutes,
+          overtimeMinutes: metrics.overtimeMinutes,
+          shortfallMinutes,
+          countsAsCheckedDay: Boolean(row.check_in_time),
+          countsAsLate: Boolean(metrics.isLateArrival || row.attendance_status === 'late'),
+          countsAsAbsent,
+          countsAsFullShift: Boolean(metrics.isCompleteShift && shortfallMinutes === 0),
+          outcomeLabel: countsAsAbsent
+            ? missingAttendanceOutcome(displayState, shortfallMinutes)
+            : attendanceOutcome(metrics),
+        };
+      }
+
+      const shortfallMinutes = displayState.countsAsAbsent ? FULL_SHIFT_MINUTES : 0;
+
+      return {
+        attendanceDate,
+        row: null,
+        metrics: null,
+        displayState,
+        workedMinutes: 0,
+        overtimeMinutes: 0,
+        shortfallMinutes,
+        countsAsCheckedDay: false,
+        countsAsLate: false,
+        countsAsAbsent: displayState.countsAsAbsent,
+        countsAsFullShift: false,
+        outcomeLabel: missingAttendanceOutcome(displayState, shortfallMinutes),
+      };
+    });
 }
 
 function attendanceRosterRank(entry) {
@@ -1617,7 +1704,6 @@ async function renderDashboardPage() {
     )
     : Boolean(
       getFreshCachedValue(buildCacheKey('attendance', { userId: state.profile?.id, date: today, limit: 1 }), QUERY_CACHE_TTL_MS.attendance)
-      && getFreshCachedValue(buildCacheKey('attendance', { userId: state.profile?.id, from: offsetDate(-14), to: today, limit: 14 }), QUERY_CACHE_TTL_MS.attendance)
       && getFreshCachedValue(buildCacheKey('attendance', { userId: state.profile?.id, from: currentMonth.from, to: currentMonth.to, limit: 60 }), QUERY_CACHE_TTL_MS.attendance)
     );
 
@@ -1634,14 +1720,16 @@ async function renderDashboardPage() {
         fetchAttendance({ date: today, limit: 250 }),
       ]);
 
-      const trackedEmployees = employees.filter(isTrackedAttendanceEmployee);
+      const employeeProfiles = employees.filter(isEmployeeProfile);
+      const trackedEmployees = employeeProfiles.filter(isTrackedAttendanceEmployee);
+      const employeeTodayRows = todayAttendance.filter(isEmployeeAttendanceRow);
       const onLeave = trackedEmployees.filter((employee) => employee.status === 'on_leave').length;
-      const todayDetailed = todayAttendance.map((row) => ({
+      const todayDetailed = employeeTodayRows.map((row) => ({
         row,
         profile: employeeById(row.user_id),
         metrics: buildAttendanceRowMetrics(row),
       }));
-      const todayRoster = buildTodayAttendanceRoster(trackedEmployees, todayAttendance, today);
+      const todayRoster = buildTodayAttendanceRoster(employeeProfiles, employeeTodayRows, today);
       const missingTodayRows = todayRoster.filter((entry) => !entry.row && entry.displayState.countsAsMissing);
       const presentToday = todayDetailed.filter((entry) => entry.metrics.isPresent).length;
       const missingTodayCount = todayIsWorkday ? missingTodayRows.length : 0;
@@ -1667,7 +1755,7 @@ async function renderDashboardPage() {
       const workedMinutesToday = sumMetrics(todayDetailed, (entry) => entry.metrics.workedMinutes);
       const overtimeMinutesToday = sumMetrics(todayDetailed, (entry) => entry.metrics.overtimeMinutes);
       const shortfallMinutesToday = sumMetrics(todayDetailed, (entry) => entry.metrics.shortfallMinutes);
-      const recentRows = todayAttendance.slice(0, 8);
+      const recentRows = employeeTodayRows.slice(0, 8);
       const accountabilityRows = todayDetailed
         .slice()
         .sort((left, right) => {
@@ -1692,7 +1780,7 @@ async function renderDashboardPage() {
             <button id="dashboardRefreshBtn" type="button" class="btn btn-secondary">Refresh</button>
           </div>
           <div class="summary-grid">
-            ${buildSummaryCard('Total Employees', String(employees.length), 'All profiles in the workspace')}
+            ${buildSummaryCard('Total Employees', String(employeeProfiles.length), 'Employee profiles in the workspace')}
             ${buildSummaryCard('Active Employees', String(trackedEmployees.length), 'Accounts with attendance access enabled')}
             ${buildSummaryCard('On Leave', String(onLeave), 'Employees currently on leave')}
             ${buildSummaryCard('Present Today', String(presentToday), 'Attendance records created today')}
@@ -1790,7 +1878,7 @@ async function renderDashboardPage() {
                 </div>
               </div>
               <div class="page-shell">
-                ${Object.entries(employees.reduce((acc, employee) => {
+                ${Object.entries(employeeProfiles.reduce((acc, employee) => {
                   const key = departmentLabel(employee.department);
                   acc[key] = (acc[key] || 0) + 1;
                   return acc;
@@ -1816,9 +1904,8 @@ async function renderDashboardPage() {
     }
 
     const todayIsWorkday = isWorkday(new Date(`${today}T12:00:00`));
-    const [todayAttendance, recentAttendance, monthAttendance] = await Promise.all([
+    const [todayAttendance, monthAttendance] = await Promise.all([
       fetchAttendance({ userId: state.profile.id, date: today, limit: 1 }),
-      fetchAttendance({ userId: state.profile.id, from: offsetDate(-14), to: today, limit: 14 }),
       fetchAttendance({ userId: state.profile.id, from: currentMonth.from, to: currentMonth.to, limit: 60 }),
     ]);
     const todayRecord = todayAttendance[0] || null;
@@ -1829,21 +1916,20 @@ async function renderDashboardPage() {
         attendanceDate: today,
       });
     const todayMetrics = todayRecord ? buildAttendanceRowMetrics(todayRecord) : null;
-    const checkedDays = recentAttendance.filter((row) => row.check_in_time).length;
-    const lateDays = recentAttendance.filter((row) => row.attendance_status === 'late').length;
-    const monthDetailed = monthAttendance.map((row) => ({
-      row,
-      metrics: buildAttendanceRowMetrics(row),
-    }));
-    const fullShiftDays = monthDetailed.filter((entry) => entry.metrics.isCompleteShift && entry.metrics.shortfallMinutes === 0).length;
-    const monthOvertimeMinutes = sumMetrics(monthDetailed, (entry) => entry.metrics.overtimeMinutes);
-    const monthShortfallMinutes = sumMetrics(monthDetailed, (entry) => entry.metrics.shortfallMinutes);
+    const monthLedger = buildEmployeeMonthLedger(state.profile, monthAttendance, currentMonth);
+    const checkedDays = monthLedger.filter((entry) => entry.countsAsCheckedDay).length;
+    const lateDays = monthLedger.filter((entry) => entry.countsAsLate).length;
+    const absentDays = monthLedger.filter((entry) => entry.countsAsAbsent).length;
+    const weeklyLeaveDays = monthLedger.filter((entry) => entry.displayState.code === 'weekend').length;
+    const fullShiftDays = monthLedger.filter((entry) => entry.countsAsFullShift).length;
+    const monthOvertimeMinutes = sumMetrics(monthLedger, (entry) => entry.overtimeMinutes);
+    const monthShortfallMinutes = sumMetrics(monthLedger, (entry) => entry.shortfallMinutes);
     let balanceLabel = '8-hour target waiting to begin';
     let balanceMeta = 'No attendance recorded yet for today.';
 
     if (!todayRecord && missingTodayState) {
       if (missingTodayState.code === 'weekend') {
-        balanceLabel = 'Weekend';
+        balanceLabel = 'Weekly Leave';
       } else if (missingTodayState.code === 'on_leave') {
         balanceLabel = 'On leave';
       } else if (missingTodayState.code === 'absent') {
@@ -1883,19 +1969,20 @@ async function renderDashboardPage() {
             <button id="employeeAttendanceShortcut" type="button" class="btn btn-secondary">Open attendance</button>
           </div>
         </div>
-        <div class="summary-grid">
-          ${buildSummaryCard('Today Status', todayRecord ? statusLabel(todayRecord.attendance_status) : (missingTodayState?.label || (todayIsWorkday ? 'Pending' : 'Weekend')), todayRecord ? buildAttendanceRecordNote(todayRecord) : (missingTodayState?.note || (todayIsWorkday ? 'No attendance recorded yet' : 'Friday and Saturday are counted as weekly days off')))}
+          <div class="summary-grid">
+          ${buildSummaryCard('Today Status', todayRecord ? statusLabel(todayRecord.attendance_status) : (missingTodayState?.label || (todayIsWorkday ? 'Pending' : 'Weekly Leave')), todayRecord ? buildAttendanceRecordNote(todayRecord) : (missingTodayState?.note || (todayIsWorkday ? 'No attendance recorded yet' : 'Friday and Saturday are counted as weekly leave')))}
           ${buildSummaryCard('Worked Today', formatDuration(todayMetrics?.workedMinutes || 0), todayMetrics ? attendanceOutcome(todayMetrics) : (missingTodayState?.note || (todayIsWorkday ? 'No attendance recorded yet' : 'No required shift scheduled today')))}
           ${buildSummaryCard('Today Balance', balanceLabel, balanceMeta)}
-          ${buildSummaryCard('Full Shifts This Month', String(fullShiftDays), `${checkedDays} checked day(s) in your recent history`)}
+          ${buildSummaryCard('Full Shifts This Month', String(fullShiftDays), `${checkedDays} attended day(s) since the start of this month`)}
+          ${buildSummaryCard('Absent This Month', String(absentDays), `${weeklyLeaveDays} weekly leave day(s) so far this month`)}
           ${buildSummaryCard('Overtime This Month', formatDuration(monthOvertimeMinutes), 'Minutes above the daily 8-hour baseline')}
-          ${buildSummaryCard('Shortfall This Month', formatDuration(monthShortfallMinutes), `${lateDays} late day(s) in your recent history`)}
+          ${buildSummaryCard('Shortfall This Month', formatDuration(monthShortfallMinutes), `${absentDays} absent day(s) and ${lateDays} late day(s) so far this month`)}
         </div>
         <section class="card-block">
           <div class="card-head">
             <div>
-              <h3>Recent personal history</h3>
-              <p class="card-subtle">Your latest attendance records and 8-hour outcomes.</p>
+              <h3>Monthly attendance ledger</h3>
+              <p class="card-subtle">Every day from the start of this month through today, including weekly leave and absences.</p>
             </div>
           </div>
           <div class="table-shell">
@@ -1904,19 +1991,18 @@ async function renderDashboardPage() {
                 <tr><th>Date</th><th>Check In</th><th>Check Out</th><th>Status</th><th>Worked</th><th>Outcome</th></tr>
               </thead>
               <tbody>
-                ${recentAttendance.length ? recentAttendance.map((row) => {
-                  const metrics = buildAttendanceRowMetrics(row);
+                ${monthLedger.length ? monthLedger.map((entry) => {
                   return `
                   <tr>
-                    <td>${escapeHtml(formatDate(row.attendance_date))}</td>
-                    <td>${escapeHtml(formatTime(row.check_in_time))}</td>
-                    <td>${escapeHtml(formatTime(row.check_out_time))}</td>
-                    <td>${badgeMarkup(row.attendance_status, row.attendance_status)}</td>
-                    <td>${escapeHtml(formatDuration(metrics.workedMinutes))}</td>
-                    <td>${escapeHtml(attendanceOutcome(metrics))}</td>
+                    <td>${escapeHtml(formatDate(entry.attendanceDate))}</td>
+                    <td>${escapeHtml(formatTime(entry.row?.check_in_time))}</td>
+                    <td>${escapeHtml(formatTime(entry.row?.check_out_time))}</td>
+                    <td>${attendanceStateBadgeMarkup(entry.displayState)}</td>
+                    <td>${escapeHtml(formatDuration(entry.workedMinutes))}</td>
+                    <td>${escapeHtml(entry.outcomeLabel)}</td>
                   </tr>
                 `;
-                }).join('') : '<tr><td colspan="6"><div class="empty-state">No attendance records available yet.</div></td></tr>'}
+                }).join('') : '<tr><td colspan="6"><div class="empty-state">No attendance records available yet for this month.</div></td></tr>'}
               </tbody>
             </table>
           </div>
@@ -2101,7 +2187,7 @@ async function renderReportsPage() {
   try {
     await loadEmployees();
 
-    const eligibleEmployees = state.employees.filter((employee) => employee.is_active && employee.status !== 'inactive');
+    const eligibleEmployees = state.employees.filter((employee) => isEmployeeProfile(employee) && employee.is_active && employee.status !== 'inactive');
     const scopedEmployees = reportsEmployeeChoices(eligibleEmployees, state.reportsFilters.department);
     if (state.reportsFilters.employeeId !== 'all' && !scopedEmployees.some((employee) => employee.id === state.reportsFilters.employeeId)) {
       state.reportsFilters.employeeId = 'all';
@@ -2384,12 +2470,12 @@ function drawEmployeesPage() {
         <div>
           <p class="eyebrow">Administration</p>
           <h1>Employee Management</h1>
-          <p>Manage employees, departments, and account access without leaving the workspace.</p>
+          <p>Manage employees, departments, and account access without mixing admin accounts into employee totals.</p>
         </div>
         <button id="openAddEmployeeBtn" type="button" class="btn btn-primary">Add Employee</button>
       </div>
       <div class="summary-grid">
-        ${buildSummaryCard('Total Employees', String(state.employeeDirectoryStats.totalEmployees), 'All employee and admin profiles')}
+        ${buildSummaryCard('Total Employees', String(state.employeeDirectoryStats.totalEmployees), `Employee profiles only · ${activeAdminCount} active admin account(s)`)}
         ${buildSummaryCard('Active Employees', String(activeCount), 'Profiles with active access')}
         ${buildSummaryCard('On Leave', String(onLeaveCount), 'Profiles marked as on leave')}
         ${buildSummaryCard('Departments', String(departments.length), 'Distinct departments represented')}
@@ -2493,6 +2579,9 @@ function drawEmployeesPage() {
     const list = await fetchEmployees();
     const searchValue = state.employeeFilters.search.trim().toLowerCase();
     const filteredList = list.filter((employee) => {
+      if (!isEmployeeProfile(employee)) {
+        return false;
+      }
       const matchesSearch = !searchValue || `${employee.full_name} ${employee.employee_code || ''} ${employee.email} ${employee.department || ''} ${employee.position || ''}`
         .toLowerCase()
         .includes(searchValue);
@@ -2660,7 +2749,7 @@ function openEmployeeView(employee) {
     <div class="modal-footer">
       <div class="inline-actions">
         <button id="viewEditEmployeeBtn" type="button" class="btn btn-secondary">Edit</button>
-        ${isAdmin() ? '<button id="viewManualAttendanceBtn" type="button" class="btn btn-secondary">Add Manual Record</button>' : ''}
+        ${isAdmin() && isEmployeeProfile(employee) ? '<button id="viewManualAttendanceBtn" type="button" class="btn btn-secondary">Add Manual Record</button>' : ''}
       </div>
       <div class="inline-actions">
         <button id="closeEmployeeViewBtn" type="button" class="btn btn-primary">Done</button>
@@ -2802,7 +2891,10 @@ function openResetPasswordModal(employee) {
 }
 
 function openManualAttendanceForm(options = {}) {
-  const employees = [...state.employees].sort((a, b) => a.full_name.localeCompare(b.full_name));
+  const employees = state.employees
+    .filter(isEmployeeProfile)
+    .slice()
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
   const defaultUserId = options.userId || '';
   const defaultAttendanceDate = options.attendanceDate || todayIso();
   const onSaved = typeof options.onSaved === 'function' ? options.onSaved : async () => {
@@ -3013,13 +3105,14 @@ async function renderAttendancePage() {
       await loadEmployees();
       await ensureProfileDirectory(todayRecords);
       const businessContext = getBusinessDayContext();
-      const todayRoster = buildTodayAttendanceRoster(state.employees, todayRecords, today);
+      const employeeTodayRecords = todayRecords.filter(isEmployeeAttendanceRow);
+      const todayRoster = buildTodayAttendanceRoster(state.employees, employeeTodayRecords, today);
       const expectedRoster = todayRoster.filter((entry) => isExpectedAttendanceEmployee(entry.profile));
       const missingRoster = expectedRoster.filter((entry) => !entry.row && entry.displayState.countsAsMissing);
-      const checkedInCount = todayRecords.filter((item) => item.check_in_time).length;
-      const checkedOut = todayRecords.filter((item) => item.check_out_time).length;
-      const stillInside = todayRecords.filter((item) => item.check_in_time && !item.check_out_time).length;
-      const lateCount = todayRecords.filter((item) => item.attendance_status === 'late').length;
+      const checkedInCount = employeeTodayRecords.filter((item) => item.check_in_time).length;
+      const checkedOut = employeeTodayRecords.filter((item) => item.check_out_time).length;
+      const stillInside = employeeTodayRecords.filter((item) => item.check_in_time && !item.check_out_time).length;
+      const lateCount = employeeTodayRecords.filter((item) => item.attendance_status === 'late').length;
       const missingCount = businessContext.isScheduledWorkday ? missingRoster.length : 0;
       const missingLabel = !businessContext.isScheduledWorkday
         ? 'Missing'
