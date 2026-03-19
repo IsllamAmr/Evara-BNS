@@ -1,5 +1,103 @@
 import { getLocale, t } from './i18n.js';
 
+export const BUSINESS_TIME_ZONE = 'Africa/Cairo';
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidDate(value) {
+  return value instanceof Date && !Number.isNaN(value.getTime());
+}
+
+function parseDateOnly(value) {
+  const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day, 12, 0, 0, 0);
+
+  if (date.getFullYear() !== year || date.getMonth() !== (month - 1) || date.getDate() !== day) {
+    return null;
+  }
+
+  return date;
+}
+
+function normalizeDate(value) {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return isValidDate(value) ? new Date(value.getTime()) : null;
+  }
+
+  if (typeof value === 'string' && DATE_ONLY_PATTERN.test(value.trim())) {
+    return parseDateOnly(value);
+  }
+
+  const date = new Date(value);
+  return isValidDate(date) ? date : null;
+}
+
+function datePartsInTimeZone(value, timeZone = BUSINESS_TIME_ZONE) {
+  const date = normalizeDate(value);
+  if (!date) {
+    return null;
+  }
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  if (!year || !month || !day) {
+    return null;
+  }
+
+  return { year, month, day };
+}
+
+export function formatDateInput(value, timeZone = BUSINESS_TIME_ZONE) {
+  if (typeof value === 'string' && DATE_ONLY_PATTERN.test(value.trim())) {
+    return value.trim();
+  }
+
+  const parts = datePartsInTimeZone(value, timeZone);
+  if (!parts) {
+    return '';
+  }
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+export function todayIso(timeZone = BUSINESS_TIME_ZONE) {
+  return formatDateInput(new Date(), timeZone);
+}
+
+export function currentMonthInput(timeZone = BUSINESS_TIME_ZONE) {
+  const parts = datePartsInTimeZone(new Date(), timeZone);
+  return parts ? `${parts.year}-${parts.month}` : '';
+}
+
+export function offsetDate(days, timeZone = BUSINESS_TIME_ZONE) {
+  const base = parseDateOnly(todayIso(timeZone));
+  if (!base) {
+    return '';
+  }
+
+  base.setDate(base.getDate() + Number(days || 0));
+  return formatDateInput(base, timeZone);
+}
+
 export function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -10,7 +108,8 @@ export function escapeHtml(value) {
 }
 
 export function formatDate(value) {
-  if (!value) {
+  const date = normalizeDate(value);
+  if (!date) {
     return '-';
   }
 
@@ -18,11 +117,12 @@ export function formatDate(value) {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
-  }).format(new Date(value));
+  }).format(date);
 }
 
 export function formatTime(value) {
-  if (!value) {
+  const date = normalizeDate(value);
+  if (!date) {
     return '-';
   }
 
@@ -30,11 +130,12 @@ export function formatTime(value) {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
-  }).format(new Date(value));
+  }).format(date);
 }
 
 export function formatDateTime(value) {
-  if (!value) {
+  const date = normalizeDate(value);
+  if (!date) {
     return '-';
   }
 
@@ -45,7 +146,7 @@ export function formatDateTime(value) {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
-  }).format(new Date(value));
+  }).format(date);
 }
 
 export function departmentLabel(value) {

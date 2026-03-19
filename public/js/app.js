@@ -33,14 +33,17 @@ import {
   toggleLanguage,
 } from './i18n.js';
 import {
+  currentMonthInput as currentBusinessMonthInput,
   departmentLabel,
   escapeHtml,
   formatDate,
   formatDateTime,
   formatTime,
   isStrongPassword,
+  offsetDate as offsetBusinessDate,
   roleLabel,
   statusLabel,
+  todayIso as todayBusinessIso,
   toInitials,
 } from './shared.js';
 
@@ -183,29 +186,16 @@ let prefetchTimerId = null;
 
 boot();
 
-function formatDateInput(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
 function todayIso() {
-  return formatDateInput(new Date());
+  return todayBusinessIso();
 }
 
 function currentMonthInput() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
+  return currentBusinessMonthInput();
 }
 
 function offsetDate(days) {
-  const value = new Date();
-  value.setHours(12, 0, 0, 0);
-  value.setDate(value.getDate() + days);
-  return formatDateInput(value);
+  return offsetBusinessDate(days);
 }
 
 function toIsoFromDateTimeLocal(value) {
@@ -2701,6 +2691,18 @@ function openManualAttendanceForm(options = {}) {
       showFormError('manualAttendanceError', 'Employee and attendance date are required.');
       return;
     }
+    if (form.attendance_status.value === 'absent' && (checkInTime || checkOutTime)) {
+      showFormError('manualAttendanceError', 'Absent records cannot include check-in or check-out times.');
+      return;
+    }
+    if ((form.attendance_status.value === 'present' || form.attendance_status.value === 'late') && !checkInTime) {
+      showFormError('manualAttendanceError', 'Present or late records require a check-in time.');
+      return;
+    }
+    if (form.attendance_status.value === 'checked_out' && (!checkInTime || !checkOutTime)) {
+      showFormError('manualAttendanceError', 'Checked-out records require both check-in and check-out times.');
+      return;
+    }
     if (checkOutTime && !checkInTime) {
       showFormError('manualAttendanceError', 'Check-out cannot be saved before check-in.');
       return;
@@ -3054,13 +3056,18 @@ async function renderHistoryPage() {
       state.historyPagination.page = 1;
       renderHistoryPage().catch((error) => setPageError(container, error.message));
     });
-    container.querySelector('#historyManualAttendanceBtn')?.addEventListener('click', () => {
-      openManualAttendanceForm({
-        attendanceDate: state.historyFilters.to || todayIso(),
-        onSaved: async () => {
-          await renderHistoryPage();
-        },
-      });
+    container.querySelector('#historyManualAttendanceBtn')?.addEventListener('click', async () => {
+      try {
+        await loadEmployees();
+        openManualAttendanceForm({
+          attendanceDate: state.historyFilters.to || todayIso(),
+          onSaved: async () => {
+            await renderHistoryPage();
+          },
+        });
+      } catch (error) {
+        showToast(error.message, 'error');
+      }
     });
     container.querySelector('#historyExportBtn')?.addEventListener('click', async () => {
       const records = await fetchAttendance({

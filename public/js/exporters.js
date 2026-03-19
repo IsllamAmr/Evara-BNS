@@ -1,4 +1,12 @@
-import { departmentLabel, formatDate, formatTime, roleLabel, statusLabel } from './shared.js';
+import {
+  currentMonthInput as currentBusinessMonthInput,
+  departmentLabel,
+  formatDate,
+  formatTime,
+  roleLabel,
+  statusLabel,
+  todayIso as todayBusinessIso,
+} from './shared.js';
 import { attendanceOutcome, formatDuration, FULL_SHIFT_MINUTES } from './reporting.js';
 
 function csvValue(value) {
@@ -17,15 +25,11 @@ function downloadCsvFile(filename, headers, rows) {
 }
 
 function todayIso() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return todayBusinessIso();
 }
 
 function monthToken(filters) {
-  const rawValue = filters?.month || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const rawValue = filters?.month || currentBusinessMonthInput();
   return rawValue.replace('-', '_');
 }
 

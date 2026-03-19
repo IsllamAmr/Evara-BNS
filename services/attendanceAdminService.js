@@ -72,6 +72,18 @@ async function createOrUpdateManualAttendance(payload, actorProfile) {
     throw new AppError('check_out_time must be after check_in_time', 422);
   }
 
+  if (attendanceStatus === 'absent' && (checkInTime || checkOutTime)) {
+    throw new AppError('Absent attendance cannot include check-in or check-out times', 422);
+  }
+
+  if ((attendanceStatus === 'present' || attendanceStatus === 'late') && !checkInTime) {
+    throw new AppError(`${attendanceStatus} attendance requires check_in_time`, 422);
+  }
+
+  if (attendanceStatus === 'checked_out' && (!checkInTime || !checkOutTime)) {
+    throw new AppError('checked_out attendance requires both check_in_time and check_out_time', 422);
+  }
+
   const employee = await assertEmployeeProfile(userId);
 
   const upsertPayload = {

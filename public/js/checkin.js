@@ -5,7 +5,7 @@ import {
   t,
   toggleLanguage,
 } from './i18n.js';
-import { formatDate, formatTime, statusLabel } from './shared.js';
+import { formatDate, formatTime, statusLabel, todayIso as todayBusinessIso } from './shared.js';
 
 const config = getAppConfig();
 const supabase = isSupabaseReady() ? getSupabase() : null;
@@ -28,11 +28,7 @@ let currentProfile = null;
 boot();
 
 function todayIso() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return todayBusinessIso();
 }
 
 function setError(message = '') {
@@ -95,7 +91,7 @@ function updateClock() {
     minute: '2-digit',
     hour12: true,
   });
-  todayLabel.textContent = formatDate(now);
+  todayLabel.textContent = formatDate(todayIso());
 }
 
 function getCurrentPosition() {

@@ -1,4 +1,9 @@
-import { departmentLabel, escapeHtml } from './shared.js';
+import {
+  currentMonthInput as currentBusinessMonthInput,
+  departmentLabel,
+  escapeHtml,
+  todayIso as todayBusinessIso,
+} from './shared.js';
 
 export const BUSINESS_TIME_ZONE = 'Africa/Cairo';
 export const FULL_SHIFT_MINUTES = 8 * 60;
@@ -15,10 +20,16 @@ function formatDateInput(date) {
 }
 
 function currentMonthInput() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
+  return currentBusinessMonthInput();
+}
+
+function dateFromIsoDate(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0, 0);
 }
 
 function isoDateInTimeZone(value = new Date(), timeZone = BUSINESS_TIME_ZONE) {
@@ -41,10 +52,9 @@ export function monthRange(monthValue) {
   const [yearValue, monthValuePart] = String(monthValue || currentMonthInput()).split('-');
   const year = Number(yearValue);
   const month = Number(monthValuePart);
-  const now = new Date();
   const startDate = new Date(year, month - 1, 1, 12, 0, 0, 0);
   const endDate = new Date(year, month, 0, 12, 0, 0, 0);
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
+  const today = dateFromIsoDate(todayBusinessIso()) || new Date();
   const boundedEnd = endDate > today ? today : endDate;
 
   return {

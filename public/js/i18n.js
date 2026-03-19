@@ -1,7 +1,7 @@
-﻿const LANGUAGE_KEY = 'evara-language';
+const LANGUAGE_KEY = 'evara-language';
 const DEFAULT_LANGUAGE = 'en';
 const RTL_LANGUAGES = new Set(['ar']);
-const LANGUAGE_SWITCH_ENABLED = false;
+const LANGUAGE_SWITCH_ENABLED = true;
 const subscribers = new Set();
 
 const dictionaries = {
@@ -13,10 +13,10 @@ const dictionaries = {
     },
     language: {
       english: 'English',
-      arabic: 'Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©',
+      arabic: 'العربية',
       switch: 'Switch language',
       switchToEnglish: 'English',
-      switchToArabic: 'Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©',
+      switchToArabic: 'العربية',
     },
     common: {
       success: 'Success',
@@ -123,105 +123,141 @@ const dictionaries = {
   },
   ar: {
     meta: {
-      appTitle: 'Ø¥ÙŠÙØ§Ø±Ø§ Ø¨ÙŠ Ø¥Ù† Ø¥Ø³ | Ù†Ø¸Ø§Ù… Ø§Ù„Ø­Ø¶ÙˆØ±',
-      checkinTitle: 'Ø¥ÙŠÙØ§Ø±Ø§ Ø¨ÙŠ Ø¥Ù† Ø¥Ø³ | ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø­Ø¶ÙˆØ±',
-      description: 'Ù†Ø¸Ø§Ù… Ø¥ÙŠÙØ§Ø±Ø§ Ø¨ÙŠ Ø¥Ù† Ø¥Ø³ Ù„Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ø­Ø¶ÙˆØ± ÙˆØ§Ù„Ù…ÙˆØ¸ÙÙŠÙ† Ø¨Ø§Ø³ØªØ®Ø¯Ø§Ù… Supabase.',
+      appTitle: 'EVARA BNS | نظام الحضور',
+      checkinTitle: 'EVARA BNS | تسجيل الحضور',
+      description: 'نظام EVARA BNS لإدارة الحضور والموظفين باستخدام Supabase.',
     },
     language: {
       english: 'English',
-      arabic: 'Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©',
-      switch: 'ØªØ¨Ø¯ÙŠÙ„ Ø§Ù„Ù„ØºØ©',
+      arabic: 'العربية',
+      switch: 'تبديل اللغة',
       switchToEnglish: 'English',
-      switchToArabic: 'Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©',
+      switchToArabic: 'العربية',
     },
     common: {
-      success: 'ØªÙ… Ø¨Ù†Ø¬Ø§Ø­',
-      notice: 'ØªÙ†Ø¨ÙŠÙ‡',
-      actionNeeded: 'Ø¥Ø¬Ø±Ø§Ø¡ Ù…Ø·Ù„ÙˆØ¨',
-      close: 'Ø¥ØºÙ„Ø§Ù‚',
-      menu: 'Ø§Ù„Ù‚Ø§Ø¦Ù…Ø©',
-      requestFailed: 'ÙØ´Ù„ Ø§Ù„Ø·Ù„Ø¨',
-      openDashboard: 'ÙØªØ­ Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ…',
-      unableToLoadSection: 'ØªØ¹Ø°Ø± ØªØ­Ù…ÙŠÙ„ Ù‡Ø°Ø§ Ø§Ù„Ù‚Ø³Ù….',
+      success: 'تم بنجاح',
+      notice: 'تنبيه',
+      actionNeeded: 'إجراء مطلوب',
+      close: 'إغلاق',
+      menu: 'القائمة',
+      requestFailed: 'فشل الطلب',
+      openDashboard: 'فتح لوحة التحكم',
+      unableToLoadSection: 'تعذر تحميل هذا القسم.',
     },
     login: {
-      heroLine1: 'ØµØ¨Ø§Ø­ Ø§Ù„Ø®ÙŠØ±!',
-      heroLine2: 'ÙŠÙˆÙ… Ø¬Ø¯ÙŠØ¯ Ù‚Ø¯ Ø¨Ø¯Ø£',
-      heroLine3: 'Ø§Ø³ØªØ«Ù…Ø±Ù‡ Ø¨Ø£ÙØ¶Ù„ Ø´ÙƒÙ„',
-      heroLine4: 'ÙˆØ§Ø¨Ù‚ÙŽ Ù…Ø¨ØªØ³Ù…Ù‹Ø§.',
-      emailLabel: 'Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ',
+      heroLine1: 'صباح الخير!',
+      heroLine2: 'يوم جديد قد بدأ',
+      heroLine3: 'استثمره بأفضل شكل',
+      heroLine4: 'وابقَ مبتسمًا.',
+      emailLabel: 'البريد الإلكتروني',
       emailPlaceholder: 'name@company.com',
-      passwordLabel: 'ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±',
-      passwordPlaceholder: 'Ø£Ø¯Ø®Ù„ ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±',
-      signIn: 'ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„',
-      signingIn: 'Ø¬Ø§Ø±Ù ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„',
-      unableToSignIn: 'ØªØ¹Ø°Ø± ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„',
-      showPassword: 'Ø¥Ø¸Ù‡Ø§Ø±',
-      hidePassword: 'Ø¥Ø®ÙØ§Ø¡',
+      passwordLabel: 'كلمة المرور',
+      passwordPlaceholder: 'أدخل كلمة المرور',
+      signIn: 'تسجيل الدخول',
+      signingIn: 'جارٍ تسجيل الدخول',
+      unableToSignIn: 'تعذر تسجيل الدخول',
+      showPassword: 'إظهار',
+      hidePassword: 'إخفاء',
     },
     nav: {
-      dashboard: 'Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ…',
-      profile: 'Ø§Ù„Ù…Ù„Ù Ø§Ù„Ø´Ø®ØµÙŠ',
-      employees: 'Ø§Ù„Ù…ÙˆØ¸ÙÙˆÙ†',
-      attendance: 'Ø§Ù„Ø­Ø¶ÙˆØ±',
-      history: 'Ø§Ù„Ø³Ø¬Ù„',
-      reports: 'Ø§Ù„ØªÙ‚Ø§Ø±ÙŠØ±',
-      qr: 'Ø§Ù„ÙˆØµÙˆÙ„ Ø¹Ø¨Ø± QR',
-      logout: 'ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø®Ø±ÙˆØ¬',
+      dashboard: 'لوحة التحكم',
+      profile: 'الملف الشخصي',
+      employees: 'الموظفون',
+      attendance: 'الحضور',
+      history: 'السجل',
+      reports: 'التقارير',
+      qr: 'الوصول عبر QR',
+      logout: 'تسجيل الخروج',
     },
     topbar: {
-      preCheckInHeadline: 'ØµØ¨Ø§Ø­ Ø¬Ù…ÙŠÙ„ØŒ Ø§Ø¨Ø¯Ø£ ÙŠÙˆÙ…Ùƒ Ø¨ØªØ±ÙƒÙŠØ² Ù‡Ø§Ø¯Ø¦ ÙˆØ«Ù‚Ø© ÙˆØ§Ø¶Ø­Ø©.',
-      preCheckInSubline: 'Ø§Ù„Ø¨Ø¯Ø§ÙŠØ© Ø§Ù„Ù‚ÙˆÙŠØ© ØªØµÙ†Ø¹ ÙŠÙˆÙ…Ù‹Ø§ Ø£ÙƒØ«Ø± Ø¥Ù†ØªØ§Ø¬Ù‹Ø§ ÙˆÙ†ØªØ§Ø¦Ø¬ Ø£ÙØ¶Ù„.',
-      inShiftHeadline: 'Ø£Ù†Øª ØªØ³ÙŠØ± Ø¨Ø´ÙƒÙ„ Ù…Ù…ØªØ§Ø²ØŒ Ø­Ø§ÙØ¸ Ø¹Ù„Ù‰ Ø¥ÙŠÙ‚Ø§Ø¹Ùƒ ÙˆØªØ±ÙƒÙŠØ²Ùƒ.',
-      inShiftSubline: 'Ø§Ø³ØªÙ…Ø± Ø¨Ø«Ø¨Ø§Øª ÙˆØ¯Ø¹ ÙŠÙˆÙ…Ùƒ ÙŠØ¹Ù…Ù„ Ù„ØµØ§Ù„Ø­Ùƒ Ø®Ø·ÙˆØ© Ø¨Ø®Ø·ÙˆØ©.',
-      afterCheckOutHeadline: 'Ø£Ø­Ø³Ù†Øª Ø§Ù„ÙŠÙˆÙ…ØŒ Ù„Ù‚Ø¯ Ø£Ù†Ù‡ÙŠØª ÙŠÙˆÙ…Ùƒ Ø¨Ø´ÙƒÙ„ Ù‚ÙˆÙŠ ÙˆÙ…Ø¤Ø«Ø±.',
-      afterCheckOutSubline: 'Ø®Ø° Ù‚Ø³Ø·Ù‹Ø§ Ù…Ù† Ø§Ù„Ø±Ø§Ø­Ø© ÙˆØ¹Ø¯ ØºØ¯Ù‹Ø§ Ø¨Ø·Ø§Ù‚Ø© Ø¬Ø¯ÙŠØ¯Ø© ÙˆØ¨Ø¯Ø§ÙŠØ© Ù‚ÙˆÙŠØ©.',
+      preCheckInHeadline: 'صباح جميل، ابدأ يومك بتركيز هادئ وثقة واضحة.',
+      preCheckInSubline: 'البداية القوية تصنع يومًا أكثر إنتاجًا ونتائج أفضل.',
+      inShiftHeadline: 'أنت تسير بشكل ممتاز، حافظ على إيقاعك وتركيزك.',
+      inShiftSubline: 'استمر بثبات ودع يومك يعمل لصالحك خطوة بخطوة.',
+      afterCheckOutHeadline: 'أحسنت اليوم، لقد أنهيت يومك بشكل قوي ومؤثر.',
+      afterCheckOutSubline: 'خذ قسطًا من الراحة وعد غدًا بطاقة جديدة وبداية قوية.',
     },
     checkin: {
-      eyebrow: 'Ø­Ø¶ÙˆØ± Ø³Ø±ÙŠØ¹',
-      title: 'Ø³Ø¬Ù‘Ù„ Ø­Ø¶ÙˆØ±Ùƒ Ù…Ù† Ø§Ù„Ù‡Ø§ØªÙ Ø®Ù„Ø§Ù„ Ø«ÙˆØ§Ù†Ù.',
-      copy: 'Ø¥Ø°Ø§ Ù„Ù… ØªÙƒÙ† Ù…Ø³Ø¬Ù„ Ø§Ù„Ø¯Ø®ÙˆÙ„ØŒ Ø³Ù†Ù†Ù‚Ù„Ùƒ Ø£ÙˆÙ„Ù‹Ø§ Ø¥Ù„Ù‰ ØµÙØ­Ø© Ø§Ù„Ø¯Ø®ÙˆÙ„ Ø§Ù„Ø¢Ù…Ù†Ø© Ø«Ù… Ù†Ø¹ÙŠØ¯Ùƒ Ù…Ø¨Ø§Ø´Ø±Ø©.',
-      statusLabel: 'Ø­Ø§Ù„Ø© Ø§Ù„Ø­Ø¶ÙˆØ±',
-      loadingTitle: 'Ø¬Ø§Ø±Ù Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø¬Ù„Ø³ØªÙƒ',
-      loadingText: 'ÙŠØ±Ø¬Ù‰ Ø§Ù„Ø§Ù†ØªØ¸Ø§Ø± Ø¨ÙŠÙ†Ù…Ø§ Ù†Ù‚ÙˆÙ… Ø¨ØªØ­Ù…ÙŠÙ„ Ø­Ø§Ù„Ø© Ø§Ù„Ø­Ø¶ÙˆØ± Ø§Ù„Ø®Ø§ØµØ© Ø¨Ùƒ.',
-      loadingButton: 'Ø¬Ø§Ø±Ù Ø§Ù„ØªØ­Ù…ÙŠÙ„',
-      today: 'Ø§Ù„ÙŠÙˆÙ…',
-      currentTime: 'Ø§Ù„ÙˆÙ‚Øª Ø§Ù„Ø­Ø§Ù„ÙŠ',
-      readyTitle: 'Ø¬Ø§Ù‡Ø² Ù„ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø­Ø¶ÙˆØ±',
-      readyText: 'Ù„Ù… ÙŠØªÙ… ØªØ³Ø¬ÙŠÙ„ Ø­Ø¶ÙˆØ±Ùƒ Ø¨Ø¹Ø¯ Ù„Ù‡Ø°Ø§ Ø§Ù„ÙŠÙˆÙ….',
-      checkInNow: 'Ø³Ø¬Ù‘Ù„ Ø§Ù„Ø­Ø¶ÙˆØ± Ø§Ù„Ø¢Ù†',
-      checkedInText: 'ØªÙ… ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø­Ø¶ÙˆØ± ÙÙŠ {{time}}. ÙŠÙ…ÙƒÙ†Ùƒ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø§Ù†ØµØ±Ø§Ù Ø¹Ù†Ø¯ Ù†Ù‡Ø§ÙŠØ© ÙŠÙˆÙ… Ø§Ù„Ø¹Ù…Ù„.',
-      checkOutNow: 'Ø³Ø¬Ù‘Ù„ Ø§Ù„Ø§Ù†ØµØ±Ø§Ù Ø§Ù„Ø¢Ù†',
-      completedTitle: 'Ø§ÙƒØªÙ…Ù„ Ø­Ø¶ÙˆØ± Ø§Ù„ÙŠÙˆÙ…',
-      completedText: 'ØªÙ… ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø­Ø¶ÙˆØ± ÙÙŠ {{checkIn}} ÙˆØ§Ù„Ø§Ù†ØµØ±Ø§Ù ÙÙŠ {{checkOut}}.',
-      completedButton: 'Ø§ÙƒØªÙ…Ù„ Ø§Ù„Ø­Ø¶ÙˆØ±',
-      signedInAs: 'ØªÙ… ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„ Ø¨Ø§Ø³Ù… {{name}}{{department}}',
-      configurationRequired: 'Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯ Ù…Ø·Ù„ÙˆØ¨',
-      configurationText: 'Ù„Ø§ ÙŠÙ…ÙƒÙ† Ù„Ù‡Ø°Ù‡ Ø§Ù„ØµÙØ­Ø© Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ù€ Supabase Ø­ØªÙ‰ ØªØªÙˆÙØ± Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„ØªØ´ØºÙŠÙ„.',
-      configurationMissing: 'Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Supabase ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©. Ø£Ø¶Ù SUPABASE_URL ÙˆSUPABASE_ANON_KEY Ø£ÙˆÙ„Ù‹Ø§.',
-      unableToContinue: 'ØªØ¹Ø°Ø± Ø§Ù„Ù…ØªØ§Ø¨Ø¹Ø©',
-      returnDashboard: 'ÙŠØ±Ø¬Ù‰ Ø§Ù„Ø¹ÙˆØ¯Ø© Ø¥Ù„Ù‰ Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ… ÙˆØ§Ù„Ù…Ø­Ø§ÙˆÙ„Ø© Ù…Ø±Ø© Ø£Ø®Ø±Ù‰.',
-      unableProfile: 'ØªØ¹Ø°Ø± ØªØ­Ù…ÙŠÙ„ Ù…Ù„ÙÙƒ Ø§Ù„Ø´Ø®ØµÙŠ',
-      unableAttendance: 'ØªØ¹Ø°Ø± ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø­Ø¶ÙˆØ±',
-      checkinLoading: 'Ø¬Ø§Ø±Ù ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø­Ø¶ÙˆØ±',
-      checkoutLoading: 'Ø¬Ø§Ø±Ù ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø§Ù†ØµØ±Ø§Ù',
+      eyebrow: 'حضور سريع',
+      title: 'تسجيل حضور سريع من الهاتف.',
+      copy: 'سجّل الدخول مرة واحدة ثم سجّل الحضور أو الانصراف فورًا.',
+      heroReadyTitle: 'ابدأ صباحك بتركيز هادئ.',
+      heroReadyText: 'سجّل حضورك عندما تكون جاهزًا وابدأ يومك بثقة ووضوح.',
+      heroCheckedInTitle: 'صباح الخير. لقد بدأ يومك بشكل جميل.',
+      heroCheckedInText: 'حافظ على تركيزك وتحرك بهدوء واستمتع بيوم منتج.',
+      heroCompletedTitle: 'أحسنت اليوم. لقد أنهيت يومك بقوة.',
+      heroCompletedText: 'خذ راحتك بفخر وعد غدًا مستعدًا ليوم جديد.',
+      heroUnavailableTitle: 'تعذر تجهيز هذه الصفحة الآن.',
+      heroUnavailableText: 'ارجع إلى لوحة التحكم وحدّث الجلسة ثم حاول مرة أخرى.',
+      statusLabel: 'حالة الحضور',
+      loadingTitle: 'جارٍ التحقق من الجلسة',
+      loadingText: 'يرجى الانتظار بينما نقوم بتحميل حالة الحضور الخاصة بك.',
+      loadingButton: 'جارٍ التحميل',
+      today: 'اليوم',
+      currentTime: 'الوقت الحالي',
+      readyTitle: 'جاهز لتسجيل الحضور',
+      readyText: 'اضغط بالأسفل وسنسجّل حضورك خلال ثوانٍ.',
+      readyBadge: 'جاهز',
+      checkedInBadge: 'تم الحضور',
+      completedBadge: 'مكتمل',
+      checkInNow: 'سجّل الحضور الآن',
+      checkedInTitle: 'تم تسجيل حضور اليوم',
+      checkedInText: 'تم تسجيل حضورك في {{time}}. يمكنك تسجيل الانصراف عند نهاية يوم العمل.',
+      checkOutNow: 'سجّل الانصراف الآن',
+      completedTitle: 'اكتمل حضور اليوم بنجاح',
+      completedText: 'تم إغلاق حضورك لهذا اليوم بالفعل.',
+      completedButton: 'اكتمل الحضور',
+      signedInAs: 'تم تسجيل الدخول باسم {{name}}{{department}}',
+      checkInTimeLabel: 'وقت الحضور',
+      checkOutTimeLabel: 'وقت الانصراف',
+      statusSummaryLabel: 'الحالة',
+      refreshStatus: 'تحديث الحالة',
+      configurationRequired: 'الإعداد مطلوب',
+      configurationText: 'لا يمكن لهذه الصفحة الاتصال بـ Supabase حتى تتوفر إعدادات التشغيل.',
+      configurationMissing: 'إعدادات Supabase غير موجودة. أضف SUPABASE_URL وSUPABASE_ANON_KEY أولًا.',
+      unableToContinue: 'تعذر المتابعة',
+      returnDashboard: 'يرجى العودة إلى لوحة التحكم والمحاولة مرة أخرى.',
+      unableProfile: 'تعذر تحميل ملفك الشخصي',
+      unableAttendance: 'تعذر تحميل بيانات الحضور',
+      checkinLoading: 'جارٍ تسجيل الحضور',
+      checkoutLoading: 'جارٍ تسجيل الانصراف',
       loginRedirect: '/?next=checkin',
     },
     labels: {
-      unassigned: 'ØºÙŠØ± Ù…Ø­Ø¯Ø¯',
-      unknown: 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ',
-      admin: 'Ù…Ø¯ÙŠØ±',
-      employee: 'Ù…ÙˆØ¸Ù',
-      active: 'Ù†Ø´Ø·',
-      inactive: 'ØºÙŠØ± Ù†Ø´Ø·',
-      on_leave: 'ÙÙŠ Ø¥Ø¬Ø§Ø²Ø©',
-      present: 'Ø­Ø§Ø¶Ø±',
-      absent: 'ØºØ§Ø¦Ø¨',
-      late: 'Ù…ØªØ£Ø®Ø±',
-      checked_out: 'ØªÙ… Ø§Ù„Ø§Ù†ØµØ±Ø§Ù',
+      unassigned: 'غير محدد',
+      unknown: 'غير معروف',
+      admin: 'مدير',
+      employee: 'موظف',
+      active: 'نشط',
+      inactive: 'غير نشط',
+      on_leave: 'في إجازة',
+      present: 'حاضر',
+      absent: 'غائب',
+      late: 'متأخر',
+      checked_out: 'تم الانصراف',
     },
   },
 };
+
+function normalizeLanguage(language) {
+  return Object.prototype.hasOwnProperty.call(dictionaries, language) ? language : DEFAULT_LANGUAGE;
+}
+
+function getStoredLanguage() {
+  try {
+    return normalizeLanguage(window.localStorage.getItem(LANGUAGE_KEY));
+  } catch (_error) {
+    return DEFAULT_LANGUAGE;
+  }
+}
+
+function persistLanguage(language) {
+  try {
+    window.localStorage.setItem(LANGUAGE_KEY, language);
+  } catch (_error) {
+    // Ignore storage failures in private browsing or restricted environments.
+  }
+}
 
 function getNestedValue(object, key) {
   return String(key || '')
@@ -237,7 +273,7 @@ function interpolate(template, variables = {}) {
 }
 
 export function getCurrentLanguage() {
-  return DEFAULT_LANGUAGE;
+  return getStoredLanguage();
 }
 
 export function isArabic() {
@@ -255,15 +291,15 @@ export function t(key, variables = {}) {
 }
 
 export function setCurrentLanguage(language) {
-  const nextLanguage = LANGUAGE_SWITCH_ENABLED && language in dictionaries ? language : DEFAULT_LANGUAGE;
-  window.localStorage.setItem(LANGUAGE_KEY, nextLanguage);
+  const nextLanguage = LANGUAGE_SWITCH_ENABLED ? normalizeLanguage(language) : DEFAULT_LANGUAGE;
+  persistLanguage(nextLanguage);
   applyDocumentLanguage();
   subscribers.forEach((callback) => callback(nextLanguage));
   return nextLanguage;
 }
 
 export function toggleLanguage() {
-  return setCurrentLanguage(DEFAULT_LANGUAGE);
+  return setCurrentLanguage(isArabic() ? 'en' : 'ar');
 }
 
 export function onLanguageChange(callback) {
@@ -297,8 +333,9 @@ export function syncLanguageToggleButtons(root = document) {
 }
 
 export function applyDocumentLanguage() {
-  window.localStorage.setItem(LANGUAGE_KEY, DEFAULT_LANGUAGE);
   const language = getCurrentLanguage();
+  persistLanguage(language);
+
   const titleKey = window.location.pathname.includes('/checkin') ? 'meta.checkinTitle' : 'meta.appTitle';
   document.documentElement.lang = language;
   document.documentElement.dir = RTL_LANGUAGES.has(language) ? 'rtl' : 'ltr';
@@ -312,5 +349,3 @@ export function applyDocumentLanguage() {
   applyTranslations(document);
   syncLanguageToggleButtons(document);
 }
-
-
