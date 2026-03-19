@@ -7,7 +7,7 @@ const morgan = require('morgan');
 const os = require('os');
 const path = require('path');
 const { bootstrapInitialAdmin } = require('./services/bootstrapService');
-const { isSupabaseConfigured, supabaseUrl } = require('./config/supabase');
+const { isSupabaseConfigured, supabaseAnonKey, supabaseUrl } = require('./config/supabase');
 const adminRoutes = require('./routes/adminRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const { attendanceRestrictionSummary } = require('./services/attendanceGuardService');
@@ -104,8 +104,8 @@ app.use('/api', apiLimiter);
 app.get('/env.js', (req, res) => {
   const config = {
     API_BASE_URL: process.env.API_BASE_URL || '/api',
-    SUPABASE_URL: process.env.SUPABASE_URL || '',
-    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
+    SUPABASE_URL: supabaseUrl || '',
+    SUPABASE_ANON_KEY: supabaseAnonKey || '',
     APP_URL: buildAppUrl(req),
   };
 

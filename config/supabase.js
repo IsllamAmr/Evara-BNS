@@ -1,7 +1,14 @@
 ﻿const { createClient } = require('@supabase/supabase-js');
 
-const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
-const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY || '').trim();
+const DEFAULT_SUPABASE_URL = 'https://qgvuustfnojlpqrtakof.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_l4n8UA1-0zhQkpysgu6rkA_iH7-QQFD';
+
+function resolvePublicValue(value, fallback) {
+  return (value || '').trim() || fallback;
+}
+
+const supabaseUrl = resolvePublicValue(process.env.SUPABASE_URL, DEFAULT_SUPABASE_URL);
+const supabaseAnonKey = resolvePublicValue(process.env.SUPABASE_ANON_KEY, DEFAULT_SUPABASE_ANON_KEY);
 const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 
 function isSupabaseConfigured() {
