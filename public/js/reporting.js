@@ -10,7 +10,7 @@ import { getLocale, t } from './i18n.js';
 export const BUSINESS_CONFIG = {
   TIME_ZONE: 'Africa/Cairo',
   FULL_SHIFT_HOURS: 8,
-  SHIFT_START_HOUR: 10,
+  SHIFT_START_HOUR: 9,
   WORKDAY_INDEXES: [0, 1, 2, 3, 4], // Sunday to Thursday
 };
 
@@ -18,6 +18,7 @@ export const BUSINESS_TIME_ZONE = BUSINESS_CONFIG.TIME_ZONE;
 export const FULL_SHIFT_MINUTES = BUSINESS_CONFIG.FULL_SHIFT_HOURS * 60;
 export const SHIFT_START_MINUTES = BUSINESS_CONFIG.SHIFT_START_HOUR * 60;
 export const SHIFT_END_MINUTES = SHIFT_START_MINUTES + FULL_SHIFT_MINUTES;
+const FLEXIBLE_SHIFT_WINDOW_MINUTES = 60;
 const ON_TIME_THRESHOLD_MINUTES = SHIFT_START_MINUTES;
 const BUSINESS_WORKDAY_INDEXES = new Set(BUSINESS_CONFIG.WORKDAY_INDEXES);
 
@@ -89,9 +90,11 @@ export function businessEndTimeLabel() {
 }
 
 export function businessScheduleLabel() {
+  const flexibleStart = `${formatAverageTime(SHIFT_START_MINUTES - FLEXIBLE_SHIFT_WINDOW_MINUTES)} / ${businessStartTimeLabel()}`;
+  const flexibleEnd = `${formatAverageTime(SHIFT_END_MINUTES - FLEXIBLE_SHIFT_WINDOW_MINUTES)} / ${businessEndTimeLabel()}`;
   return t('schedule.businessLabel', {
-    start: businessStartTimeLabel(),
-    end: businessEndTimeLabel(),
+    start: flexibleStart,
+    end: flexibleEnd,
   });
 }
 
