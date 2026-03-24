@@ -29,6 +29,18 @@ function ensureStatus(status) {
   }
 }
 
+function throwSupabaseAdminError(error, statusCode = 400) {
+  const message = error?.message || 'Supabase admin request failed';
+  if (String(message).toLowerCase().includes('application not found')) {
+    throw new AppError(
+      'Supabase admin configuration is invalid. Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY belong to the same project.',
+      500
+    );
+  }
+
+  throw new AppError(message, statusCode);
+}
+
 function buildProfilePayload(id, payload, existingProfile = {}) {
   const status = payload.status || existingProfile.status || 'active';
   const isActive = typeof payload.is_active === 'boolean' ? payload.is_active : status !== 'inactive';
@@ -198,7 +210,7 @@ async function createEmployee(payload, actorProfile) {
   });
 
   if (createError) {
-    throw new AppError(createError.message, 400);
+    throwSupabaseAdminError(createError);
   }
 
   const userId = createdUser?.user?.id;
@@ -286,7 +298,7 @@ async function updateEmployee(id, payload, actorProfile) {
   });
 
   if (authError) {
-    throw new AppError(authError.message, 400);
+    throwSupabaseAdminError(authError);
   }
 
   const { error: profileError } = await supabaseAdmin
@@ -317,7 +329,7 @@ async function resetEmployeePassword(id, password, actorProfile) {
 
   const { error } = await supabaseAdmin.auth.admin.updateUserById(id, { password });
   if (error) {
-    throw new AppError(error.message, 400);
+    throwSupabaseAdminError(error);
   }
 
   // Log the password reset
@@ -390,7 +402,7 @@ async function toggleEmployeeStatus(id, actorProfile) {
   });
 
   if (authError) {
-    throw new AppError(authError.message, 400);
+    throwSupabaseAdminError(authError);
   }
 
   // Log the status toggle
@@ -419,7 +431,7 @@ async function deleteEmployee(id, actorProfile) {
 
   const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
   if (error) {
-    throw new AppError(error.message, 400);
+    throwSupabaseAdminError(error);
   }
 
   // Log the employee deletion

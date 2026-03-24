@@ -552,6 +552,7 @@ const dictionaries = {
       disableSelf: 'You cannot disable your own account.',
       deleteSelf: 'You cannot delete your own account.',
       lastActiveAdmin: 'At least one active admin account must remain in the system.',
+      apiEndpointMisconfigured: 'API endpoint is misconfigured. Set API_BASE_URL to your backend API (for example: /api).',
     },
     charts: {
       hoursWorked: 'Hours Worked',
@@ -1107,6 +1108,7 @@ const dictionaries = {
       disableSelf: '\u0644\u0627 \u064a\u0645\u0643\u0646\u0643 \u062a\u0639\u0637\u064a\u0644 \u062d\u0633\u0627\u0628\u0643.',
       deleteSelf: '\u0644\u0627 \u064a\u0645\u0643\u0646\u0643 \u062d\u0630\u0641 \u062d\u0633\u0627\u0628\u0643.',
       lastActiveAdmin: '\u064a\u062c\u0628 \u0628\u0642\u0627\u0621 \u0645\u062f\u064a\u0631 \u0646\u0634\u0637 \u0648\u0627\u062d\u062f \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644.',
+      apiEndpointMisconfigured: '\u0648\u062c\u0647\u0629 API \u063a\u064a\u0631 \u0645\u0636\u0628\u0648\u0637\u0629. \u0627\u0636\u0628\u0637 API_BASE_URL \u0639\u0644\u0649 \u0628\u0627\u0643\u0627\u0646\u062f \u0627\u0644\u062a\u0637\u0628\u064a\u0642 (\u0645\u062b\u0627\u0644: /api).',
     },
     charts: {
       hoursWorked: '\u0633\u0627\u0639\u0627\u062a \u0627\u0644\u0639\u0645\u0644',

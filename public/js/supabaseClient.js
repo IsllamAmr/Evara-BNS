@@ -9,9 +9,32 @@ function resolveConfigValue(value, fallback) {
   return value ?? fallback;
 }
 
+function resolveApiBaseUrl(value, fallback) {
+  const normalized = resolveConfigValue(value, fallback);
+  if (typeof normalized !== 'string') {
+    return fallback;
+  }
+
+  const trimmed = normalized.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  try {
+    const parsed = new URL(trimmed, window.location.origin);
+    if (parsed.hostname.endsWith('.supabase.co')) {
+      return fallback;
+    }
+  } catch (_error) {
+    return fallback;
+  }
+
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+}
+
 const injectedConfig = window.__EVARA_CONFIG__ || {};
 const runtimeConfig = {
-  API_BASE_URL: resolveConfigValue(injectedConfig.API_BASE_URL, PUBLIC_RUNTIME_DEFAULTS.API_BASE_URL),
+  API_BASE_URL: resolveApiBaseUrl(injectedConfig.API_BASE_URL, PUBLIC_RUNTIME_DEFAULTS.API_BASE_URL),
   SUPABASE_URL: resolveConfigValue(injectedConfig.SUPABASE_URL, PUBLIC_RUNTIME_DEFAULTS.SUPABASE_URL),
   SUPABASE_ANON_KEY: resolveConfigValue(injectedConfig.SUPABASE_ANON_KEY, PUBLIC_RUNTIME_DEFAULTS.SUPABASE_ANON_KEY),
   APP_URL: resolveConfigValue(injectedConfig.APP_URL, PUBLIC_RUNTIME_DEFAULTS.APP_URL || window.location.origin),

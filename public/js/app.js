@@ -440,6 +440,48 @@ async function getAccessToken() {
   return session?.access_token || '';
 }
 
+const LOCAL_API_BASE_URL = '/api';
+
+function normalizeApiBaseUrl(baseUrl) {
+  const normalized = String(baseUrl || '').trim();
+  if (!normalized) {
+    return LOCAL_API_BASE_URL;
+  }
+
+  return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
+}
+
+function isSupabaseDomain(urlValue) {
+  try {
+    const parsed = new URL(urlValue, window.location.origin);
+    return parsed.hostname.endsWith('.supabase.co');
+  } catch (_error) {
+    return false;
+  }
+}
+
+function isApplicationNotFoundError(message) {
+  return String(message || '').toLowerCase().includes('application not found');
+}
+
+function shouldRetryOnLocalApi(primaryBaseUrl, message) {
+  return primaryBaseUrl !== LOCAL_API_BASE_URL && isApplicationNotFoundError(message);
+}
+
+function formatApiErrorMessage(message, baseUrl) {
+  if (isApplicationNotFoundError(message) && isSupabaseDomain(baseUrl)) {
+    return t('errors.apiEndpointMisconfigured');
+  }
+
+  return message || t('common.requestFailed');
+}
+
+async function sendApiRequest(baseUrl, path, requestOptions) {
+  const response = await fetch(`${baseUrl}${path}`, requestOptions);
+  const payload = await response.json().catch(() => ({}));
+  return { response, payload };
+}
+
 async function apiRequest(path, options = {}) {
   const token = await getAccessToken();
   const headers = {
@@ -451,18 +493,34 @@ async function apiRequest(path, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${config.apiBaseUrl}${path}`, {
+  const requestOptions = {
     method: options.method || 'GET',
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  };
+  const primaryBaseUrl = normalizeApiBaseUrl(config.apiBaseUrl);
+  const primaryResult = await sendApiRequest(primaryBaseUrl, path, requestOptions);
 
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.message || t('common.requestFailed'));
+  // Recover from misconfigured API base URLs that point to Supabase instead of this backend.
+  if (!primaryResult.response.ok && shouldRetryOnLocalApi(primaryBaseUrl, primaryResult.payload?.message)) {
+    const fallbackResult = await sendApiRequest(LOCAL_API_BASE_URL, path, requestOptions);
+    if (!fallbackResult.response.ok) {
+      throw new Error(
+        formatApiErrorMessage(
+          fallbackResult.payload?.message || primaryResult.payload?.message,
+          primaryBaseUrl
+        )
+      );
+    }
+
+    return fallbackResult.payload;
   }
 
-  return payload;
+  if (!primaryResult.response.ok) {
+    throw new Error(formatApiErrorMessage(primaryResult.payload?.message, primaryBaseUrl));
+  }
+
+  return primaryResult.payload;
 }
 
 async function fetchMyProfile(userId) {
@@ -3611,7 +3669,6 @@ async function renderQrPage() {
     setPageError(container, error.message);
   }
 }
-
 
 
 
