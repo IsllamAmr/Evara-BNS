@@ -2299,6 +2299,7 @@ async function renderProfilePage() {
             <p>${escapeHtml(t('profilePage.intro'))}</p>
           </div>
           <div class="inline-actions">
+            <button id="openChangePasswordFromProfileBtn" type="button" class="btn btn-secondary">${escapeHtml(t('profilePage.changePassword'))}</button>
             <button id="openHistoryFromProfileBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.openHistory'))}</button>
             <button id="openAttendanceFromProfileBtn" type="button" class="btn btn-primary">${escapeHtml(t('common.openAttendance'))}</button>
           </div>
@@ -2365,6 +2366,7 @@ async function renderProfilePage() {
 
     container.querySelector('#openAttendanceFromProfileBtn')?.addEventListener('click', () => navigate('attendance'));
     container.querySelector('#openHistoryFromProfileBtn')?.addEventListener('click', () => navigate('history'));
+    container.querySelector('#openChangePasswordFromProfileBtn')?.addEventListener('click', () => openChangeOwnPasswordModal());
   } catch (error) {
     setPageError(container, error.message);
   }
@@ -3114,6 +3116,84 @@ function openResetPasswordModal(employee) {
   });
 }
 
+function openChangeOwnPasswordModal() {
+  openModal(`
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">${escapeHtml(t('profilePage.changePassword'))}</p>
+        <h2>${escapeHtml(t('profilePage.changePasswordTitle'))}</h2>
+      </div>
+      <button id="closeModalBtn" type="button" class="ghost-inline">${escapeHtml(t('common.close'))}</button>
+    </div>
+    <form id="changeOwnPasswordForm" class="stack-form">
+      <div class="form-group">
+        <label for="current_password">${escapeHtml(t('profilePage.currentPassword'))}</label>
+        <input id="current_password" type="password" required />
+      </div>
+      <div class="form-group">
+        <label for="new_password">${escapeHtml(t('profilePage.newPassword'))}</label>
+        <input id="new_password" type="password" required />
+      </div>
+      <div class="form-group">
+        <label for="new_password_confirm">${escapeHtml(t('profilePage.confirmNewPassword'))}</label>
+        <input id="new_password_confirm" type="password" required />
+      </div>
+      <div id="changeOwnPasswordError" class="form-alert error hidden"></div>
+      <div class="modal-footer">
+        <div></div>
+        <div class="inline-actions">
+          <button id="cancelChangeOwnPasswordBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.cancel'))}</button>
+          <button id="submitChangeOwnPasswordBtn" type="submit" class="btn btn-primary">${escapeHtml(t('profilePage.changePassword'))}</button>
+        </div>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('closeModalBtn')?.addEventListener('click', closeModal);
+  document.getElementById('cancelChangeOwnPasswordBtn')?.addEventListener('click', closeModal);
+  document.getElementById('changeOwnPasswordForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    showFormError('changeOwnPasswordError');
+
+    const currentPassword = document.getElementById('current_password').value;
+    const newPassword = document.getElementById('new_password').value;
+    const newPasswordConfirm = document.getElementById('new_password_confirm').value;
+
+    if (!isStrongPassword(newPassword)) {
+      showFormError('changeOwnPasswordError', t('errors.strongPassword'));
+      return;
+    }
+    if (newPassword !== newPasswordConfirm) {
+      showFormError('changeOwnPasswordError', t('errors.passwordMismatch'));
+      return;
+    }
+    if (currentPassword === newPassword) {
+      showFormError('changeOwnPasswordError', t('errors.newPasswordMustDiffer'));
+      return;
+    }
+
+    const submitButton = document.getElementById('submitChangeOwnPasswordBtn');
+    submitButton.disabled = true;
+    submitButton.textContent = t('profilePage.updatingPassword');
+
+    try {
+      await apiRequest('/account/password', {
+        method: 'PATCH',
+        body: {
+          current_password: currentPassword,
+          new_password: newPassword,
+        },
+      });
+      closeModal();
+      showToast(t('toasts.passwordChanged'), 'success');
+    } catch (error) {
+      showFormError('changeOwnPasswordError', error.message);
+      submitButton.disabled = false;
+      submitButton.textContent = t('profilePage.changePassword');
+    }
+  });
+}
+
 function openManualAttendanceForm(options = {}) {
   const employees = state.employees
     .filter(isEmployeeProfile)
@@ -3669,6 +3749,5 @@ async function renderQrPage() {
     setPageError(container, error.message);
   }
 }
-
 
 

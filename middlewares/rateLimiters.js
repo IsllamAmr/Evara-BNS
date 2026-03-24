@@ -39,9 +39,16 @@ const attendanceActionLimiter = buildLimiter({
   message: 'Too many attendance requests. Please slow down.',
 });
 
+const passwordChangeLimiter = buildLimiter({
+  windowMs: Number(process.env.PASSWORD_CHANGE_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+  max: Number(process.env.PASSWORD_CHANGE_RATE_LIMIT_MAX || 8),
+  message: 'Too many password change attempts. Please wait and try again.',
+});
+
 module.exports = {
   adminWriteLimiter,
   apiLimiter,
   attendanceActionLimiter,
   employeeCreationLimiter,
+  passwordChangeLimiter,
 };

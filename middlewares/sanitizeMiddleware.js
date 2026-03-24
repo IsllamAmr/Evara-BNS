@@ -1,5 +1,6 @@
-﻿const PASSWORD_KEYS = new Set([
+const PASSWORD_KEYS = new Set([
   'password',
+  'current_password',
   'new_password',
   'password_confirm',
   'initial_admin_password',
@@ -55,3 +56,4 @@ function sanitizeRequest(req, res, next) {
 module.exports = {
   sanitizeRequest,
 };
+
