@@ -12,6 +12,7 @@ const { isSupabaseConfigured, supabaseAnonKey, supabaseUrl } = require('./config
 const adminRoutes = require('./routes/adminRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const accountRoutes = require('./routes/accountRoutes');
+const requestRoutes = require('./routes/requestRoutes');
 const { attendanceRestrictionSummary } = require('./services/attendanceGuardService');
 const { sanitizeRequest } = require('./middlewares/sanitizeMiddleware');
 const { apiLimiter } = require('./middlewares/rateLimiters');
@@ -212,6 +213,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/admin', adminRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/account', accountRoutes);
+app.use('/api/requests', requestRoutes);
 
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) {

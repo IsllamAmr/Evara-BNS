@@ -73,6 +73,10 @@ const DEPARTMENT_OPTIONS = [
 
 const EMPLOYEE_PAGE_SIZE = 10;
 const HISTORY_PAGE_SIZE = 12;
+const REQUEST_MONTHLY_DELAY_LIMIT = 2;
+const REQUEST_ANNUAL_LEAVE_LIMIT = 21;
+const REQUEST_TYPES = ['late_2_hours', 'annual_leave'];
+const REQUEST_STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
 const EMPLOYEE_CACHE_TTL_MS = 30 * 1000; // Reduced from 60s to improve cache freshness
 const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const INPUT_DEBOUNCE_MS = 220;
@@ -84,6 +88,8 @@ const QUERY_CACHE_TTL_MS = {
   employeeStats: 30 * 1000,
   attendance: 12 * 1000,
   attendancePage: 12 * 1000,
+  requests: 12 * 1000,
+  requestAllowance: 20 * 1000,
   reports: 20 * 1000,
   profile: 20 * 1000,
   qr: 60 * 1000,
@@ -140,6 +146,10 @@ const state = {
     startItem: 0,
     endItem: 0,
   },
+  requestFilters: {
+    type: 'all',
+    status: 'all',
+  },
 
   reportsFilters: {
     month: currentMonthInput(),
@@ -181,6 +191,7 @@ const elements = {
     employees: document.getElementById('page-employees'),
     attendance: document.getElementById('page-attendance'),
     history: document.getElementById('page-history'),
+    requests: document.getElementById('page-requests'),
     reports: document.getElementById('page-reports'),
     qr: document.getElementById('page-qr'),
   },
@@ -259,8 +270,8 @@ function isAdmin() {
 
 function allowedPages() {
   return isAdmin()
-    ? ['dashboard', 'profile', 'employees', 'attendance', 'history', 'reports', 'qr']
-    : ['dashboard', 'profile', 'attendance', 'history'];
+    ? ['dashboard', 'profile', 'employees', 'attendance', 'history', 'requests', 'reports', 'qr']
+    : ['dashboard', 'profile', 'attendance', 'history', 'requests'];
 }
 
 function pageFromHash() {
@@ -627,6 +638,10 @@ function invalidateAttendanceCache() {
   invalidateQueryCache(['attendance:', 'attendancePage:', 'health:', 'qr:']);
 }
 
+function invalidateRequestsCache() {
+  invalidateQueryCache(['requests:', 'requestAllowance:']);
+}
+
 async function fetchEmployeeDirectoryPage(filters, paginationState, options = {}) {
   const requestedPage = paginationState.page;
   const pageSize = paginationState.pageSize;
@@ -819,6 +834,22 @@ async function fetchSystemHealth(options = {}) {
   }, { force });
 }
 
+async function fetchRequests(filters = {}, options = {}) {
+  const key = buildCacheKey('requests', filters);
+  return getCachedQuery(key, QUERY_CACHE_TTL_MS.requests, async () => {
+    const payload = await apiRequest(`/requests${buildQueryString(filters)}`);
+    return payload?.data?.items || [];
+  }, options);
+}
+
+async function fetchRequestAllowanceSummary(filters = {}, options = {}) {
+  const key = buildCacheKey('requestAllowance', filters);
+  return getCachedQuery(key, QUERY_CACHE_TTL_MS.requestAllowance, async () => {
+    const payload = await apiRequest(`/requests/allowance${buildQueryString(filters)}`);
+    return payload?.data || null;
+  }, options);
+}
+
 function buildQueryString(params = {}) {
   const query = new URLSearchParams();
 
@@ -992,6 +1023,17 @@ function schedulePagePrefetch() {
         }, state.historyPagination, { force: true })
       );
       warmQueryInBackground(
+        buildCacheKey('requests', {
+          type: state.requestFilters.type,
+          status: state.requestFilters.status,
+        }),
+        QUERY_CACHE_TTL_MS.requests,
+        () => fetchRequests({
+          type: state.requestFilters.type,
+          status: state.requestFilters.status,
+        }, { force: true })
+      );
+      warmQueryInBackground(
         buildCacheKey('attendance', { from: currentMonth.from, to: currentMonth.to }),
         QUERY_CACHE_TTL_MS.reports,
         () => fetchAttendance({ from: currentMonth.from, to: currentMonth.to, force: true })
@@ -1035,6 +1077,22 @@ function schedulePagePrefetch() {
           status: state.historyFilters.status,
           userId: state.profile.id,
         }, state.historyPagination, { force: true })
+      );
+      warmQueryInBackground(
+        buildCacheKey('requests', {
+          type: state.requestFilters.type,
+          status: state.requestFilters.status,
+        }),
+        QUERY_CACHE_TTL_MS.requests,
+        () => fetchRequests({
+          type: state.requestFilters.type,
+          status: state.requestFilters.status,
+        }, { force: true })
+      );
+      warmQueryInBackground(
+        buildCacheKey('requestAllowance', { user_id: state.profile.id }),
+        QUERY_CACHE_TTL_MS.requestAllowance,
+        () => fetchRequestAllowanceSummary({ user_id: state.profile.id }, { force: true })
       );
     }
 
@@ -1313,6 +1371,13 @@ function setupRealtimeSubscriptions() {
     .subscribe();
 
   realtimeChannels.push(profileChannel);
+
+  const requestChannel = supabase
+    .channel(`requests-feed-${state.profile.id}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_requests' }, scheduleLiveRefresh)
+    .subscribe();
+
+  realtimeChannels.push(requestChannel);
 }
 
 async function boot() {
@@ -1457,6 +1522,8 @@ async function renderRoute() {
     await renderAttendancePage();
   } else if (page === 'history') {
     await renderHistoryPage();
+  } else if (page === 'requests') {
+    await renderRequestsPage();
   } else if (page === 'reports') {
     await renderReportsPage();
   } else if (page === 'qr') {
@@ -1490,6 +1557,49 @@ function buildUserCell(profile) {
 
 function badgeMarkup(type, value, label = null) {
   return `<span class="badge ${escapeHtml(type)}">${escapeHtml(label || statusLabel(value))}</span>`;
+}
+
+function requestTypeLabel(value) {
+  const translated = t(`labels.${value}`);
+  if (translated !== `labels.${value}`) {
+    return translated;
+  }
+
+  return value;
+}
+
+function requestDateLabel(request) {
+  if (!request) {
+    return '-';
+  }
+
+  if (request.request_type === 'late_2_hours') {
+    return formatDate(request.late_date);
+  }
+
+  if (request.request_type === 'annual_leave') {
+    const start = formatDate(request.leave_start_date);
+    const end = formatDate(request.leave_end_date);
+    return `${start} - ${end}`;
+  }
+
+  return '-';
+}
+
+function requestDurationLabel(request) {
+  if (!request) {
+    return '-';
+  }
+
+  if (request.request_type === 'late_2_hours') {
+    return t('requestPage.delayDuration');
+  }
+
+  if (request.request_type === 'annual_leave') {
+    return t('requestPage.leaveDaysCount', { days: String(request.leave_days || 0) });
+  }
+
+  return '-';
 }
 
 function buildAttendanceRecordNote(row) {
@@ -3582,6 +3692,353 @@ async function submitAttendanceAction(type) {
   }
 }
 
+function requestFormMarkup(defaultType = 'late_2_hours', defaultUserId = '') {
+  const employees = state.employees
+    .filter(isEmployeeProfile)
+    .sort((left, right) => (left.full_name || '').localeCompare(right.full_name || ''));
+
+  return `
+    <form id="requestForm" class="stack-form">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">${escapeHtml(t('requestPage.newRequestEyebrow'))}</p>
+          <h2>${escapeHtml(t('requestPage.newRequestTitle'))}</h2>
+        </div>
+        <button id="closeModalBtn" type="button" class="ghost-inline">${escapeHtml(t('common.close'))}</button>
+      </div>
+
+      <div class="form-grid">
+        ${isAdmin() ? `
+          <div class="form-group">
+            <label for="request_user_id">${escapeHtml(t('common.employee'))}</label>
+            <select id="request_user_id" name="user_id" required>
+              <option value="">${escapeHtml(t('requestPage.selectEmployee'))}</option>
+              ${employees.map((employee) => `<option value="${employee.id}" ${defaultUserId === employee.id ? 'selected' : ''}>${escapeHtml(employee.full_name)}${employee.employee_code ? ` - ${escapeHtml(employee.employee_code)}` : ''}</option>`).join('')}
+            </select>
+          </div>
+        ` : ''}
+        <div class="form-group">
+          <label for="request_type">${escapeHtml(t('requestPage.requestType'))}</label>
+          <select id="request_type" name="request_type" required>
+            ${REQUEST_TYPES.map((type) => `<option value="${type}" ${defaultType === type ? 'selected' : ''}>${escapeHtml(requestTypeLabel(type))}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" id="requestLateDateGroup">
+          <label for="request_late_date">${escapeHtml(t('requestPage.lateDate'))}</label>
+          <input id="request_late_date" name="late_date" type="date" value="${escapeHtml(todayIso())}" />
+        </div>
+        <div class="form-group hidden" id="requestLeaveStartGroup">
+          <label for="request_leave_start_date">${escapeHtml(t('requestPage.leaveStartDate'))}</label>
+          <input id="request_leave_start_date" name="leave_start_date" type="date" value="${escapeHtml(todayIso())}" />
+        </div>
+        <div class="form-group hidden" id="requestLeaveEndGroup">
+          <label for="request_leave_end_date">${escapeHtml(t('requestPage.leaveEndDate'))}</label>
+          <input id="request_leave_end_date" name="leave_end_date" type="date" value="${escapeHtml(todayIso())}" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="request_reason">${escapeHtml(t('requestPage.reason'))}</label>
+        <textarea id="request_reason" name="reason" rows="4" placeholder="${escapeHtml(t('requestPage.reasonPlaceholder'))}"></textarea>
+      </div>
+
+      <div id="requestFormError" class="form-alert error hidden"></div>
+      <div class="modal-footer">
+        <div class="inline-note">${escapeHtml(t('requestPage.limitHint'))}</div>
+        <div class="inline-actions">
+          <button id="cancelRequestFormBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.cancel'))}</button>
+          <button id="submitRequestFormBtn" type="submit" class="btn btn-primary">${escapeHtml(t('requestPage.submitRequest'))}</button>
+        </div>
+      </div>
+    </form>
+  `;
+}
+
+function syncRequestFormFields(form) {
+  const requestType = form.request_type.value;
+  const isDelayRequest = requestType === 'late_2_hours';
+
+  const lateGroup = document.getElementById('requestLateDateGroup');
+  const leaveStartGroup = document.getElementById('requestLeaveStartGroup');
+  const leaveEndGroup = document.getElementById('requestLeaveEndGroup');
+
+  lateGroup?.classList.toggle('hidden', !isDelayRequest);
+  leaveStartGroup?.classList.toggle('hidden', isDelayRequest);
+  leaveEndGroup?.classList.toggle('hidden', isDelayRequest);
+
+  if (form.late_date) {
+    form.late_date.required = isDelayRequest;
+  }
+  if (form.leave_start_date) {
+    form.leave_start_date.required = !isDelayRequest;
+  }
+  if (form.leave_end_date) {
+    form.leave_end_date.required = !isDelayRequest;
+  }
+}
+
+function collectRequestForm(form) {
+  const payload = {
+    request_type: form.request_type.value,
+    reason: form.reason.value.trim(),
+  };
+
+  if (isAdmin() && form.user_id) {
+    payload.user_id = form.user_id.value;
+  }
+
+  if (payload.request_type === 'late_2_hours') {
+    payload.late_date = form.late_date.value;
+  } else {
+    payload.leave_start_date = form.leave_start_date.value;
+    payload.leave_end_date = form.leave_end_date.value;
+  }
+
+  return payload;
+}
+
+function openRequestForm({ onSaved = null, defaultType = 'late_2_hours', defaultUserId = '' } = {}) {
+  openModal(requestFormMarkup(defaultType, defaultUserId));
+
+  const form = document.getElementById('requestForm');
+  const submitButton = document.getElementById('submitRequestFormBtn');
+  if (!form || !submitButton) {
+    return;
+  }
+
+  document.getElementById('closeModalBtn')?.addEventListener('click', () => closeModal(false));
+  document.getElementById('cancelRequestFormBtn')?.addEventListener('click', () => closeModal(false));
+  form.request_type.addEventListener('change', () => syncRequestFormFields(form));
+  syncRequestFormFields(form);
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    showFormError('requestFormError');
+
+    const payload = collectRequestForm(form);
+
+    if (isAdmin() && !payload.user_id) {
+      showFormError('requestFormError', t('requestPage.employeeRequired'));
+      return;
+    }
+
+    if (payload.request_type === 'late_2_hours' && !payload.late_date) {
+      showFormError('requestFormError', t('requestPage.lateDateRequired'));
+      return;
+    }
+
+    if (payload.request_type === 'annual_leave') {
+      if (!payload.leave_start_date || !payload.leave_end_date) {
+        showFormError('requestFormError', t('requestPage.leaveDatesRequired'));
+        return;
+      }
+
+      if (payload.leave_end_date < payload.leave_start_date) {
+        showFormError('requestFormError', t('requestPage.leaveDatesOrder'));
+        return;
+      }
+    }
+
+    submitButton.disabled = true;
+    submitButton.textContent = t('requestPage.submitting');
+
+    try {
+      await apiRequest('/requests', {
+        method: 'POST',
+        body: payload,
+      });
+      invalidateRequestsCache();
+      showToast(t('toasts.requestSubmitted'), 'success');
+      closeModal(true);
+      if (typeof onSaved === 'function') {
+        await onSaved();
+      }
+    } catch (error) {
+      showFormError('requestFormError', error.message);
+    } finally {
+      submitButton.disabled = false;
+      submitButton.textContent = t('requestPage.submitRequest');
+    }
+  });
+}
+
+async function submitRequestStatusUpdate(requestId, status) {
+  const confirmed = await confirmAction({
+    eyebrow: t('requestPage.reviewEyebrow'),
+    title: t('requestPage.reviewTitle'),
+    message: t('requestPage.reviewMessage', { status: statusLabel(status) }),
+    confirmLabel: t('requestPage.confirmStatusUpdate'),
+    tone: status === 'approved' ? 'primary' : 'danger',
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    await apiRequest(`/requests/${requestId}/status`, {
+      method: 'PATCH',
+      body: { status },
+    });
+    invalidateRequestsCache();
+    showToast(t('toasts.requestStatusUpdated'), 'success');
+    await renderRequestsPage();
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+async function renderRequestsPage() {
+  const container = elements.pages.requests;
+  const requestFilters = {
+    type: state.requestFilters.type,
+    status: state.requestFilters.status,
+  };
+  const requestKey = buildCacheKey('requests', requestFilters);
+  const allowanceKey = buildCacheKey('requestAllowance', isAdmin() ? {} : { user_id: state.profile.id });
+  const hasWarmCache = getFreshCachedValue(requestKey, QUERY_CACHE_TTL_MS.requests)
+    && (isAdmin() || getFreshCachedValue(allowanceKey, QUERY_CACHE_TTL_MS.requestAllowance));
+  if (!hasWarmCache) {
+    setPageLoading(container, t('pages.loading.requests'));
+  }
+
+  try {
+    if (isAdmin()) {
+      await loadEmployees();
+    }
+
+    const [items, allowance] = await Promise.all([
+      fetchRequests(requestFilters),
+      isAdmin() ? Promise.resolve(null) : fetchRequestAllowanceSummary({ user_id: state.profile.id }),
+    ]);
+
+    if (isAdmin()) {
+      await ensureProfileDirectory(items);
+    }
+
+    const pendingCount = items.filter((item) => item.status === 'pending').length;
+    const approvedCount = items.filter((item) => item.status === 'approved').length;
+    const rejectedCount = items.filter((item) => item.status === 'rejected' || item.status === 'cancelled').length;
+
+    container.innerHTML = `
+      <div class="page-shell">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">${escapeHtml(t('requestPage.eyebrow'))}</p>
+            <h1>${escapeHtml(t('requestPage.title'))}</h1>
+            <p>${escapeHtml(t('requestPage.intro'))}</p>
+          </div>
+          <button id="openRequestFormBtn" type="button" class="btn btn-primary">${escapeHtml(t('requestPage.newRequest'))}</button>
+        </div>
+
+        <section class="summary-grid">
+          ${isAdmin()
+    ? `
+            ${buildSummaryCard(t('requestPage.pendingRequests'), String(pendingCount), t('requestPage.pendingRequestsMeta'))}
+            ${buildSummaryCard(t('requestPage.approvedRequests'), String(approvedCount), t('requestPage.approvedRequestsMeta'))}
+            ${buildSummaryCard(t('requestPage.rejectedRequests'), String(rejectedCount), t('requestPage.rejectedRequestsMeta'))}
+          `
+    : `
+            ${buildSummaryCard(
+    t('requestPage.delayQuotaTitle'),
+    `${allowance?.late_2_hours?.used || 0}/${REQUEST_MONTHLY_DELAY_LIMIT}`,
+    t('requestPage.delayQuotaMeta', { remaining: String(allowance?.late_2_hours?.remaining ?? REQUEST_MONTHLY_DELAY_LIMIT) })
+  )}
+            ${buildSummaryCard(
+    t('requestPage.leaveQuotaTitle'),
+    `${allowance?.annual_leave_days?.used || 0}/${REQUEST_ANNUAL_LEAVE_LIMIT}`,
+    t('requestPage.leaveQuotaMeta', { remaining: String(allowance?.annual_leave_days?.remaining ?? REQUEST_ANNUAL_LEAVE_LIMIT) })
+  )}
+            ${buildSummaryCard(
+    t('requestPage.totalRequests'),
+    String(items.length),
+    t('requestPage.totalRequestsMeta')
+  )}
+          `}
+        </section>
+
+        <section class="card-block">
+          <div class="toolbar">
+            <select id="requestTypeFilter">
+              <option value="all">${escapeHtml(t('requestPage.allTypes'))}</option>
+              ${REQUEST_TYPES.map((type) => `<option value="${type}" ${state.requestFilters.type === type ? 'selected' : ''}>${escapeHtml(requestTypeLabel(type))}</option>`).join('')}
+            </select>
+            <select id="requestStatusFilter">
+              <option value="all">${escapeHtml(t('common.allStatuses'))}</option>
+              ${REQUEST_STATUSES.map((status) => `<option value="${status}" ${state.requestFilters.status === status ? 'selected' : ''}>${escapeHtml(statusLabel(status))}</option>`).join('')}
+            </select>
+            <button id="applyRequestFiltersBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.apply'))}</button>
+          </div>
+          <div class="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  ${isAdmin() ? `<th>${escapeHtml(t('common.employee'))}</th>` : ''}
+                  <th>${escapeHtml(t('requestPage.requestType'))}</th>
+                  <th>${escapeHtml(t('requestPage.requestDateRange'))}</th>
+                  <th>${escapeHtml(t('requestPage.duration'))}</th>
+                  <th>${escapeHtml(t('requestPage.reason'))}</th>
+                  <th>${escapeHtml(t('common.status'))}</th>
+                  <th>${escapeHtml(t('requestPage.submittedAt'))}</th>
+                  ${isAdmin() ? `<th>${escapeHtml(t('common.actions'))}</th>` : ''}
+                </tr>
+              </thead>
+              <tbody>
+                ${items.length ? items.map((item) => {
+    const profile = employeeById(item.user_id) || state.profile;
+    return `
+                    <tr>
+                      ${isAdmin() ? `<td>${buildUserCell(profile)}</td>` : ''}
+                      <td>${escapeHtml(requestTypeLabel(item.request_type))}</td>
+                      <td>${escapeHtml(requestDateLabel(item))}</td>
+                      <td>${escapeHtml(requestDurationLabel(item))}</td>
+                      <td>${escapeHtml(item.reason || '-')}</td>
+                      <td>${badgeMarkup(item.status, item.status)}</td>
+                      <td>${escapeHtml(formatDateTime(item.created_at))}</td>
+                      ${isAdmin() ? `
+                        <td>
+                          ${item.status === 'pending'
+    ? `<div class="inline-actions">
+                                 <button type="button" class="btn btn-secondary" data-request-action="approved" data-request-id="${item.id}">${escapeHtml(t('requestPage.approve'))}</button>
+                                 <button type="button" class="btn btn-danger" data-request-action="rejected" data-request-id="${item.id}">${escapeHtml(t('requestPage.reject'))}</button>
+                               </div>`
+    : `<span class="inline-note">-</span>`}
+                        </td>
+                      ` : ''}
+                    </tr>
+                  `;
+  }).join('') : `<tr><td colspan="${isAdmin() ? 8 : 6}"><div class="empty-state">${escapeHtml(t('requestPage.emptyState'))}</div></td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    `;
+
+    container.querySelector('#openRequestFormBtn')?.addEventListener('click', () => {
+      openRequestForm({
+        onSaved: async () => {
+          await renderRequestsPage();
+        },
+      });
+    });
+
+    container.querySelector('#applyRequestFiltersBtn')?.addEventListener('click', () => {
+      state.requestFilters.type = container.querySelector('#requestTypeFilter').value;
+      state.requestFilters.status = container.querySelector('#requestStatusFilter').value;
+      renderRequestsPage().catch((error) => setPageError(container, error.message));
+    });
+
+    container.querySelectorAll('[data-request-action]').forEach((button) => {
+      button.addEventListener('click', () => {
+        submitRequestStatusUpdate(button.dataset.requestId, button.dataset.requestAction);
+      });
+    });
+  } catch (error) {
+    setPageError(container, error.message || t('errors.loadRequests'));
+  }
+}
+
 async function renderHistoryPage() {
   const container = elements.pages.history;
   const historyKey = buildCacheKey('attendancePage', {
@@ -3616,7 +4073,10 @@ async function renderHistoryPage() {
             <h1>${escapeHtml(t('historyPage.title'))}</h1>
             <p>${escapeHtml(t('historyPage.intro'))}</p>
           </div>
-          ${isAdmin() ? `<button id="historyManualAttendanceBtn" type="button" class="btn btn-primary">${escapeHtml(t('common.addManualRecord'))}</button>` : ''}
+          <div class="inline-actions">
+            <button id="openRequestsFromHistoryBtn" type="button" class="btn btn-secondary">${escapeHtml(t('requestPage.openRequests'))}</button>
+            ${isAdmin() ? `<button id="historyManualAttendanceBtn" type="button" class="btn btn-primary">${escapeHtml(t('common.addManualRecord'))}</button>` : ''}
+          </div>
         </div>
         <section class="card-block">
           <div class="toolbar toolbar-wide">
@@ -3662,6 +4122,9 @@ async function renderHistoryPage() {
       state.historyFilters.status = container.querySelector('#historyStatus').value;
       state.historyPagination.page = 1;
       renderHistoryPage().catch((error) => setPageError(container, error.message));
+    });
+    container.querySelector('#openRequestsFromHistoryBtn')?.addEventListener('click', () => {
+      navigate('requests');
     });
     container.querySelector('#historyManualAttendanceBtn')?.addEventListener('click', async () => {
       try {
@@ -3749,5 +4212,3 @@ async function renderQrPage() {
     setPageError(container, error.message);
   }
 }
-
-
