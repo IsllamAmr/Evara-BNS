@@ -58,7 +58,10 @@ RATE_LIMIT_MAX_REQUESTS=200
 TRUST_PROXY_HOPS=1
 
 ATTENDANCE_ACCESS_MODE=ip
-ATTENDANCE_ALLOWED_IPS=<comma-separated-ips>
+ATTENDANCE_ALLOWED_IPS=<comma-separated-ips-or-cidrs-or-prefixes>
+# Optional explicit lists (also comma-separated)
+ATTENDANCE_ALLOWED_IP_PREFIXES=<optional-prefixes-like-192.168.1.*>
+ATTENDANCE_ALLOWED_CIDRS=<optional-cidrs-like-10.0.0.0/24>
 ```
 
 3. Run the app:
