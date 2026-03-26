@@ -258,6 +258,21 @@ function attendanceRestrictionSummary() {
   };
 }
 
+function hasIpRestrictionsConfigured() {
+  return ALLOWED_IPS.length > 0 || ALLOWED_IP_PREFIXES.length > 0 || ALLOWED_CIDRS.length > 0;
+}
+
+function buildIpDeniedError(baseMessage, candidateIps) {
+  const primaryIp = Array.isArray(candidateIps) && candidateIps.length ? candidateIps[0] : '';
+  const printableIp = primaryIp || 'unknown';
+  const suffix = ` (detected IP: ${printableIp})`;
+
+  return new AppError(`${baseMessage}${suffix}`, 403, {
+    detected_ip: printableIp,
+    ip_candidates: Array.isArray(candidateIps) ? candidateIps : [],
+  });
+}
+
 function validateAttendanceAccess({ ipAddress, ipCandidates, latitude, longitude }) {
   const candidateIps = Array.isArray(ipCandidates) && ipCandidates.length ? ipCandidates : [ipAddress];
   const ipAllowed = isIpAllowed(candidateIps);
@@ -269,8 +284,11 @@ function validateAttendanceAccess({ ipAddress, ipCandidates, latitude, longitude
   }
 
   if (ACCESS_MODE === 'ip') {
+    if (!hasIpRestrictionsConfigured()) {
+      throw new AppError('Attendance IP restriction mode is enabled, but no allowed IP rules are configured on the server', 500);
+    }
     if (!ipAllowed) {
-      throw new AppError('Attendance is only allowed from the approved company network', 403);
+      throw buildIpDeniedError('Attendance is only allowed from the approved company network', candidateIps);
     }
     return attendanceRestrictionSummary();
   }
@@ -289,6 +307,9 @@ function validateAttendanceAccess({ ipAddress, ipCandidates, latitude, longitude
   }
 
   if (ACCESS_MODE === 'either') {
+    if (!hasIpRestrictionsConfigured() && !isGeoFenceConfigured()) {
+      throw new AppError('Attendance access mode "either" is enabled, but neither IP nor geofence rules are configured on the server', 500);
+    }
     if (!ipAllowed && !geoAllowed) {
       throw new AppError('Attendance requires either the approved company network or the approved location boundary', 403);
     }
@@ -296,8 +317,11 @@ function validateAttendanceAccess({ ipAddress, ipCandidates, latitude, longitude
   }
 
   if (ACCESS_MODE === 'both') {
+    if (!hasIpRestrictionsConfigured()) {
+      throw new AppError('Attendance access mode "both" is enabled, but no allowed IP rules are configured on the server', 500);
+    }
     if (!ipAllowed) {
-      throw new AppError('Attendance requires the approved company network', 403);
+      throw buildIpDeniedError('Attendance requires the approved company network', candidateIps);
     }
     if (!isGeoFenceConfigured()) {
       throw new AppError('Attendance geofence is not configured on the server', 500);
