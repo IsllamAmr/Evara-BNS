@@ -9,7 +9,6 @@ import {
   average,
   attendanceOutcome,
   businessScheduleLabel,
-  businessStartTimeLabel,
   buildAttendanceRowMetrics,
   buildReportsDataset,
   deriveMissingAttendanceState,
@@ -1677,7 +1676,7 @@ function missingAttendanceOutcome(displayState, shortfallMinutes = 0) {
     case 'absent_so_far':
       return t('outcomes.noCheckInToday');
     case 'not_checked_in_yet':
-      return t('outcomes.shiftStartsAt', { time: businessStartTimeLabel() });
+      return t('outcomes.noCheckInToday');
     case 'inactive':
       return t('outcomes.attendanceDisabled');
     default:
@@ -1749,7 +1748,7 @@ function buildEmployeeMonthLedger(employee, attendanceRows, range) {
         const metrics = buildAttendanceRowMetrics(row);
         const countsAsAbsent = displayState.countsAsAbsent || (row.attendance_status === 'absent' && !row.check_in_time);
         const shortfallMinutes = countsAsAbsent ? FULL_SHIFT_MINUTES : metrics.shortfallMinutes;
-        const countsAsLate = Boolean(metrics.isLateArrival || row.attendance_status === 'late');
+        const countsAsLate = row.attendance_status === 'late';
 
         return {
           attendanceDate,
@@ -2013,18 +2012,14 @@ async function renderDashboardPage() {
         ? t('dashboard.admin.missingWeekend')
         : businessContext.hasShiftEnded
           ? t('dashboard.admin.missingAbsent')
-          : businessContext.hasShiftStarted
-            ? t('dashboard.admin.missingSoFar')
-            : t('dashboard.admin.missingPending');
+          : t('dashboard.admin.missingSoFar');
       const missingTodayMeta = !todayIsWorkday
         ? t('dashboard.admin.missingWeekendMeta')
         : businessContext.hasShiftEnded
           ? t('dashboard.admin.missingAbsentMeta')
-          : businessContext.hasShiftStarted
-            ? t('dashboard.admin.missingSoFarMeta')
-            : t('dashboard.admin.missingPendingMeta', { start: businessStartTimeLabel() });
+          : t('dashboard.admin.missingSoFarMeta');
       const lateToday = todayIsWorkday
-        ? todayDetailed.filter((entry) => entry.metrics.isLateArrival || entry.row.attendance_status === 'late').length
+        ? todayDetailed.filter((entry) => entry.row.attendance_status === 'late').length
         : 0;
       const fullShiftCount = todayDetailed.filter((entry) => entry.metrics.isCompleteShift && entry.metrics.shortfallMinutes === 0 && entry.metrics.overtimeMinutes === 0).length;
       const openShiftCount = todayDetailed.filter((entry) => entry.metrics.isOpenShift).length;
@@ -2061,7 +2056,7 @@ async function renderDashboardPage() {
             ${buildSummaryCard(t('dashboard.admin.onLeave'), String(onLeave), t('dashboard.admin.onLeaveMeta'))}
             ${buildSummaryCard(t('dashboard.admin.presentToday'), String(presentToday), t('dashboard.admin.presentTodayMeta'))}
             ${buildSummaryCard(missingTodayLabel, String(missingTodayCount), missingTodayMeta)}
-            ${buildSummaryCard(t('dashboard.admin.lateToday'), String(lateToday), todayIsWorkday ? t('dashboard.admin.lateTodayMeta', { start: businessStartTimeLabel() }) : t('dashboard.admin.lateTodayWeekendMeta'))}
+            ${buildSummaryCard(t('dashboard.admin.lateToday'), String(lateToday), todayIsWorkday ? t('dashboard.admin.lateTodayMeta') : t('dashboard.admin.lateTodayWeekendMeta'))}
             ${buildSummaryCard(t('dashboard.admin.workedToday'), formatDuration(workedMinutesToday), t('dashboard.admin.workedTodayMeta'))}
             ${buildSummaryCard(t('dashboard.admin.actualsCard'), `${fullShiftCount} full / ${openShiftCount} open`, t('dashboard.admin.actualsCardMeta', { overtime: formatDuration(overtimeMinutesToday), shortfall: formatDuration(shortfallMinutesToday) }))}
           </div>
@@ -2277,7 +2272,7 @@ async function renderDashboardPage() {
             ${buildSummaryCard(t('dashboard.employee.absentDays'), String(absentDays), t('notes.workdaysWithoutAttendance'))}
             ${buildSummaryCard(t('dashboard.employee.weeklyLeaveDays'), String(weeklyLeaveDays), t('notes.weeklyLeaveSinceMonthStart'))}
             ${buildSummaryCard(t('dashboard.employee.fullShiftDays'), String(fullShiftDays), t('notes.completedWithoutShortfall'))}
-            ${buildSummaryCard(t('dashboard.employee.lateArrivals'), String(lateDays), t('notes.lateAfterStart', { start: businessStartTimeLabel() }))}
+            ${buildSummaryCard(t('dashboard.employee.lateArrivals'), String(lateDays), t('notes.lateAfterStart'))}
             ${buildSummaryCard(t('dashboard.employee.absenceShortfall'), formatDuration(absenceShortfallMinutes), t('notes.absenceCardMeta', { days: String(absentDays) }))}
             ${buildSummaryCard(t('dashboard.employee.shiftShortfall'), formatDuration(shiftShortfallMinutes), t('notes.shiftShortfallMeta', { days: String(partialShortfallDays) }))}
             ${buildSummaryCard(t('dashboard.employee.overtimeThisMonth'), formatDuration(monthOvertimeMinutes), t('notes.overtimeMonthMeta'))}
@@ -2566,7 +2561,7 @@ async function renderReportsPage() {
           ${buildSummaryCard(t('reportsPage.totalOvertime'), formatDuration(report.totals.totalOvertimeMinutes), t('reportsPage.totalOvertimeMeta'))}
           ${buildSummaryCard(t('reportsPage.totalShortfall'), formatDuration(report.totals.totalShortfallMinutes), t('reportsPage.totalShortfallMeta'))}
           ${buildSummaryCard(t('reportsPage.attendanceRate'), `${report.totals.attendanceRate}%`, t('reportsPage.attendanceRateMeta', { present: String(report.totals.totalPresentDays), expected: String(report.totals.totalExpectedDays || 0) }))}
-          ${buildSummaryCard(t('reportsPage.onTimeArrival'), `${report.totals.onTimeArrivalRate}%`, t('reportsPage.onTimeArrivalMeta', { start: businessStartTimeLabel() }))}
+          ${buildSummaryCard(t('reportsPage.onTimeArrival'), `${report.totals.onTimeArrivalRate}%`, t('reportsPage.onTimeArrivalMeta'))}
           ${buildSummaryCard(t('reportsPage.peakAbsenceDay'), peakWeekday ? peakWeekday.weekday : t('common.notAvailable'), peakWeekday ? t('reportsPage.peakAbsenceDayMeta', { count: String(peakWeekday.absentCount) }) : t('reportsPage.peakAbsenceDayEmpty'))}
         </div>
         <div class="content-grid">
@@ -2717,7 +2712,7 @@ async function renderReportsPage() {
               ${buildSummaryCard(t('dashboard.employee.absentDays'), String(selectedEmployeeAbsentDays), t('notes.workdaysWithoutAttendance'))}
               ${buildSummaryCard(t('dashboard.employee.weeklyLeaveDays'), String(selectedEmployeeWeeklyLeaveDays), t('notes.weeklyLeaveSinceMonthStart'))}
               ${buildSummaryCard(t('dashboard.employee.fullShiftDays'), String(selectedEmployeeFullShiftDays), t('notes.completedWithoutShortfall'))}
-              ${buildSummaryCard(t('dashboard.employee.lateArrivals'), String(selectedEmployeeLateDays), t('notes.lateAfterStart', { start: businessStartTimeLabel() }))}
+              ${buildSummaryCard(t('dashboard.employee.lateArrivals'), String(selectedEmployeeLateDays), t('notes.lateAfterStart'))}
               ${buildSummaryCard(t('dashboard.employee.absenceShortfall'), formatDuration(selectedEmployeeAbsenceShortfallMinutes), t('notes.absenceCardMeta', { days: String(selectedEmployeeAbsentDays) }))}
               ${buildSummaryCard(t('dashboard.employee.shiftShortfall'), formatDuration(selectedEmployeeShiftShortfallMinutes), t('notes.shiftShortfallMeta', { days: String(selectedEmployeePartialShortfallDays) }))}
               ${buildSummaryCard(t('common.overtime'), formatDuration(selectedEmployee.overtimeMinutes), t('notes.overtimeMonthMeta'))}
@@ -3532,16 +3527,12 @@ async function renderAttendancePage() {
         ? t('attendancePage.missingWeekend')
         : businessContext.hasShiftEnded
           ? t('attendancePage.missingAbsent')
-          : businessContext.hasShiftStarted
-            ? t('attendancePage.missingSoFar')
-            : t('attendancePage.missingPending');
+          : t('attendancePage.missingSoFar');
       const missingMeta = !businessContext.isScheduledWorkday
         ? t('attendancePage.missingWeekendMeta')
         : businessContext.hasShiftEnded
           ? t('attendancePage.missingAbsentMeta')
-          : businessContext.hasShiftStarted
-            ? t('attendancePage.missingSoFarMeta')
-            : t('attendancePage.missingPendingMeta', { start: businessStartTimeLabel() });
+          : t('attendancePage.missingSoFarMeta');
 
       container.innerHTML = `
         <div class="page-shell">

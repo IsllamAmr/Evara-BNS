@@ -18,8 +18,8 @@ export const BUSINESS_TIME_ZONE = BUSINESS_CONFIG.TIME_ZONE;
 export const FULL_SHIFT_MINUTES = BUSINESS_CONFIG.FULL_SHIFT_HOURS * 60;
 export const SHIFT_START_MINUTES = BUSINESS_CONFIG.SHIFT_START_HOUR * 60;
 export const SHIFT_END_MINUTES = SHIFT_START_MINUTES + FULL_SHIFT_MINUTES;
-const FLEXIBLE_SHIFT_WINDOW_MINUTES = 60;
-const ON_TIME_THRESHOLD_MINUTES = SHIFT_START_MINUTES;
+const DAY_START_MINUTES = 0;
+const DAY_END_MINUTES = (24 * 60) - 1;
 const BUSINESS_WORKDAY_INDEXES = new Set(BUSINESS_CONFIG.WORKDAY_INDEXES);
 
 function formatDateInput(date) {
@@ -82,20 +82,15 @@ export function isWorkday(date) {
 }
 
 export function businessStartTimeLabel() {
-  return formatAverageTime(SHIFT_START_MINUTES);
+  return formatAverageTime(DAY_START_MINUTES);
 }
 
 export function businessEndTimeLabel() {
-  return formatAverageTime(SHIFT_END_MINUTES);
+  return formatAverageTime(DAY_END_MINUTES);
 }
 
 export function businessScheduleLabel() {
-  const flexibleStart = `${formatAverageTime(SHIFT_START_MINUTES - FLEXIBLE_SHIFT_WINDOW_MINUTES)} / ${businessStartTimeLabel()}`;
-  const flexibleEnd = `${formatAverageTime(SHIFT_END_MINUTES - FLEXIBLE_SHIFT_WINDOW_MINUTES)} / ${businessEndTimeLabel()}`;
-  return t('schedule.businessLabel', {
-    start: flexibleStart,
-    end: flexibleEnd,
-  });
+  return t('schedule.businessLabel');
 }
 
 export function getBusinessDayContext(now = new Date()) {
@@ -103,8 +98,8 @@ export function getBusinessDayContext(now = new Date()) {
   const businessDate = dateFromIsoDate(todayIso);
   const currentBusinessMinutes = minutesFromTimestamp(now, BUSINESS_TIME_ZONE);
   const isScheduledWorkday = businessDate ? isWorkday(businessDate) : true;
-  const hasShiftStarted = Number.isFinite(currentBusinessMinutes) && currentBusinessMinutes >= SHIFT_START_MINUTES;
-  const hasShiftEnded = Number.isFinite(currentBusinessMinutes) && currentBusinessMinutes >= SHIFT_END_MINUTES;
+  const hasShiftStarted = Number.isFinite(currentBusinessMinutes) && currentBusinessMinutes >= DAY_START_MINUTES;
+  const hasShiftEnded = Number.isFinite(currentBusinessMinutes) && currentBusinessMinutes >= DAY_END_MINUTES;
 
   return {
     todayIso,
@@ -177,17 +172,6 @@ export function deriveMissingAttendanceState({
       note: t('states.upcomingDay'),
       badgeType: 'pending',
       countsAsMissing: false,
-      countsAsAbsent: false,
-    };
-  }
-
-  if (!context.hasShiftStarted) {
-    return {
-      code: 'not_checked_in_yet',
-      label: t('states.notCheckedInYet'),
-      note: t('outcomes.shiftStartsAt', { time: businessStartTimeLabel() }),
-      badgeType: 'pending',
-      countsAsMissing: true,
       countsAsAbsent: false,
     };
   }
@@ -331,9 +315,6 @@ export function buildAttendanceRowMetrics(row) {
   const checkInMinutes = minutesFromTimestamp(row.check_in_time);
   const checkOutMinutes = minutesFromTimestamp(row.check_out_time);
   const todayBusinessIso = isoDateInTimeZone(new Date(), BUSINESS_TIME_ZONE);
-  const currentBusinessMinutes = minutesFromTimestamp(new Date(), BUSINESS_TIME_ZONE);
-  const rowBusinessDate = row.attendance_date ? new Date(`${row.attendance_date}T12:00:00`) : null;
-  const isScheduledWorkday = rowBusinessDate ? isWorkday(rowBusinessDate) : true;
   let workedMinutes = workingMinutesBetween(row.check_in_time, row.check_out_time);
   let overtimeMinutes = Math.max(workedMinutes - FULL_SHIFT_MINUTES, 0);
   let shortfallMinutes = row.check_in_time && row.check_out_time
@@ -341,18 +322,19 @@ export function buildAttendanceRowMetrics(row) {
     : 0;
   let projectedRemainingMinutes = 0;
   const isPresent = Boolean(row.check_in_time);
-  const isLateArrival = isScheduledWorkday && Number.isFinite(checkInMinutes) && checkInMinutes > ON_TIME_THRESHOLD_MINUTES;
+  const isLateArrival = row.attendance_status === 'late';
   const isOpenShift = Boolean(row.check_in_time && !row.check_out_time);
   let isPastDue = false;
 
-  if (isOpenShift && Number.isFinite(checkInMinutes)) {
-    if (row.attendance_date === todayBusinessIso && Number.isFinite(currentBusinessMinutes) && currentBusinessMinutes < SHIFT_END_MINUTES) {
-      workedMinutes = Math.min(Math.max(currentBusinessMinutes - checkInMinutes, 0), FULL_SHIFT_MINUTES);
-      overtimeMinutes = 0;
-      shortfallMinutes = 0;
-      projectedRemainingMinutes = Math.max(FULL_SHIFT_MINUTES - workedMinutes, 0);
+  if (isOpenShift) {
+    if (row.attendance_date === todayBusinessIso) {
+      workedMinutes = workingMinutesBetween(row.check_in_time, new Date().toISOString());
+      overtimeMinutes = Math.max(workedMinutes - FULL_SHIFT_MINUTES, 0);
+      shortfallMinutes = Math.max(FULL_SHIFT_MINUTES - workedMinutes, 0);
+      projectedRemainingMinutes = shortfallMinutes;
     } else {
-      workedMinutes = Math.min(Math.max(SHIFT_END_MINUTES - checkInMinutes, 0), FULL_SHIFT_MINUTES);
+      const fallbackCheckInMinutes = Number.isFinite(checkInMinutes) ? checkInMinutes : SHIFT_END_MINUTES;
+      workedMinutes = Math.min(Math.max(SHIFT_END_MINUTES - fallbackCheckInMinutes, 0), FULL_SHIFT_MINUTES);
       overtimeMinutes = 0;
       shortfallMinutes = Math.max(FULL_SHIFT_MINUTES - workedMinutes, 0);
       projectedRemainingMinutes = 0;
@@ -369,7 +351,7 @@ export function buildAttendanceRowMetrics(row) {
     projectedRemainingMinutes,
     isPresent,
     isLateArrival,
-    isOnTimeArrival: isPresent && !isLateArrival,
+    isOnTimeArrival: isPresent && row.attendance_status !== 'late',
     isCompleteShift: Boolean(row.check_in_time && row.check_out_time),
     isOpenShift,
     isPastDue,
@@ -385,6 +367,9 @@ export function attendanceOutcome(metrics) {
       return metrics.shortfallMinutes > 0
         ? t('outcomes.incompleteShort', { duration: formatDuration(metrics.shortfallMinutes) })
         : t('outcomes.incompleteReview');
+    }
+    if (metrics.overtimeMinutes > 0) {
+      return t('outcomes.overtimePlus', { duration: formatDuration(metrics.overtimeMinutes) });
     }
     return metrics.projectedRemainingMinutes > 0
       ? t('outcomes.openShiftRemaining', { duration: formatDuration(metrics.projectedRemainingMinutes) })
