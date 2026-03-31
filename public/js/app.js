@@ -81,6 +81,8 @@ const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const INPUT_DEBOUNCE_MS = 220;
 const SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8 hours
 const SESSION_WARNING_MS = 5 * 60 * 1000; // 5 minutes before timeout
+const SESSION_ACTIVITY_STORAGE_KEY = 'evara:session:last_activity';
+const SESSION_ACTIVITY_THROTTLE_MS = 15 * 1000;
 const QUERY_CACHE_TTL_MS = {
   employees: EMPLOYEE_CACHE_TTL_MS,
   employeeDirectory: 20 * 1000,
@@ -201,19 +203,67 @@ let realtimeChannels = [];
 let employeeSearchDebounceId = null;
 const queryCache = new Map();
 let prefetchTimerId = null;
+let lastActivityWriteAt = 0;
 
 boot();
 
 function updateSessionActivity() {
-  state.sessionLastActivity = Date.now();
+  const now = Date.now();
+  state.sessionLastActivity = now;
   state.sessionWarningShown = false;
+
+  if ((now - lastActivityWriteAt) < SESSION_ACTIVITY_THROTTLE_MS) {
+    return;
+  }
+
+  lastActivityWriteAt = now;
+  try {
+    window.localStorage.setItem(SESSION_ACTIVITY_STORAGE_KEY, String(now));
+  } catch (_error) {
+    // Ignore storage failures (e.g. privacy mode) and keep in-memory tracking.
+  }
+}
+
+function syncSessionActivityFromStorage() {
+  try {
+    const stored = Number(window.localStorage.getItem(SESSION_ACTIVITY_STORAGE_KEY));
+    if (Number.isFinite(stored) && stored > state.sessionLastActivity) {
+      state.sessionLastActivity = stored;
+      state.sessionWarningShown = false;
+    }
+  } catch (_error) {
+    // Ignore storage read failures and continue with in-memory tracking.
+  }
+}
+
+function clearSessionActivityStorage() {
+  try {
+    window.localStorage.removeItem(SESSION_ACTIVITY_STORAGE_KEY);
+  } catch (_error) {
+    // Ignore storage cleanup failures.
+  }
+}
+
+function updateSessionActivityThrottled() {
+  if ((Date.now() - state.sessionLastActivity) < SESSION_ACTIVITY_THROTTLE_MS) {
+    return;
+  }
+
+  updateSessionActivity();
 }
 
 function checkSessionTimeout() {
   if (!state.session) return;
 
+  syncSessionActivityFromStorage();
+
   const now = Date.now();
   const timeSinceActivity = now - state.sessionLastActivity;
+
+  if (timeSinceActivity < 0) {
+    updateSessionActivity();
+    return;
+  }
 
   if (timeSinceActivity >= SESSION_TIMEOUT_MS) {
     // Session expired
@@ -236,7 +286,26 @@ setInterval(checkSessionTimeout, 60 * 1000);
 // Update activity on user interactions
 document.addEventListener('click', updateSessionActivity);
 document.addEventListener('keydown', updateSessionActivity);
-document.addEventListener('scroll', updateSessionActivity);
+document.addEventListener('touchstart', updateSessionActivity, { passive: true });
+document.addEventListener('scroll', updateSessionActivityThrottled, { passive: true });
+document.addEventListener('mousemove', updateSessionActivityThrottled, { passive: true });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    syncSessionActivityFromStorage();
+    updateSessionActivity();
+  }
+});
+window.addEventListener('storage', (event) => {
+  if (event.key !== SESSION_ACTIVITY_STORAGE_KEY || !event.newValue) {
+    return;
+  }
+
+  const stored = Number(event.newValue);
+  if (Number.isFinite(stored) && stored > state.sessionLastActivity) {
+    state.sessionLastActivity = stored;
+    state.sessionWarningShown = false;
+  }
+});
 
 function todayIso() {
   return todayBusinessIso();
@@ -360,7 +429,10 @@ function resetSessionState() {
   clearRealtimeSubscriptions();
   state.session = null;
   state.profile = null;
+  state.sessionLastActivity = Date.now();
+  lastActivityWriteAt = 0;
   state.sessionWarningShown = false;
+  clearSessionActivityStorage();
   state.employees = [];
   state.employeesFetchedAt = 0;
   state.profileMap = new Map();
@@ -1438,6 +1510,7 @@ async function handleAuthenticatedSession(session) {
 
   state.session = session;
   state.profile = profile;
+  updateSessionActivity();
   state.profileMap.set(profile.id, profile);
   syncShell();
   showAppShell();
