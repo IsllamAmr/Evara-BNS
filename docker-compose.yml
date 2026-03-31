@@ -12,6 +12,11 @@
       INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
       INITIAL_ADMIN_FULL_NAME: ${INITIAL_ADMIN_FULL_NAME:-System Admin}
+      RATE_LIMIT_REDIS_ENABLED: ${RATE_LIMIT_REDIS_ENABLED:-false}
+      REDIS_URL: ${REDIS_URL:-}
+      RATE_LIMIT_REDIS_PREFIX: ${RATE_LIMIT_REDIS_PREFIX:-evara:rate-limit:}
+      RATE_LIMIT_IPV6_SUBNET: ${RATE_LIMIT_IPV6_SUBNET:-56}
+      REQUEST_LOG_FORMAT: ${REQUEST_LOG_FORMAT:-}
     ports:
       - "5000:5000"
     healthcheck:
@@ -35,3 +40,10 @@
         condition: service_healthy
     ports:
       - "8081:8081"
+
+  redis:
+    image: redis:7-alpine
+    container_name: evara_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"

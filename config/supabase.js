@@ -1,24 +1,38 @@
 ﻿const { createClient } = require('@supabase/supabase-js');
 
-const DEFAULT_SUPABASE_URL = 'https://qgvuustfnojlpqrtakof.supabase.co';
-const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_l4n8UA1-0zhQkpysgu6rkA_iH7-QQFD';
-
-function resolvePublicValue(value, fallback) {
-  return (value || '').trim() || fallback;
+function resolveConfigValue(value) {
+  return (value || '').trim();
 }
 
-const supabaseUrl = resolvePublicValue(process.env.SUPABASE_URL, DEFAULT_SUPABASE_URL);
-const supabaseAnonKey = resolvePublicValue(process.env.SUPABASE_ANON_KEY, DEFAULT_SUPABASE_ANON_KEY);
-const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+const supabaseUrl = resolveConfigValue(process.env.SUPABASE_URL);
+const supabaseAnonKey = resolveConfigValue(process.env.SUPABASE_ANON_KEY);
+const supabaseServiceRoleKey = resolveConfigValue(process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+function missingSupabaseEnvKeys({ requireServiceRole = true } = {}) {
+  const missing = [];
+
+  if (!supabaseUrl) {
+    missing.push('SUPABASE_URL');
+  }
+  if (!supabaseAnonKey) {
+    missing.push('SUPABASE_ANON_KEY');
+  }
+  if (requireServiceRole && !supabaseServiceRoleKey) {
+    missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  }
+
+  return missing;
+}
 
 function isSupabaseConfigured() {
-  return Boolean(supabaseUrl && supabaseAnonKey && supabaseServiceRoleKey);
+  return missingSupabaseEnvKeys().length === 0;
 }
 
 function assertSupabaseConfigured() {
-  if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
+  const missingKeys = missingSupabaseEnvKeys();
+  if (missingKeys.length) {
     throw new Error(
-      'Supabase is not fully configured. Set SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY.'
+      `Supabase is not fully configured. Missing environment variables: ${missingKeys.join(', ')}.`
     );
   }
 }
@@ -64,8 +78,8 @@ module.exports = {
   createScopedClient,
   getSupabaseAdmin,
   isSupabaseConfigured,
+  missingSupabaseEnvKeys,
   supabaseAnonKey,
   supabaseServiceRoleKey,
   supabaseUrl,
 };
-

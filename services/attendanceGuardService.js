@@ -1,6 +1,9 @@
 const { AppError } = require('../middlewares/errorMiddleware');
 
-const ACCESS_MODE = String(process.env.ATTENDANCE_ACCESS_MODE || 'off').trim().toLowerCase();
+const CONFIGURED_ACCESS_MODE = String(process.env.ATTENDANCE_ACCESS_MODE || 'off').trim().toLowerCase();
+// Attendance network/location fencing is intentionally disabled.
+// Check-in/check-out is allowed from any network regardless of ATTENDANCE_ACCESS_MODE.
+const ACCESS_MODE = 'off';
 const GEOFENCE_LAT = Number(process.env.ATTENDANCE_GEOFENCE_LAT || '');
 const GEOFENCE_LNG = Number(process.env.ATTENDANCE_GEOFENCE_LNG || '');
 const GEOFENCE_RADIUS_METERS = Number(process.env.ATTENDANCE_GEOFENCE_RADIUS_METERS || 0);
@@ -253,6 +256,7 @@ function isLocationAllowed(latitude, longitude) {
 function attendanceRestrictionSummary() {
   return {
     access_mode: ACCESS_MODE,
+    configured_access_mode: CONFIGURED_ACCESS_MODE,
     ip_restrictions_enabled: ALLOWED_IPS.length > 0 || ALLOWED_IP_PREFIXES.length > 0 || ALLOWED_CIDRS.length > 0,
     geofence_enabled: isGeoFenceConfigured(),
   };

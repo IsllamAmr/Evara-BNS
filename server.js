@@ -7,20 +7,30 @@ const morgan = require('morgan');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { bootstrapInitialAdmin } = require('./services/bootstrapService');
-const { isSupabaseConfigured, supabaseAnonKey, supabaseUrl } = require('./config/supabase');
+const {
+  isSupabaseConfigured,
+  missingSupabaseEnvKeys,
+  supabaseAnonKey,
+  supabaseUrl,
+} = require('./config/supabase');
 const adminRoutes = require('./routes/adminRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const accountRoutes = require('./routes/accountRoutes');
 const requestRoutes = require('./routes/requestRoutes');
 const { attendanceRestrictionSummary } = require('./services/attendanceGuardService');
 const { sanitizeRequest } = require('./middlewares/sanitizeMiddleware');
-const { apiLimiter } = require('./middlewares/rateLimiters');
+const { apiLimiter, rateLimitBackend } = require('./middlewares/rateLimiters');
 const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 const HOST = process.env.HOST || '0.0.0.0';
+const NODE_ENV = (process.env.NODE_ENV || 'development').trim().toLowerCase();
+const IS_PRODUCTION = NODE_ENV === 'production';
+const REQUEST_LOG_FORMAT = String(process.env.REQUEST_LOG_FORMAT || '').trim().toLowerCase();
+const USE_JSON_REQUEST_LOGS = REQUEST_LOG_FORMAT === 'json';
 const TRUST_PROXY_HOPS = Number(process.env.TRUST_PROXY_HOPS || 0);
 const publicDirectory = path.join(__dirname, 'public');
 const HTML_TEMPLATES = {
@@ -40,6 +50,121 @@ const PAGE_METADATA = {
 const SOCIAL_IMAGE_SOURCE = path.join(publicDirectory, 'assets', 'evara_bns_background_1773549442878.png');
 const SOCIAL_IMAGE_PATH = '/social-preview.png';
 const SOCIAL_IMAGE_ALT = 'EVARA BNS attendance dashboard preview';
+
+function resolveRequestIp(req) {
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (forwardedFor) {
+    return String(forwardedFor).split(',')[0].trim();
+  }
+
+  return req.ip || req.socket?.remoteAddress || null;
+}
+
+function attachRequestLogger(appInstance) {
+  if (USE_JSON_REQUEST_LOGS) {
+    appInstance.use((req, res, next) => {
+      const startedAtNs = process.hrtime.bigint();
+
+      res.on('finish', () => {
+        const elapsedNs = process.hrtime.bigint() - startedAtNs;
+        const durationMs = Number(elapsedNs) / 1e6;
+        const entry = {
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          event: 'http_request',
+          correlation_id: req.correlationId || null,
+          method: req.method,
+          path: req.originalUrl || req.url,
+          status: res.statusCode,
+          duration_ms: Number(durationMs.toFixed(2)),
+          ip: resolveRequestIp(req),
+          user_agent: req.headers['user-agent'] || null,
+        };
+
+        process.stdout.write(`${JSON.stringify(entry)}\n`);
+      });
+
+      next();
+    });
+
+    return;
+  }
+
+  morgan.token('correlation-id', (req) => req.correlationId || '-');
+  appInstance.use(morgan(IS_PRODUCTION
+    ? ':remote-addr :method :url :status :res[content-length] - :response-time ms cid=:correlation-id'
+    : 'dev'));
+}
+
+function parseCsv(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function toOrigin(value) {
+  try {
+    return new URL(String(value || '').trim()).origin;
+  } catch (_error) {
+    return '';
+  }
+}
+
+function resolveAllowedOrigins() {
+  const configuredOrigins = [
+    ...parseCsv(process.env.FRONTEND_URL),
+    (process.env.APP_URL || '').trim(),
+  ]
+    .map((value) => toOrigin(value))
+    .filter(Boolean);
+
+  if (!IS_PRODUCTION) {
+    configuredOrigins.push(
+      'http://localhost:5000',
+      'http://127.0.0.1:5000',
+      'http://localhost:8081',
+      'http://127.0.0.1:8081'
+    );
+  }
+
+  return new Set(configuredOrigins);
+}
+
+const ALLOWED_ORIGINS = resolveAllowedOrigins();
+
+function validateRuntimeConfig() {
+  const errors = [];
+  const frontEndRawOrigins = parseCsv(process.env.FRONTEND_URL);
+  const frontEndNormalizedOrigins = frontEndRawOrigins.map((value) => toOrigin(value)).filter(Boolean);
+
+  if (IS_PRODUCTION) {
+    const missingSupabase = missingSupabaseEnvKeys();
+    if (missingSupabase.length) {
+      errors.push(`Missing required Supabase environment variables: ${missingSupabase.join(', ')}`);
+    }
+
+    if (!frontEndRawOrigins.length) {
+      errors.push('FRONTEND_URL is required in production and must contain at least one allowed origin');
+    }
+    if (frontEndRawOrigins.length !== frontEndNormalizedOrigins.length) {
+      errors.push('FRONTEND_URL contains invalid URL values. Use absolute origins such as https://app.example.com');
+    }
+  } else {
+    const missingSupabase = missingSupabaseEnvKeys();
+    if (missingSupabase.length) {
+      console.warn(
+        `Warning: Supabase is not fully configured in development (${missingSupabase.join(', ')}).`
+      );
+    }
+  }
+
+  if (errors.length) {
+    throw new Error(`Runtime configuration validation failed:\n- ${errors.join('\n- ')}`);
+  }
+}
+
+validateRuntimeConfig();
 
 function getLanAddress() {
   const interfaces = os.networkInterfaces();
@@ -138,7 +263,17 @@ function buildContentSecurityPolicy() {
 
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',').map((item) => item.trim()) : true,
+    origin(origin, callback) {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (ALLOWED_ORIGINS.has(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
     credentials: true,
   })
 );
@@ -153,7 +288,7 @@ app.use(
 
 // Add correlation ID to all requests
 app.use((req, res, next) => {
-  req.correlationId = req.headers['x-correlation-id'] || require('crypto').randomUUID();
+  req.correlationId = req.headers['x-correlation-id'] || crypto.randomUUID();
   res.set('x-correlation-id', req.correlationId);
   next();
 });
@@ -161,7 +296,7 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '50kb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(sanitizeRequest);
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+attachRequestLogger(app);
 app.use('/api', apiLimiter);
 
 app.get('/env.js', (req, res) => {
@@ -205,6 +340,7 @@ app.get('/api/health', (req, res) => {
     message: 'EVARA BNS Supabase backend is running',
     supabase_configured: isSupabaseConfigured(),
     supabase_host: supabaseUrl || null,
+    rate_limit_backend: rateLimitBackend(),
     attendance_restrictions: attendanceRestrictionSummary(),
     timestamp: new Date().toISOString(),
   });

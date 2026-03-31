@@ -1,4 +1,5 @@
 ﻿import { getAppConfig, getSupabase, isSupabaseReady } from './supabaseClient.js';
+import { apiRequestWithFallback } from './apiClient.js';
 import {
   exportAttendanceCsv,
   exportEmployeeTimesheetCsv,
@@ -204,6 +205,9 @@ let employeeSearchDebounceId = null;
 const queryCache = new Map();
 let prefetchTimerId = null;
 let lastActivityWriteAt = 0;
+let attendanceActionInFlight = false;
+let routeRenderInFlight = false;
+let routeRenderQueued = false;
 
 boot();
 
@@ -268,14 +272,14 @@ function checkSessionTimeout() {
   if (timeSinceActivity >= SESSION_TIMEOUT_MS) {
     // Session expired
     handleLogout().catch(() => {});
-    showToast('Your session has expired. Please log in again.', 'warning');
+    showToast(t('session.expired'), 'warning');
     return;
   }
 
   if (!state.sessionWarningShown && timeSinceActivity >= (SESSION_TIMEOUT_MS - SESSION_WARNING_MS)) {
     // Show warning 5 minutes before expiry
     const remainingMinutes = Math.ceil((SESSION_TIMEOUT_MS - timeSinceActivity) / 60000);
-    showToast(`Your session will expire in ${remainingMinutes} minute(s).`, 'warning');
+    showToast(t('session.expiringSoon', { minutes: String(remainingMinutes) }), 'warning');
     state.sessionWarningShown = true;
   }
 }
@@ -522,48 +526,6 @@ async function getAccessToken() {
   return session?.access_token || '';
 }
 
-const LOCAL_API_BASE_URL = '/api';
-
-function normalizeApiBaseUrl(baseUrl) {
-  const normalized = String(baseUrl || '').trim();
-  if (!normalized) {
-    return LOCAL_API_BASE_URL;
-  }
-
-  return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
-}
-
-function isSupabaseDomain(urlValue) {
-  try {
-    const parsed = new URL(urlValue, window.location.origin);
-    return parsed.hostname.endsWith('.supabase.co');
-  } catch (_error) {
-    return false;
-  }
-}
-
-function isApplicationNotFoundError(message) {
-  return String(message || '').toLowerCase().includes('application not found');
-}
-
-function shouldRetryOnLocalApi(primaryBaseUrl, message) {
-  return primaryBaseUrl !== LOCAL_API_BASE_URL && isApplicationNotFoundError(message);
-}
-
-function formatApiErrorMessage(message, baseUrl) {
-  if (isApplicationNotFoundError(message) && isSupabaseDomain(baseUrl)) {
-    return t('errors.apiEndpointMisconfigured');
-  }
-
-  return message || t('common.requestFailed');
-}
-
-async function sendApiRequest(baseUrl, path, requestOptions) {
-  const response = await fetch(`${baseUrl}${path}`, requestOptions);
-  const payload = await response.json().catch(() => ({}));
-  return { response, payload };
-}
-
 async function apiRequest(path, options = {}) {
   const token = await getAccessToken();
   const headers = {
@@ -580,30 +542,16 @@ async function apiRequest(path, options = {}) {
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   };
-  const primaryBaseUrl = normalizeApiBaseUrl(config.apiBaseUrl);
-  const primaryResult = await sendApiRequest(primaryBaseUrl, path, requestOptions);
 
-  // Recover from misconfigured API base URLs that point to Supabase instead of this backend.
-  if (!primaryResult.response.ok && shouldRetryOnLocalApi(primaryBaseUrl, primaryResult.payload?.message)) {
-    const fallbackResult = await sendApiRequest(LOCAL_API_BASE_URL, path, requestOptions);
-    if (!fallbackResult.response.ok) {
-      throw new Error(
-        formatApiErrorMessage(
-          fallbackResult.payload?.message || primaryResult.payload?.message,
-          primaryBaseUrl
-        )
-      );
-    }
-
-    return fallbackResult.payload;
-  }
-
-  if (!primaryResult.response.ok) {
-    throw new Error(formatApiErrorMessage(primaryResult.payload?.message, primaryBaseUrl));
-  }
-
-  return primaryResult.payload;
+  return apiRequestWithFallback({
+    path,
+    baseUrl: config.apiBaseUrl,
+    requestOptions,
+    requestFailedMessage: t('common.requestFailed'),
+    apiEndpointMisconfiguredMessage: t('errors.apiEndpointMisconfigured'),
+  });
 }
+
 
 async function fetchMyProfile(userId) {
   const { data, error } = await supabase
@@ -1229,11 +1177,9 @@ function getCurrentPosition(options = {}) {
 }
 
 async function collectAttendanceContext() {
-  const { context, warning } = await getCurrentPosition();
-
   return {
-    context,
-    warning,
+    context: {},
+    warning: '',
   };
 }
 
@@ -1247,27 +1193,27 @@ function attendanceRestrictionMessage(summary) {
   }
 
   if (summary.access_mode === 'ip') {
-    return 'Attendance is limited to the approved company network.';
+    return t('attendanceRestrictions.ipOnly');
   }
 
   if (summary.access_mode === 'geo') {
-    return 'Attendance is limited to the approved company location boundary.';
+    return t('attendanceRestrictions.geoOnly');
   }
 
   if (summary.access_mode === 'either') {
     if (summary.ip_restrictions_enabled && summary.geofence_enabled) {
-      return 'Attendance requires either the approved company network or the approved company location.';
+      return t('attendanceRestrictions.eitherNetworkOrGeo');
     }
     if (summary.ip_restrictions_enabled) {
-      return 'Attendance requires the approved company network.';
+      return t('attendanceRestrictions.eitherIpOnlyConfigured');
     }
     if (summary.geofence_enabled) {
-      return 'Attendance requires the approved company location.';
+      return t('attendanceRestrictions.eitherGeoOnlyConfigured');
     }
   }
 
   if (summary.access_mode === 'both') {
-    return 'Attendance requires both the approved company network and the approved company location.';
+    return t('attendanceRestrictions.both');
   }
 
   return '';
@@ -1467,7 +1413,7 @@ async function boot() {
 
   if (!isSupabaseReady()) {
     elements.loginBtn.disabled = true;
-    setLoginError('Supabase configuration is missing. Set SUPABASE_URL and SUPABASE_ANON_KEY in your environment.');
+    setLoginError(t('errors.supabaseFrontendConfigMissing'));
     return;
   }
 
@@ -1563,7 +1509,6 @@ function navigate(page) {
   }
 
   if (window.location.hash.replace(/^#/, '') === page) {
-    renderRoute().catch((error) => showToast(error.message, 'error'));
     return;
   }
 
@@ -1575,34 +1520,48 @@ async function renderRoute() {
     return;
   }
 
-  const requestedPage = pageFromHash();
-  const page = allowedPages().includes(requestedPage) ? requestedPage : 'dashboard';
-  if (requestedPage !== page) {
-    window.location.hash = page;
+  if (routeRenderInFlight) {
+    routeRenderQueued = true;
     return;
   }
 
-  syncPageFrame(page);
-  elements.sidebar.classList.remove('open');
-  if (page === 'dashboard') {
-    await renderDashboardPage();
-  } else if (page === 'profile') {
-    await renderProfilePage();
-  } else if (page === 'employees') {
-    await renderEmployeesPage();
-  } else if (page === 'attendance') {
-    await renderAttendancePage();
-  } else if (page === 'history') {
-    await renderHistoryPage();
-  } else if (page === 'requests') {
-    await renderRequestsPage();
-  } else if (page === 'reports') {
-    await renderReportsPage();
-  } else if (page === 'qr') {
-    await renderQrPage();
-  }
+  routeRenderInFlight = true;
+  try {
+    do {
+      routeRenderQueued = false;
 
-  schedulePagePrefetch();
+      const requestedPage = pageFromHash();
+      const page = allowedPages().includes(requestedPage) ? requestedPage : 'dashboard';
+      if (requestedPage !== page) {
+        window.location.hash = page;
+        continue;
+      }
+
+      syncPageFrame(page);
+      elements.sidebar.classList.remove('open');
+      if (page === 'dashboard') {
+        await renderDashboardPage();
+      } else if (page === 'profile') {
+        await renderProfilePage();
+      } else if (page === 'employees') {
+        await renderEmployeesPage();
+      } else if (page === 'attendance') {
+        await renderAttendancePage();
+      } else if (page === 'history') {
+        await renderHistoryPage();
+      } else if (page === 'requests') {
+        await renderRequestsPage();
+      } else if (page === 'reports') {
+        await renderReportsPage();
+      } else if (page === 'qr') {
+        await renderQrPage();
+      }
+
+      schedulePagePrefetch();
+    } while (routeRenderQueued);
+  } finally {
+    routeRenderInFlight = false;
+  }
 }
 
 function buildSummaryCard(label, value, meta = '') {
@@ -1680,18 +1639,18 @@ function buildAttendanceRecordNote(row) {
   }
 
   if (row.attendance_status === 'absent' && !row.check_in_time) {
-    return 'Marked absent for this workday.';
+    return t('notes.recordMarkedAbsent');
   }
 
   const parts = [];
   if (row.check_in_time) {
-    parts.push(`Check in ${formatTime(row.check_in_time)}`);
+    parts.push(t('notes.recordCheckIn', { time: formatTime(row.check_in_time) }));
   }
   if (row.check_out_time) {
-    parts.push(`check out ${formatTime(row.check_out_time)}`);
+    parts.push(t('notes.recordCheckOut', { time: formatTime(row.check_out_time) }));
   }
 
-  return parts.length ? parts.join(', ') : 'Attendance row exists, but no check-in has been recorded yet.';
+  return parts.length ? parts.join(', ') : t('notes.recordExistsNoCheckIn');
 }
 
 function isEmployeeProfile(profile) {
@@ -3740,6 +3699,21 @@ async function renderAttendancePage() {
 }
 
 async function submitAttendanceAction(type) {
+  if (attendanceActionInFlight) {
+    return;
+  }
+
+  attendanceActionInFlight = true;
+  const checkInButton = document.getElementById('employeeCheckInBtn');
+  const checkOutButton = document.getElementById('employeeCheckOutBtn');
+
+  if (checkInButton) {
+    checkInButton.disabled = true;
+  }
+  if (checkOutButton) {
+    checkOutButton.disabled = true;
+  }
+
   try {
     const { context, warning } = await collectAttendanceContext();
     if (warning) {
@@ -3749,10 +3723,20 @@ async function submitAttendanceAction(type) {
     await apiRequest(`/attendance/${type}`, { method: 'POST', body: context });
     invalidateAttendanceCache();
     showToast(type === 'checkin' ? t('toasts.checkInSuccess') : t('toasts.checkOutSuccess'), 'success');
-    await renderAttendancePage();
-    await refreshTopbarMessage();
+    await Promise.all([
+      renderAttendancePage(),
+      refreshTopbarMessage().catch(() => {}),
+    ]);
   } catch (error) {
     showToast(error.message, 'error');
+  } finally {
+    attendanceActionInFlight = false;
+    if (checkInButton) {
+      checkInButton.disabled = false;
+    }
+    if (checkOutButton) {
+      checkOutButton.disabled = false;
+    }
   }
 }
 

@@ -1,4 +1,5 @@
 ﻿import { getAppConfig, getSupabase, isSupabaseReady } from './supabaseClient.js';
+import { apiRequestWithFallback } from './apiClient.js';
 import {
   applyDocumentLanguage,
   getLocale,
@@ -114,9 +115,9 @@ function getCurrentPosition() {
       (error) => {
         let warning = '';
         if (error?.code === error.PERMISSION_DENIED) {
-          warning = 'Location permission was denied. If attendance fencing is active, the request may be rejected.';
+          warning = t('checkin.locationDeniedWarning');
         } else if (error?.code === error.TIMEOUT) {
-          warning = 'Location lookup timed out. The server will decide whether the request can continue.';
+          warning = t('checkin.locationTimeoutWarning');
         }
 
         resolve({ context: {}, warning });
@@ -131,21 +132,22 @@ function getCurrentPosition() {
 }
 
 async function apiRequest(path, session, options = {}) {
-  const response = await fetch(`${config.apiBaseUrl}${path}`, {
+  const requestOptions = {
     method: options.method || 'GET',
     headers: {
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
       Authorization: `Bearer ${session.access_token}`,
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
+  };
+
+  return apiRequestWithFallback({
+    path,
+    baseUrl: config.apiBaseUrl,
+    requestOptions,
+    requestFailedMessage: t('common.requestFailed'),
+    apiEndpointMisconfiguredMessage: t('errors.apiEndpointMisconfigured'),
   });
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.message || t('common.requestFailed'));
-  }
-
-  return payload;
 }
 
 async function fetchProfile(userId) {
@@ -244,13 +246,9 @@ async function submitAttendance(session, type) {
   try {
     actionButton.disabled = true;
     actionButton.textContent = type === 'checkin' ? t('checkin.checkinLoading') : t('checkin.checkoutLoading');
-    const { context, warning } = await getCurrentPosition();
-    if (warning) {
-      setNotice(warning);
-    }
-
+    const context = {};
     await apiRequest(`/attendance/${type}`, session, { method: 'POST', body: context });
-    await renderState(session, await fetchProfile(session.user.id));
+    await renderState(session, currentProfile || await fetchProfile(session.user.id));
   } catch (error) {
     setError(error.message);
     actionButton.disabled = false;

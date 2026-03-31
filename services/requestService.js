@@ -247,83 +247,87 @@ function mapDuplicateLateDayError(error) {
   return error?.message || 'Unable to save request';
 }
 
-async function createRequest(payload, actorProfile) {
+function mapRequestMutationError(error, fallbackMessage = 'Unable to save request') {
+  const message = mapDuplicateLateDayError(error);
+  const normalized = String(message || '').toLowerCase();
+
+  if (normalized.includes('request not found')) {
+    return { message, statusCode: 404 };
+  }
+
+  if (
+    normalized.includes('limit')
+    || normalized.includes('required')
+    || normalized.includes('invalid')
+    || normalized.includes('cannot')
+    || normalized.includes('span multiple')
+    || normalized.includes('already exists')
+    || normalized.includes('employee')
+  ) {
+    return { message, statusCode: 422 };
+  }
+
+  return {
+    message: message || fallbackMessage,
+    statusCode: 400,
+  };
+}
+
+function shouldFallbackToLegacyRequestMutation(error, rpcName) {
+  const normalizedMessage = String(error?.message || '').toLowerCase();
+  const normalizedDetails = String(error?.details || '').toLowerCase();
+  const rpcLower = String(rpcName || '').toLowerCase();
+
+  const missingFunction = (
+    normalizedMessage.includes('could not find the function')
+    && (normalizedMessage.includes(rpcLower) || normalizedDetails.includes(rpcLower))
+  );
+
+  const permissionDenied = (
+    normalizedMessage.includes('permission denied')
+    && (normalizedMessage.includes(rpcLower) || normalizedDetails.includes(rpcLower))
+  );
+
+  return missingFunction || permissionDenied;
+}
+
+async function createRequestLegacy({
+  targetUserId,
+  requestType,
+  reason,
+  lateDate,
+  leaveStartDate,
+  leaveEndDate,
+}) {
   const supabaseAdmin = getSupabaseAdmin();
-  const requestType = normalizeText(payload.request_type);
-  ensureRequestType(requestType);
 
-  const targetUserId = resolveTargetUserId(actorProfile, payload.user_id);
-  const employee = await assertEmployeeProfile(targetUserId);
+  if (requestType === 'late_2_hours') {
+    const lateUsage = await countLateRequestsForMonth({ userId: targetUserId, lateDate });
+    if (lateUsage.count >= MONTHLY_LATE_2_HOURS_LIMIT) {
+      throw new AppError('Monthly limit reached: each employee can submit only 2 two-hour delay requests per month', 422);
+    }
+  }
 
-  let insertPayload = {
+  let leaveDays = null;
+  if (requestType === 'annual_leave') {
+    leaveDays = inclusiveDays(leaveStartDate, leaveEndDate);
+    const leaveYear = Number(leaveStartDate.slice(0, 4));
+    const leaveUsage = await sumAnnualLeaveDaysForYear({ userId: targetUserId, year: leaveYear });
+    if ((leaveUsage.usedDays + leaveDays) > ANNUAL_LEAVE_DAYS_LIMIT) {
+      throw new AppError('Annual leave limit exceeded: each employee can request up to 21 days per year', 422);
+    }
+  }
+
+  const insertPayload = {
     user_id: targetUserId,
     request_type: requestType,
     status: 'pending',
-    reason: normalizeOptionalText(payload.reason),
-    admin_note: null,
-    reviewed_by: null,
-    reviewed_at: null,
+    late_date: requestType === 'late_2_hours' ? lateDate : null,
+    leave_start_date: requestType === 'annual_leave' ? leaveStartDate : null,
+    leave_end_date: requestType === 'annual_leave' ? leaveEndDate : null,
+    leave_days: requestType === 'annual_leave' ? leaveDays : null,
+    reason,
   };
-
-  if (requestType === 'late_2_hours') {
-    const lateDate = parseDateOnly(payload.late_date, 'late_date', { required: true });
-    const { count } = await countLateRequestsForMonth({
-      userId: targetUserId,
-      lateDate,
-      statuses: QUOTA_ACTIVE_STATUSES,
-    });
-
-    if (count >= MONTHLY_LATE_2_HOURS_LIMIT) {
-      throw new AppError('Monthly limit reached: each employee can submit only 2 two-hour delay requests per month', 422);
-    }
-
-    insertPayload = {
-      ...insertPayload,
-      late_date: lateDate,
-      leave_start_date: null,
-      leave_end_date: null,
-      leave_days: null,
-    };
-  }
-
-  if (requestType === 'annual_leave') {
-    const leaveStartDate = parseDateOnly(payload.leave_start_date, 'leave_start_date', { required: true });
-    const leaveEndDate = parseDateOnly(payload.leave_end_date, 'leave_end_date', { required: true });
-
-    if (leaveEndDate < leaveStartDate) {
-      throw new AppError('leave_end_date must be on or after leave_start_date', 422);
-    }
-
-    const leaveStartYear = Number(leaveStartDate.slice(0, 4));
-    const leaveEndYear = Number(leaveEndDate.slice(0, 4));
-
-    if (leaveStartYear !== leaveEndYear) {
-      throw new AppError('Annual leave request cannot span multiple calendar years', 422);
-    }
-
-    const leaveDays = inclusiveDays(leaveStartDate, leaveEndDate);
-    if (leaveDays <= 0) {
-      throw new AppError('leave_days must be greater than zero', 422);
-    }
-
-    const { usedDays } = await sumAnnualLeaveDaysForYear({
-      userId: targetUserId,
-      year: leaveStartYear,
-      statuses: QUOTA_ACTIVE_STATUSES,
-    });
-
-    if (usedDays + leaveDays > ANNUAL_LEAVE_DAYS_LIMIT) {
-      throw new AppError('Annual leave limit exceeded: each employee can request up to 21 days per year', 422);
-    }
-
-    insertPayload = {
-      ...insertPayload,
-      late_date: null,
-      leave_start_date: leaveStartDate,
-      leave_end_date: leaveEndDate,
-      leave_days: leaveDays,
-    };
-  }
 
   const { data, error } = await supabaseAdmin
     .from('employee_requests')
@@ -332,14 +336,148 @@ async function createRequest(payload, actorProfile) {
     .single();
 
   if (error) {
-    throw new AppError(mapDuplicateLateDayError(error), 400);
+    const mapped = mapRequestMutationError(error, 'Unable to save request');
+    throw new AppError(mapped.message, mapped.statusCode);
+  }
+
+  return data;
+}
+
+async function updateRequestStatusLegacy({
+  requestId,
+  nextStatus,
+  adminNote,
+  reviewedBy,
+}) {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from('employee_requests')
+    .select('*')
+    .eq('id', requestId)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new AppError(existingError.message, 500);
+  }
+
+  if (!existing) {
+    throw new AppError('Request not found', 404);
+  }
+
+  if (nextStatus === 'approved' && existing.request_type === 'late_2_hours') {
+    const lateDate = formatDateOnlyUtc(existing.late_date);
+    const lateUsage = await countLateRequestsForMonth({
+      userId: existing.user_id,
+      lateDate,
+      excludeRequestId: requestId,
+    });
+
+    if (lateUsage.count >= MONTHLY_LATE_2_HOURS_LIMIT) {
+      throw new AppError('Cannot approve: monthly two-hour delay limit (2) has already been reached', 422);
+    }
+  }
+
+  if (nextStatus === 'approved' && existing.request_type === 'annual_leave') {
+    const leaveYear = Number(formatDateOnlyUtc(existing.leave_start_date).slice(0, 4));
+    const leaveUsage = await sumAnnualLeaveDaysForYear({
+      userId: existing.user_id,
+      year: leaveYear,
+      excludeRequestId: requestId,
+    });
+
+    if ((leaveUsage.usedDays + Number(existing.leave_days || 0)) > ANNUAL_LEAVE_DAYS_LIMIT) {
+      throw new AppError('Cannot approve: annual leave limit (21 days) would be exceeded', 422);
+    }
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('employee_requests')
+    .update({
+      status: nextStatus,
+      admin_note: adminNote,
+      reviewed_by: reviewedBy,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq('id', requestId)
+    .select('*')
+    .single();
+
+  if (error) {
+    const mapped = mapRequestMutationError(error, 'Unable to update request status');
+    throw new AppError(mapped.message, mapped.statusCode);
+  }
+
+  return data;
+}
+
+async function createRequest(payload, actorProfile) {
+  const supabaseAdmin = getSupabaseAdmin();
+  const requestType = normalizeText(payload.request_type);
+  ensureRequestType(requestType);
+
+  const targetUserId = resolveTargetUserId(actorProfile, payload.user_id);
+  const employee = await assertEmployeeProfile(targetUserId);
+  const reason = normalizeOptionalText(payload.reason);
+  let lateDate = null;
+  let leaveStartDate = null;
+  let leaveEndDate = null;
+
+  if (requestType === 'late_2_hours') {
+    lateDate = parseDateOnly(payload.late_date, 'late_date', { required: true });
+  }
+
+  if (requestType === 'annual_leave') {
+    leaveStartDate = parseDateOnly(payload.leave_start_date, 'leave_start_date', { required: true });
+    leaveEndDate = parseDateOnly(payload.leave_end_date, 'leave_end_date', { required: true });
+
+    if (leaveEndDate < leaveStartDate) {
+      throw new AppError('leave_end_date must be on or after leave_start_date', 422);
+    }
+
+    const leaveStartYear = Number(leaveStartDate.slice(0, 4));
+    const leaveEndYear = Number(leaveEndDate.slice(0, 4));
+    if (leaveStartYear !== leaveEndYear) {
+      throw new AppError('Annual leave request cannot span multiple calendar years', 422);
+    }
+
+    if (inclusiveDays(leaveStartDate, leaveEndDate) <= 0) {
+      throw new AppError('leave_days must be greater than zero', 422);
+    }
+  }
+
+  const { data, error } = await supabaseAdmin
+    .rpc('create_employee_request_atomic', {
+      p_target_user_id: targetUserId,
+      p_request_type: requestType,
+      p_reason: reason,
+      p_late_date: lateDate,
+      p_leave_start_date: leaveStartDate,
+      p_leave_end_date: leaveEndDate,
+    })
+    .single();
+
+  let requestRow = data;
+  if (error && shouldFallbackToLegacyRequestMutation(error, 'create_employee_request_atomic')) {
+    console.warn('create_employee_request_atomic RPC unavailable; using legacy non-atomic request creation path');
+    requestRow = await createRequestLegacy({
+      targetUserId,
+      requestType,
+      reason,
+      lateDate,
+      leaveStartDate,
+      leaveEndDate,
+    });
+  } else if (error) {
+    const mapped = mapRequestMutationError(error, 'Unable to save request');
+    throw new AppError(mapped.message, mapped.statusCode);
   }
 
   const allowance = await buildAllowanceSummaryForUser(targetUserId);
 
   return {
     employee,
-    request: data,
+    request: requestRow,
     allowance,
   };
 }
@@ -403,21 +541,6 @@ async function getAllowanceSummary(actorProfile, query = {}) {
   return buildAllowanceSummaryForUser(targetUserId, referenceDate);
 }
 
-async function findRequestById(requestId) {
-  const supabaseAdmin = getSupabaseAdmin();
-  const { data, error } = await supabaseAdmin
-    .from('employee_requests')
-    .select('*')
-    .eq('id', requestId)
-    .maybeSingle();
-
-  if (error) {
-    throw new AppError(error.message, 500);
-  }
-
-  return data;
-}
-
 async function updateRequestStatus(id, payload, actorProfile) {
   if (actorProfile?.role !== 'admin') {
     throw new AppError('Only admins can update request status', 403);
@@ -430,63 +553,33 @@ async function updateRequestStatus(id, payload, actorProfile) {
 
   ensureReviewableStatus(nextStatus);
 
-  const existing = await findRequestById(requestId);
-  if (!existing) {
-    throw new AppError('Request not found', 404);
-  }
-
-  if (nextStatus === 'approved') {
-    if (existing.request_type === 'late_2_hours') {
-      const { count } = await countLateRequestsForMonth({
-        userId: existing.user_id,
-        lateDate: existing.late_date,
-        excludeRequestId: existing.id,
-        statuses: QUOTA_ACTIVE_STATUSES,
-      });
-
-      if (count >= MONTHLY_LATE_2_HOURS_LIMIT) {
-        throw new AppError('Cannot approve: monthly two-hour delay limit (2) has already been reached', 422);
-      }
-    }
-
-    if (existing.request_type === 'annual_leave') {
-      const year = Number(String(existing.leave_start_date).slice(0, 4));
-      const { usedDays } = await sumAnnualLeaveDaysForYear({
-        userId: existing.user_id,
-        year,
-        excludeRequestId: existing.id,
-        statuses: QUOTA_ACTIVE_STATUSES,
-      });
-
-      const candidateDays = Number(existing.leave_days || 0);
-      if (usedDays + candidateDays > ANNUAL_LEAVE_DAYS_LIMIT) {
-        throw new AppError('Cannot approve: annual leave limit (21 days) would be exceeded', 422);
-      }
-    }
-  }
-
-  const updatePayload = {
-    status: nextStatus,
-    admin_note: adminNote,
-    reviewed_by: actorProfile.id,
-    reviewed_at: new Date().toISOString(),
-  };
-
   const { data, error } = await supabaseAdmin
-    .from('employee_requests')
-    .update(updatePayload)
-    .eq('id', requestId)
-    .select('*')
+    .rpc('update_employee_request_status_atomic', {
+      p_request_id: requestId,
+      p_next_status: nextStatus,
+      p_admin_note: adminNote,
+      p_reviewed_by: actorProfile.id,
+    })
     .single();
 
-  if (error) {
-    throw new AppError(error.message, 400);
+  let requestRow = data;
+  if (error && shouldFallbackToLegacyRequestMutation(error, 'update_employee_request_status_atomic')) {
+    console.warn('update_employee_request_status_atomic RPC unavailable; using legacy non-atomic status update path');
+    requestRow = await updateRequestStatusLegacy({
+      requestId,
+      nextStatus,
+      adminNote,
+      reviewedBy: actorProfile.id,
+    });
+  } else if (error) {
+    const mapped = mapRequestMutationError(error, 'Unable to update request status');
+    throw new AppError(mapped.message, mapped.statusCode);
   }
 
-  const allowance = await buildAllowanceSummaryForUser(existing.user_id);
+  const allowance = await buildAllowanceSummaryForUser(requestRow.user_id);
 
   return {
-    request: data,
+    request: requestRow,
     allowance,
   };
 }

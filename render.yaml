@@ -19,9 +19,9 @@ services:
       - key: APP_URL
         sync: false
       - key: SUPABASE_URL
-        value: https://qgvuustfnojlpqrtakof.supabase.co
+        sync: false
       - key: SUPABASE_ANON_KEY
-        value: sb_publishable_l4n8UA1-0zhQkpysgu6rkA_iH7-QQFD
+        sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: INITIAL_ADMIN_FULL_NAME
@@ -36,7 +36,17 @@ services:
         value: "200"
       - key: RATE_LIMIT_MAX_REQUESTS
         value: "200"
+      - key: RATE_LIMIT_REDIS_ENABLED
+        value: "false"
+      - key: REDIS_URL
+        sync: false
+      - key: RATE_LIMIT_REDIS_PREFIX
+        value: evara:rate-limit:
+      - key: RATE_LIMIT_IPV6_SUBNET
+        value: "56"
       - key: QR_TARGET_URL
         sync: false
       - key: TRUST_PROXY_HOPS
         value: "1"
+      - key: REQUEST_LOG_FORMAT
+        value: ""
