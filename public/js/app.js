@@ -82,7 +82,10 @@ const REQUEST_STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
 const EMPLOYEE_CACHE_TTL_MS = 30 * 1000; // Reduced from 60s to improve cache freshness
 const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const INPUT_DEBOUNCE_MS = 220;
-const SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8 hours
+// Employees stay signed in on their phones so the office QR works every morning
+// without a new sign-in. Admin sessions keep the stricter 8-hour inactivity limit.
+const ADMIN_SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8 hours
+const EMPLOYEE_SESSION_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SESSION_WARNING_MS = 5 * 60 * 1000; // 5 minutes before timeout
 const SESSION_ACTIVITY_STORAGE_KEY = 'evara:session:last_activity';
 const SESSION_ACTIVITY_THROTTLE_MS = 15 * 1000;
@@ -258,6 +261,10 @@ function updateSessionActivityThrottled() {
   updateSessionActivity();
 }
 
+function currentSessionTimeoutMs() {
+  return isAdmin() ? ADMIN_SESSION_TIMEOUT_MS : EMPLOYEE_SESSION_TIMEOUT_MS;
+}
+
 function checkSessionTimeout() {
   if (!state.session) return;
 
@@ -265,6 +272,7 @@ function checkSessionTimeout() {
 
   const now = Date.now();
   const timeSinceActivity = now - state.sessionLastActivity;
+  const SESSION_TIMEOUT_MS = currentSessionTimeoutMs();
 
   if (timeSinceActivity < 0) {
     updateSessionActivity();
@@ -487,13 +495,22 @@ function resetSessionState() {
   }
 }
 
+// When the office QR sends a signed-out employee here (/?next=checkin), explain
+// that one sign-in is enough and attendance continues right after it.
+function syncLoginHint() {
+  if (!elements.loginHint) {
+    return;
+  }
+  const fromQr = new URLSearchParams(window.location.search).get('next') === 'checkin';
+  elements.loginHint.textContent = fromQr ? t('login.qrSignInHint') : '';
+  elements.loginHint.classList.toggle('hidden', !fromQr);
+}
+
 function showLogin(message = '') {
   elements.app.classList.add('hidden');
   elements.loginScreen.classList.remove('hidden');
   setLoginError(message);
-  if (elements.loginHint) {
-    elements.loginHint.textContent = '';
-  }
+  syncLoginHint();
 }
 
 function showAppShell() {
@@ -1087,6 +1104,7 @@ async function boot() {
   startClock();
   onLanguageChange(async () => {
     syncPasswordToggleLabel();
+    syncLoginHint();
     syncShell();
     refreshTopbarMessage();
     if (!isSupabaseReady()) {

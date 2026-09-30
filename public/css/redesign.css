@@ -378,3 +378,26 @@ html[dir='rtl'] .sidebar-user .ghost-inline { text-align: center; }
 }
 .toggle-line input[type="checkbox"] { width: 1.1rem; height: 1.1rem; accent-color: #2453c8; }
 #allowedNetworks { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+/* Sign-in footer: brand line centred, author credit in the bottom corner. */
+.login-signature { margin-top: auto; padding-top: 1.75rem; display: flex; flex-direction: column; gap: .5rem; }
+.login-copyright { align-self: center; color: var(--muted); font-size: .8rem; letter-spacing: .04em; }
+.login-credit { align-self: flex-end; color: var(--muted); font-size: .72rem; opacity: .85; }
+
+/* Arriving from the office QR while signed out. */
+.login-card .login-hint { max-width: none; margin: 0 0 1.1rem; padding: .75rem .9rem; border-radius: 12px; background: #eef4ff; color: #244bc5; font-size: .86rem; font-weight: 600; line-height: 1.55; }
+
+@media (max-width: 780px) {
+  /* Fill the real visible height so no light strips appear above/below on phones. */
+  .login-screen { display: block; min-height: 100dvh; background: #193b66; }
+  .login-screen::before { display: none; }
+  .login-layout { min-height: 100dvh; }
+  /* Compact brand panel so the form stays visible when the keyboard opens. */
+  .quote-toggle { display: none; }
+  .login-story { padding-bottom: 2rem; }
+  .login-story-head { margin-bottom: .75rem; }
+  .login-story .brand-mark { width: 96px; height: 36px; }
+  .login-story .story-copy { display: none; }
+  .login-story h1.rotating-quote { font-size: clamp(1.35rem, 6vw, 1.75rem); }
+  .login-card { padding-top: 1.5rem; }
+}
