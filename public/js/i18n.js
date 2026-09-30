@@ -1509,6 +1509,10 @@ dictionaries.ar.timesheetExport = {
   done: 'تم تحميل شيت {{name}}.',
 };
 Object.assign(dictionaries.en.qrPage, { eyebrow: 'QR Attendance' });
+dictionaries.en.qrOnly.checkoutNotesNotice = 'To close your day, write what you did today, then confirm check-out.';
+dictionaries.ar.qrOnly.checkoutNotesNotice = 'لإغلاق يومك اكتب ما أنجزته اليوم ثم أكّد تسجيل الانصراف.';
+dictionaries.en.checkin.checkedInText = 'Your arrival was recorded at {{time}}. When you leave, scan the same office QR again to write your daily notes and check out.';
+dictionaries.ar.checkin.checkedInText = 'تم تسجيل حضورك في {{time}}. عند المغادرة امسح نفس كود المكتب مرة أخرى لكتابة ملاحظات اليوم وتسجيل الانصراف.';
 Object.assign(dictionaries.en.attendancePage, { employeeTitle: 'Attendance by QR' });
 Object.assign(dictionaries.ar.attendancePage, { employeeTitle: 'الحضور والانصراف عبر QR' });
 

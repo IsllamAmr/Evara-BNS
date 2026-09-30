@@ -44,11 +44,16 @@ function captureScannedQrToken() {
     // Storage can be blocked (private mode); the in-memory copy below still works for this page view.
   }
   scannedTokenMemory = { token, at: Date.now() };
+  openedFromScan = true;
   url.searchParams.delete('k');
   window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
 let scannedTokenMemory = null;
+// True when this page was opened by scanning the office QR just now. At the end of the
+// day that scan should go straight to the mandatory daily notes form.
+let openedFromScan = false;
+let checkoutAutoPrompted = false;
 
 function getScannedQrToken() {
   let entry = scannedTokenMemory;
@@ -294,11 +299,17 @@ async function renderState(session, profile) {
       configureScanRequired('checkout');
       return;
     }
+    setNotice(t('qrOnly.checkoutNotesNotice'));
     configureActionButton({
       disabled: false,
       label: t('checkin.checkOutNow'),
       onClick: () => submitAttendance(session, 'checkout'),
     });
+    if (openedFromScan && !checkoutAutoPrompted) {
+      // Scanning the QR at the end of the day opens the notes form right away.
+      checkoutAutoPrompted = true;
+      window.setTimeout(() => submitAttendance(session, 'checkout'), 250);
+    }
     return;
   }
 

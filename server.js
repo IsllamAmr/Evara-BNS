@@ -343,7 +343,16 @@ app.get(SOCIAL_IMAGE_PATH, (req, res) => {
   res.sendFile(SOCIAL_IMAGE_SOURCE);
 });
 
-app.use(express.static(publicDirectory, { index: false }));
+// Revalidate scripts and styles on every load (cheap with ETags) so phones never
+// keep running an old copy of the attendance page after a deploy.
+app.use(express.static(publicDirectory, {
+  index: false,
+  setHeaders(res, filePath) {
+    if (/\.(js|css|html)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 
 app.get('/api/health', (req, res) => {
   res.json({
