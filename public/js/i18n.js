@@ -1509,6 +1509,10 @@ dictionaries.ar.timesheetExport = {
   done: 'تم تحميل شيت {{name}}.',
 };
 Object.assign(dictionaries.en.qrPage, { eyebrow: 'QR Attendance' });
+dictionaries.en.timesheetExport.columnTitle = 'Timesheet';
+dictionaries.en.timesheetExport.manualDevice = 'Manual entry';
+dictionaries.ar.timesheetExport.manualDevice = 'إدخال يدوي';
+dictionaries.ar.timesheetExport.columnTitle = 'شيت الساعات';
 dictionaries.en.login.qrSignInHint = 'Sign in once on this phone. Your attendance page opens right after, and you stay signed in for the next scans.';
 dictionaries.ar.login.qrSignInHint = 'سجّل دخولك مرة واحدة على هذا الموبايل، وبعدها تفتح صفحة الحضور مباشرةً وتظل مسجّلًا في المرات القادمة.';
 dictionaries.en.qrOnly.checkoutNotesNotice = 'To close your day, write what you did today, then confirm check-out.';

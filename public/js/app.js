@@ -962,6 +962,25 @@ async function ensureProfileDirectory(records = []) {
   });
 }
 
+// "Mozilla/5.0 (Linux; Android 10; K) ... Chrome/.. | via:qr" -> "Android · Chrome · QR"
+function shortDeviceLabel(deviceInfo) {
+  const value = String(deviceInfo || '');
+  if (/manual entry/i.test(value)) return t('timesheetExport.manualDevice');
+  const os = /iPhone|iPad|iOS/i.test(value) ? 'iPhone'
+    : /Android/i.test(value) ? 'Android'
+      : /Windows/i.test(value) ? 'Windows'
+        : /Mac OS X|Macintosh/i.test(value) ? 'Mac'
+          : /Linux/i.test(value) ? 'Linux' : '';
+  const browser = /Edg\//i.test(value) ? 'Edge'
+    : /SamsungBrowser/i.test(value) ? 'Samsung'
+      : /Firefox|FxiOS/i.test(value) ? 'Firefox'
+        : /Chrome|CriOS/i.test(value) ? 'Chrome'
+          : /Safari/i.test(value) ? 'Safari' : '';
+  const parts = [os, browser].filter(Boolean);
+  if (/via:qr/i.test(value)) parts.push('QR');
+  return parts.length ? parts.join(' · ') : value.slice(0, 40);
+}
+
 function employeeById(id) {
   return state.profileMap.get(id) || state.employees.find((item) => item.id === id) || null;
 }
@@ -3392,23 +3411,24 @@ async function renderAttendancePage() {
             <div class="table-shell">
               <table>
                 <thead>
-                  <tr><th>${escapeHtml(t('common.employee'))}</th><th>${escapeHtml(t('common.department'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('common.device'))}</th><th>${escapeHtml(t('timesheet.notes'))}</th></tr>
+                  <tr><th>${escapeHtml(t('common.employee'))}</th><th>${escapeHtml(t('timesheetExport.columnTitle'))}</th><th>${escapeHtml(t('common.department'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('common.device'))}</th><th>${escapeHtml(t('timesheet.notes'))}</th></tr>
                 </thead>
-                <tbody>
+                <tbody id="attendanceRosterBody">
                   ${todayRoster.length ? todayRoster.map((entry) => {
                     const profile = entry.profile || employeeById(entry.user_id);
                     return `
                       <tr>
                         <td>${buildUserCell(profile)}</td>
+                        <td>${profile?.id ? `<button type="button" class="btn btn-secondary" data-excel-id="${escapeHtml(profile.id)}">${escapeHtml(t('timesheetExport.rowAction'))}</button>` : ''}</td>
                         <td>${escapeHtml(departmentLabel(profile?.department))}</td>
                         <td>${escapeHtml(formatTime(entry.check_in_time))}</td>
                         <td>${escapeHtml(formatTime(entry.check_out_time))}</td>
                         <td>${attendanceStateBadgeMarkup(entry.displayState)}</td>
-                        <td>${escapeHtml(entry.device_info ? entry.device_info.slice(0, 72) : entry.displayState.note || '-')}</td>
+                        <td title="${escapeHtml(entry.device_info || '')}">${escapeHtml(entry.device_info ? shortDeviceLabel(entry.device_info) : entry.displayState.note || '-')}</td>
                         <td class="work-notes-cell">${escapeHtml(entry.work_notes || '—')}</td>
                       </tr>
                     `;
-                  }).join('') : `<tr><td colspan="7"><div class="empty-state">${escapeHtml(t('notes.noEmployeeAttendanceToday'))}</div></td></tr>`}
+                  }).join('') : `<tr><td colspan="8"><div class="empty-state">${escapeHtml(t('notes.noEmployeeAttendanceToday'))}</div></td></tr>`}
                 </tbody>
               </table>
             </div>
@@ -3427,6 +3447,13 @@ async function renderAttendancePage() {
       container.querySelector('#exportAttendanceBtn')?.addEventListener('click', () => {
         exportAttendanceCsv(todayRoster, { resolveProfile: employeeById, fallbackProfile: state.profile });
         showToast(t('toasts.attendanceExported'), 'success');
+      });
+      container.querySelector('#attendanceRosterBody')?.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-excel-id]');
+        const employee = button ? employeeById(button.dataset.excelId) : null;
+        if (employee) {
+          openTimesheetExportModal(employee);
+        }
       });
       return;
     }
