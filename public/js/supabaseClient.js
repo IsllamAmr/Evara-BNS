@@ -40,11 +40,13 @@ const runtimeConfig = {
   APP_URL: resolveConfigValue(injectedConfig.APP_URL, PUBLIC_RUNTIME_DEFAULTS.APP_URL || window.location.origin),
 };
 
+// Recovery links use a temporary session and must not replace a saved work session.
+const isRecoveryPage = /^\/password-reset(?:\.html)?$/.test(window.location.pathname);
 const client = window.supabase && runtimeConfig.SUPABASE_URL && runtimeConfig.SUPABASE_ANON_KEY
   ? window.supabase.createClient(runtimeConfig.SUPABASE_URL, runtimeConfig.SUPABASE_ANON_KEY, {
       auth: {
-        persistSession: true,
-        autoRefreshToken: true,
+        persistSession: !isRecoveryPage,
+        autoRefreshToken: !isRecoveryPage,
         detectSessionInUrl: true,
       },
     })

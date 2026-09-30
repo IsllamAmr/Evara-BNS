@@ -36,8 +36,13 @@ const publicDirectory = path.join(__dirname, 'public');
 const HTML_TEMPLATES = {
   index: fs.readFileSync(path.join(publicDirectory, 'index.html'), 'utf8'),
   checkin: fs.readFileSync(path.join(publicDirectory, 'checkin.html'), 'utf8'),
+  passwordReset: fs.readFileSync(path.join(publicDirectory, 'password-reset.html'), 'utf8'),
 };
 const PAGE_METADATA = {
+  passwordReset: {
+    title: 'EVARA BNS | Password Recovery',
+    description: 'Recover access to your EVARA BNS work account.',
+  },
   index: {
     title: 'EVARA BNS | Attendance System',
     description: 'Track attendance, employee operations, and daily work status from one secure EVARA BNS dashboard.',
@@ -275,6 +280,7 @@ app.use(
       return callback(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true,
+    exposedHeaders: ['Content-Disposition', 'X-Timesheet-Sheets'],
   })
 );
 app.disable('x-powered-by');
@@ -326,6 +332,11 @@ app.get('/checkin', (req, res) => {
 
 app.get('/checkin.html', (req, res) => {
   sendRenderedHtml(res, 'checkin', req);
+});
+
+app.get(['/password-reset', '/password-reset.html'], (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  sendRenderedHtml(res, 'passwordReset', req);
 });
 
 app.get(SOCIAL_IMAGE_PATH, (req, res) => {

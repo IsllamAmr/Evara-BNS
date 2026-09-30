@@ -7,12 +7,13 @@ import {
   statusLabel,
   todayIso as todayBusinessIso,
 } from './shared.js';
-import { attendanceOutcome, formatDuration, FULL_SHIFT_MINUTES } from './reporting.js';
+import { formatDuration } from './reporting.js';
+import { buildTimesheetRows, timesheetValues, hoursValue } from './timesheet.js';
 
 function csvValue(value) {
   const str = String(value ?? '');
   // Prevent CSV formula injection by prefixing dangerous values with '
-  if (/^[=+@-]/.test(str)) {
+  if (/^\s*[=+@-]/.test(str)) {
     return `"'${str.replace(/"/g, '""')}"`;
   }
   return `"${str.replace(/"/g, '""')}"`;
@@ -59,7 +60,7 @@ export function exportEmployeesCsv(list) {
 export function exportAttendanceCsv(records, { resolveProfile, fallbackProfile } = {}) {
   downloadCsvFile(
     `attendance-${todayIso()}.csv`,
-    ['Employee', 'Email', 'Date', 'Check In', 'Check Out', 'Status', 'IP Address', 'Device Info'],
+    ['Employee', 'Email', 'Date', 'Check In', 'Check Out', 'Status', 'IP Address', 'Device Info', 'Place', 'Training Hours', 'Daily Work Notes'],
     records.map((row) => {
       const profile = resolveProfile?.(row.user_id) || fallbackProfile || null;
       return [
@@ -71,6 +72,9 @@ export function exportAttendanceCsv(records, { resolveProfile, fallbackProfile }
         statusLabel(row.attendance_status),
         row.ip_address || '',
         row.device_info || '',
+        row.work_place || '',
+        hoursValue(row.training_minutes),
+        row.work_notes || '',
       ];
     })
   );
@@ -118,38 +122,14 @@ export function exportEmployeeTimesheetCsv(employeeReport, filters) {
     return;
   }
 
-  const employeeToken = (employeeReport.employee.full_name || 'employee')
+  const employeeToken = (employeeReport.employee.employee_code || employeeReport.employee.full_name || 'employee')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
     .replace(/^-+|-+$/g, '') || 'employee';
 
-  downloadCsvFile(
-    `timesheet-${employeeToken}-${monthToken(filters)}.csv`,
-    [
-      'Name',
-      'Department',
-      'Date',
-      'Attendance Status',
-      'Check In',
-      'Check Out',
-      'Total Hours',
-      'Expected Hours',
-      'Overtime',
-      'Shortfall',
-      'Shift Result',
-    ],
-    employeeReport.detailedRows.map((entry) => [
-      employeeReport.employee.full_name,
-      employeeReport.employee.department || departmentLabel(employeeReport.employee.department),
-      formatDate(entry.row.attendance_date),
-      entry.metrics.isPresent ? statusLabel(entry.row.attendance_status) : 'No Check-in',
-      formatTime(entry.row.check_in_time),
-      formatTime(entry.row.check_out_time),
-      formatDuration(entry.metrics.workedMinutes),
-      formatDuration(FULL_SHIFT_MINUTES),
-      formatDuration(entry.metrics.overtimeMinutes),
-      formatDuration(entry.metrics.shortfallMinutes),
-      attendanceOutcome(entry.metrics),
-    ])
-  );
+  const entries = buildTimesheetRows(employeeReport.detailedRows.map((entry) => entry.row), filters?.month || currentBusinessMonthInput());
+  const rows = entries.map(timesheetValues);
+  rows.push(['Total hours', '', '', '', hoursValue(entries.reduce((sum, entry) => sum + (entry.trainingMinutes || 0), 0)), hoursValue(entries.reduce((sum, entry) => sum + (entry.workMinutes || 0), 0)), '', '']);
+  downloadCsvFile(`timesheet-${employeeToken}-${monthToken(filters)}.csv`,
+    ['Day', 'Date', 'From', 'To', 'Training', 'Work', 'Place', 'Notes'], rows);
 }

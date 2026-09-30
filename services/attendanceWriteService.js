@@ -1,4 +1,5 @@
-﻿const { AppError } = require('../middlewares/errorMiddleware');
+const { AppError } = require('../middlewares/errorMiddleware');
+const { getSupabaseAdmin } = require('../config/supabase');
 
 function mapRpcError(error, fallbackMessage) {
   if (!error) {
@@ -14,8 +15,11 @@ function mapRpcError(error, fallbackMessage) {
   return new AppError(error.message || fallbackMessage, statusCode);
 }
 
-async function checkIn(userScopedSupabase, payload) {
-  const { data, error } = await userScopedSupabase.rpc('check_in', payload).single();
+async function checkIn(userId, payload) {
+  const { data, error } = await getSupabaseAdmin().rpc('check_in_server', {
+    p_user_id: userId,
+    ...payload,
+  }).single();
 
   if (error) {
     throw mapRpcError(error, 'Unable to complete check-in');
@@ -24,8 +28,11 @@ async function checkIn(userScopedSupabase, payload) {
   return data;
 }
 
-async function checkOut(userScopedSupabase, payload) {
-  const { data, error } = await userScopedSupabase.rpc('check_out', payload).single();
+async function checkOut(userId, payload) {
+  const { data, error } = await getSupabaseAdmin().rpc('check_out_server', {
+    p_user_id: userId,
+    ...payload,
+  }).single();
 
   if (error) {
     throw mapRpcError(error, 'Unable to complete check-out');

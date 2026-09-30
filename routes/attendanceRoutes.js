@@ -8,14 +8,19 @@ const { attendanceActionLimiter, adminWriteLimiter } = require('../middlewares/r
 
 const router = express.Router();
 
+// Attendance is recorded only from the office QR page, which sends the QR secret.
 const attendanceContextValidators = [
-  body('latitude').optional({ nullable: true }).isFloat({ min: -90, max: 90 }).withMessage('latitude must be a valid latitude'),
-  body('longitude').optional({ nullable: true }).isFloat({ min: -180, max: 180 }).withMessage('longitude must be a valid longitude'),
-  body('accuracy').optional({ nullable: true }).isFloat({ min: 0 }).withMessage('accuracy must be a valid positive number'),
+  body('qr_token').isString().withMessage('Scan the office QR code to record attendance').bail()
+    .isLength({ min: 16, max: 128 }).withMessage('Scan the office QR code to record attendance'),
 ];
 
 router.post('/checkin', attendanceActionLimiter, protect, attendanceContextValidators, handleValidation, checkIn);
-router.post('/checkout', attendanceActionLimiter, protect, attendanceContextValidators, handleValidation, checkOut);
+router.post('/checkout', attendanceActionLimiter, protect, [
+  ...attendanceContextValidators,
+  body('work_notes').isString().withMessage('Daily work notes are required').bail().trim().isLength({ min: 1, max: 4000 }).withMessage('Daily work notes must contain 1 to 4000 characters'),
+  body('work_place').optional({ nullable: true }).isString().bail().trim().isLength({ max: 120 }).withMessage('Workplace must be at most 120 characters'),
+  body('training_minutes').optional({ nullable: true }).isInt({ min: 0, max: 1440 }).withMessage('Training minutes must be between 0 and 1440').toInt(),
+], handleValidation, checkOut);
 router.post(
   '/manual',
   adminWriteLimiter,

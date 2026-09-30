@@ -53,6 +53,16 @@ export function formatApiErrorMessage({
   return message || requestFailedMessage || 'Request failed';
 }
 
+// Keep the server's machine-readable error code (details.code) so pages can show
+// a translated message instead of the raw English text.
+function apiError(message, payload, status) {
+  const error = new Error(message);
+  error.code = payload?.details?.code || null;
+  error.details = payload?.details || null;
+  error.status = status || null;
+  return error;
+}
+
 function buildAbortSignal(timeoutMs, externalSignal) {
   if (typeof AbortController === 'undefined') {
     return { signal: externalSignal, cleanup: () => {} };
@@ -124,14 +134,16 @@ export async function apiRequestWithFallback({
       try {
         const fallbackResult = await sendApiRequest(localApiBaseUrl, path, requestOptions, fetchImpl, timeoutMs);
         if (!fallbackResult.response.ok) {
-          throw new Error(
+          throw apiError(
             formatApiErrorMessage({
               message: fallbackResult.payload?.message,
               baseUrl: localApiBaseUrl,
               requestFailedMessage,
               apiEndpointMisconfiguredMessage,
               origin,
-            })
+            }),
+            fallbackResult.payload,
+            fallbackResult.response.status
           );
         }
         return fallbackResult.payload;
@@ -152,14 +164,16 @@ export async function apiRequestWithFallback({
   if (!primaryResult.response.ok && shouldRetryOnLocalApi(primaryBaseUrl, primaryResult.payload?.message, localApiBaseUrl)) {
     const fallbackResult = await sendApiRequest(localApiBaseUrl, path, requestOptions, fetchImpl, timeoutMs);
     if (!fallbackResult.response.ok) {
-      throw new Error(
+      throw apiError(
         formatApiErrorMessage({
           message: fallbackResult.payload?.message || primaryResult.payload?.message,
           baseUrl: primaryBaseUrl,
           requestFailedMessage,
           apiEndpointMisconfiguredMessage,
           origin,
-        })
+        }),
+        fallbackResult.payload,
+        fallbackResult.response.status
       );
     }
 
@@ -167,14 +181,16 @@ export async function apiRequestWithFallback({
   }
 
   if (!primaryResult.response.ok) {
-    throw new Error(
+    throw apiError(
       formatApiErrorMessage({
         message: primaryResult.payload?.message,
         baseUrl: primaryBaseUrl,
         requestFailedMessage,
         apiEndpointMisconfiguredMessage,
         origin,
-      })
+      }),
+      primaryResult.payload,
+      primaryResult.response.status
     );
   }
 

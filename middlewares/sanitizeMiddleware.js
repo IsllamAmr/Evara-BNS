@@ -25,6 +25,10 @@ function sanitizeValue(value, key = '') {
       return value.replace(/\0/g, '');
     }
 
+    // Daily summaries are plain text. Preserve line breaks and characters such as
+    // '<' in technical notes; every HTML rendering escapes this field.
+    if (key === 'work_notes') return value.replace(/\0/g, '').trim();
+
     return sanitizeMarkup(value);
   }
 

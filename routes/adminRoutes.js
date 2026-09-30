@@ -7,6 +7,8 @@ const {
   toggleEmployeeStatus,
   updateEmployee,
 } = require('../controllers/adminController');
+const { getSettings, rotateQr, updateSettings } = require('../controllers/attendanceSettingsController');
+const { exportTimesheet, getExportSummary } = require('../controllers/timesheetExportController');
 const { protect } = require('../middlewares/authMiddleware');
 const { requireAdmin } = require('../middlewares/roleMiddleware');
 const { adminWriteLimiter, employeeCreationLimiter } = require('../middlewares/rateLimiters');
@@ -110,6 +112,39 @@ router.patch(
   [param('id').isUUID().withMessage('id must be a valid UUID')],
   handleValidation,
   toggleEmployeeStatus
+);
+
+router.get('/attendance-settings', getSettings);
+
+router.put(
+  '/attendance-settings',
+  [
+    body('require_office_network').optional().isBoolean().withMessage('require_office_network must be true or false').toBoolean(),
+    body('allowed_networks').optional().isArray({ max: 50 }).withMessage('allowed_networks must be a list of at most 50 rules'),
+    body('allowed_networks.*').optional().isString().isLength({ max: 64 }).withMessage('Each network rule must be text up to 64 characters'),
+  ],
+  handleValidation,
+  updateSettings
+);
+
+router.post('/attendance-settings/rotate-qr', rotateQr);
+
+router.get(
+  '/employees/:id/timesheet-export',
+  [param('id').isUUID().withMessage('id must be a valid UUID')],
+  handleValidation,
+  getExportSummary
+);
+
+router.post(
+  '/employees/:id/timesheet-export',
+  [
+    param('id').isUUID().withMessage('id must be a valid UUID'),
+    body('from').isISO8601({ strict: true, strictSeparator: true }).withMessage('from must be a valid date (YYYY-MM-DD)'),
+    body('to').isISO8601({ strict: true, strictSeparator: true }).withMessage('to must be a valid date (YYYY-MM-DD)'),
+  ],
+  handleValidation,
+  exportTimesheet
 );
 
 module.exports = router;

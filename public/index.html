@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>%PAGE_TITLE%</title>
   <meta name="description" content="%PAGE_DESCRIPTION%" />
-  <meta name="theme-color" content="#1e2329" />
+  <meta name="theme-color" content="#f4f7fb" />
   <link rel="canonical" href="%PAGE_URL%" />
   <meta property="og:site_name" content="EVARA BNS" />
   <meta property="og:type" content="website" />
@@ -25,6 +25,7 @@
   <link rel="shortcut icon" type="image/png" href="assets/image.png" />
   <link rel="apple-touch-icon" href="assets/image.png" />
   <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/redesign.css" />
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -34,14 +35,24 @@
           <div class="brand-mark">
             <img src="assets/image.png" alt="EVARA BNS logo" class="brand-logo" />
           </div>
-          <button type="button" class="language-toggle login-language-toggle" data-language-toggle>العربية</button>
+          <div class="login-story-actions">
+            <button type="button" class="quote-toggle" data-quote-toggle aria-label="Pause sayings" title="Pause sayings">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path class="quote-pause-icon" d="M7 5h3v14H7zm7 0h3v14h-3z"/><path class="quote-play-icon" d="m8 5 11 7-11 7z"/></svg>
+            </button>
+            <button type="button" class="language-toggle login-language-toggle" data-language-toggle>العربية</button>
+          </div>
         </div>
-        <h1>
-          <span class="hero-line" data-i18n="login.heroLine1">Good morning!</span>
-          <span class="hero-line" data-i18n="login.heroLine2">A new day is here</span>
-          <span class="hero-line" data-i18n="login.heroLine3">make the most of it</span>
-          <span class="hero-line" data-i18n="login.heroLine4">and keep smiling.</span>
+        <p class="login-kicker" data-i18n="login.kicker">The people workspace</p>
+        <h1 class="rotating-quote" data-rotating-quote aria-live="off">
+          <span class="quote-line">Small steps,</span>
+          <span class="quote-line">lasting progress.</span>
         </h1>
+        <p class="story-copy" data-i18n="login.storyCopy">Attendance, requests and team insights, all together in a workspace built for your day.</p>
+        <div class="story-grid" data-i18n-aria-label="login.featuresLabel" aria-label="Workspace features">
+          <div class="story-card"><span class="story-number">01</span><strong data-i18n="login.featureAttendance">Attendance</strong></div>
+          <div class="story-card"><span class="story-number">02</span><strong data-i18n="login.featureRequests">Requests</strong></div>
+          <div class="story-card"><span class="story-number">03</span><strong data-i18n="login.featureInsights">Insights</strong></div>
+        </div>
       </div>
 
       <div class="login-card">
@@ -50,20 +61,26 @@
             <img src="assets/image.png" alt="EVARA BNS logo" class="brand-logo" />
           </div>
         </div>
+        <p class="login-form-kicker" data-i18n="login.welcomeBack">Welcome back</p>
+        <h2 data-i18n="login.signInTitle">Sign in to EVARA</h2>
+        <p class="login-form-copy" data-i18n="login.signInCopy">Use your work account to continue.</p>
         <p id="loginHint" class="login-hint hidden"></p>
         <form id="loginForm" class="stack-form">
           <div class="form-group">
             <label for="loginEmail" data-i18n="login.emailLabel">Email Address</label>
-            <input id="loginEmail" type="email" autocomplete="email" placeholder="name@company.com" data-i18n-placeholder="login.emailPlaceholder" required />
+            <input id="loginEmail" name="email" type="email" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" dir="ltr" placeholder="name@company.com" data-i18n-placeholder="login.emailPlaceholder" required />
           </div>
           <div class="form-group">
             <label for="loginPassword" data-i18n="login.passwordLabel">Password</label>
-            <div class="input-with-action">
-              <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Enter your password" data-i18n-placeholder="login.passwordPlaceholder" required />
-              <button id="togglePasswordBtn" type="button" class="ghost-inline" data-i18n="login.showPassword">Show</button>
+            <div class="input-with-action login-password-field">
+              <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Enter your password" data-i18n-placeholder="login.passwordPlaceholder" required />
+              <button id="togglePasswordBtn" type="button" class="password-visibility" aria-controls="loginPassword" aria-pressed="false" aria-label="Show password">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="m4 4 16 16"/></svg>
+              </button>
             </div>
           </div>
-          <div id="loginError" class="form-alert error hidden"></div>
+          <a class="login-recovery-link" href="/password-reset" data-i18n="login.forgotPassword">Forgot your password?</a>
+          <div id="loginError" class="form-alert error hidden" role="status" aria-live="polite"></div>
           <button id="loginBtn" type="submit" class="btn btn-primary btn-block" data-i18n="login.signIn">Sign In</button>
         </form>
         <span class="login-footer login-contact">
@@ -74,13 +91,16 @@
   </section>
 
   <div id="app" class="app-shell hidden">
+    <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-branding">
         <div class="brand-mark small">
           <img src="assets/image.png" alt="EVARA BNS logo" class="brand-logo" />
         </div>
+        <span class="sidebar-brand-text">WORKSPACE</span>
       </div>
 
+      <p class="sidebar-section-label" data-i18n="nav.workspace">WORKSPACE</p>
       <nav id="sidebarNav" class="sidebar-nav">
         <button type="button" class="nav-item active" data-page="dashboard" data-i18n="nav.dashboard">Dashboard</button>
         <button type="button" class="nav-item" data-page="profile" data-i18n="nav.profile">Profile</button>
@@ -105,10 +125,10 @@
     <main class="app-main">
       <header class="topbar">
         <div class="topbar-start">
-          <button id="menuToggle" type="button" class="ghost-inline mobile-only" data-i18n="common.menu">Menu</button>
+          <button id="menuToggle" type="button" class="ghost-inline mobile-only" data-i18n="common.menu" aria-controls="sidebar" aria-expanded="false">Menu</button>
           <div class="topbar-copy">
-            <strong id="topbarHeadline">Start your day with focus and calm confidence.</strong>
-            <span id="topbarSubline">Small consistent steps create strong results.</span>
+            <strong id="topbarHeadline">Dashboard</strong>
+            <span id="topbarSubline">Attendance, requests and team insights in one place.</span>
           </div>
         </div>
         <div class="topbar-meta">

@@ -1,37 +1,9 @@
+const crypto = require('crypto');
 const { AppError } = require('../middlewares/errorMiddleware');
+const { getAttendanceSettings } = require('./attendanceSettingsService');
 
-const CONFIGURED_ACCESS_MODE = String(process.env.ATTENDANCE_ACCESS_MODE || 'off').trim().toLowerCase();
-// Attendance network/location fencing is intentionally disabled.
-// Check-in/check-out is allowed from any network regardless of ATTENDANCE_ACCESS_MODE.
-const ACCESS_MODE = 'off';
-const GEOFENCE_LAT = Number(process.env.ATTENDANCE_GEOFENCE_LAT || '');
-const GEOFENCE_LNG = Number(process.env.ATTENDANCE_GEOFENCE_LNG || '');
-const GEOFENCE_RADIUS_METERS = Number(process.env.ATTENDANCE_GEOFENCE_RADIUS_METERS || 0);
-
-function parseCsvEnv(value) {
-  return String(value || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function normalizePrefix(prefixValue) {
-  const trimmed = String(prefixValue || '').trim().replace(/\*+$/, '');
-  if (!trimmed) {
-    return '';
-  }
-
-  return trimmed.endsWith('.') ? trimmed : `${trimmed}.`;
-}
-
-function isCidrToken(value) {
-  return String(value || '').includes('/');
-}
-
-function isPrefixToken(value) {
-  const token = String(value || '').trim();
-  return token.endsWith('.') || token.endsWith('*');
-}
+// Attendance is QR-only: every check-in/check-out must carry the secret from the
+// printed office QR, and (when enabled) come from an approved office network.
 
 function stripIpFormatting(ipAddress) {
   const raw = String(ipAddress || '').trim().replace(/^['"]|['"]$/g, '');
@@ -59,8 +31,7 @@ function normalizeIp(ipAddress) {
     return '';
   }
 
-  const firstIp = String(ipAddress).split(',')[0];
-  const stripped = stripIpFormatting(firstIp);
+  const stripped = stripIpFormatting(String(ipAddress).split(',')[0]);
   if (!stripped) {
     return '';
   }
@@ -72,95 +43,10 @@ function normalizeIp(ipAddress) {
   return stripped.replace(/^::ffff:/i, '').trim().toLowerCase();
 }
 
-function buildAllowedIpRules() {
-  const rawIps = parseCsvEnv(process.env.ATTENDANCE_ALLOWED_IPS);
-  const configuredPrefixes = parseCsvEnv(process.env.ATTENDANCE_ALLOWED_IP_PREFIXES)
-    .map((item) => normalizePrefix(item))
-    .filter(Boolean);
-  const configuredCidrs = parseCsvEnv(process.env.ATTENDANCE_ALLOWED_CIDRS);
-
-  const exactIps = [];
-  const inlinePrefixes = [];
-  const inlineCidrs = [];
-
-  for (const token of rawIps) {
-    if (isCidrToken(token)) {
-      inlineCidrs.push(token);
-      continue;
-    }
-
-    if (isPrefixToken(token)) {
-      inlinePrefixes.push(normalizePrefix(token));
-      continue;
-    }
-
-    exactIps.push(normalizeIp(token));
-  }
-
-  return {
-    allowedIps: Array.from(new Set(exactIps.filter(Boolean))),
-    allowedPrefixes: Array.from(new Set([...configuredPrefixes, ...inlinePrefixes].filter(Boolean))),
-    allowedCidrs: Array.from(new Set([...configuredCidrs, ...inlineCidrs].filter(Boolean))),
-  };
-}
-
-const {
-  allowedIps: ALLOWED_IPS,
-  allowedPrefixes: ALLOWED_IP_PREFIXES,
-  allowedCidrs: ALLOWED_CIDRS,
-} = buildAllowedIpRules();
-
-function listIps(value) {
-  const values = Array.isArray(value) ? value : [value];
-  return values
-    .flatMap((item) => String(item || '').split(','))
-    .map((item) => normalizeIp(item))
-    .filter(Boolean);
-}
-
-function isPrivateOrLoopbackIp(ipAddress) {
-  const normalized = normalizeIp(ipAddress);
-  if (!normalized) {
-    return false;
-  }
-
-  const octets = normalized.split('.').map((part) => Number(part));
-  if (octets.length === 4 && octets.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)) {
-    return octets[0] === 10
-      || octets[0] === 127
-      || (octets[0] === 169 && octets[1] === 254)
-      || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
-      || (octets[0] === 192 && octets[1] === 168);
-  }
-
-  return normalized === '::1'
-    || normalized.startsWith('fc')
-    || normalized.startsWith('fd')
-    || normalized.startsWith('fe80:');
-}
-
-function extractClientIpCandidates(req) {
-  const directIps = listIps([
-    req.ip,
-    req.connection?.remoteAddress,
-    req.socket?.remoteAddress,
-  ]);
-  const forwardedIps = listIps([
-    req.ips,
-    req.headers['cf-connecting-ip'],
-    req.headers['true-client-ip'],
-    req.headers['x-real-ip'],
-    req.headers['x-forwarded-for'],
-  ]);
-
-  const trustProxy = req.app?.get('trust proxy');
-  const directPrimary = directIps[0] || '';
-  const shouldUseForwardedIps = Boolean(trustProxy) || !directPrimary || isPrivateOrLoopbackIp(directPrimary);
-  const orderedCandidates = shouldUseForwardedIps
-    ? [...forwardedIps, ...directIps]
-    : [...directIps];
-
-  return Array.from(new Set(orderedCandidates.filter(Boolean)));
+// req.ip honours TRUST_PROXY_HOPS, so a client cannot spoof it with its own
+// X-Forwarded-For / CF-Connecting-IP headers as long as the hop count is correct.
+function resolveClientIp(req) {
+  return normalizeIp(req.ip || req.socket?.remoteAddress || '');
 }
 
 function ipv4ToInt(ipAddress) {
@@ -183,195 +69,88 @@ function matchesCidr(ipAddress, cidr) {
   }
 
   const mask = maskSize === 0 ? 0 : (~0 << (32 - maskSize)) >>> 0;
-  return (ipInt & mask) === (baseInt & mask);
+  return ((ipInt & mask) >>> 0) === ((baseInt & mask) >>> 0);
 }
 
-function isSingleIpAllowed(ipAddress) {
-  const normalizedIp = normalizeIp(ipAddress);
-  if (!normalizedIp) {
+function matchesNetworkRule(ipAddress, rule) {
+  const ip = normalizeIp(ipAddress);
+  const normalizedRule = String(rule || '').trim().toLowerCase();
+  if (!ip || !normalizedRule) {
     return false;
   }
 
-  if (ALLOWED_IPS.includes(normalizedIp)) {
-    return true;
+  if (normalizedRule.includes('/')) {
+    return matchesCidr(ip, normalizedRule);
   }
 
-  if (ALLOWED_IP_PREFIXES.some((prefix) => normalizedIp.startsWith(prefix))) {
-    return true;
+  if (normalizedRule.endsWith('*') || normalizedRule.endsWith('.')) {
+    const prefix = `${normalizedRule.replace(/\*+$/, '').replace(/\.+$/, '')}.`;
+    return ip.startsWith(prefix);
   }
 
-  if (ALLOWED_CIDRS.some((cidr) => matchesCidr(normalizedIp, cidr))) {
-    return true;
-  }
-
-  return false;
+  return ip === normalizeIp(normalizedRule);
 }
 
-function isIpAllowed(ipAddressOrCandidates) {
-  const candidates = Array.isArray(ipAddressOrCandidates)
-    ? ipAddressOrCandidates
-    : [ipAddressOrCandidates];
-
-  return candidates.some((candidate) => isSingleIpAllowed(candidate));
+function isIpAllowed(ipAddress, rules = []) {
+  return rules.some((rule) => matchesNetworkRule(ipAddress, rule));
 }
 
-function toRadians(value) {
-  return (value * Math.PI) / 180;
-}
-
-function distanceInMeters(latA, lngA, latB, lngB) {
-  const earthRadius = 6371000;
-  const latDistance = toRadians(latB - latA);
-  const lngDistance = toRadians(lngB - lngA);
-  const a = Math.sin(latDistance / 2) ** 2
-    + Math.cos(toRadians(latA)) * Math.cos(toRadians(latB)) * Math.sin(lngDistance / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return earthRadius * c;
-}
-
-function isGeoFenceConfigured() {
-  return Number.isFinite(GEOFENCE_LAT)
-    && Number.isFinite(GEOFENCE_LNG)
-    && Number.isFinite(GEOFENCE_RADIUS_METERS)
-    && GEOFENCE_RADIUS_METERS > 0;
-}
-
-function isLocationAllowed(latitude, longitude) {
-  if (!isGeoFenceConfigured()) {
+function tokensMatch(provided, expected) {
+  const a = Buffer.from(String(provided || ''), 'utf8');
+  const b = Buffer.from(String(expected || ''), 'utf8');
+  if (!a.length || a.length !== b.length) {
     return false;
   }
+  return crypto.timingSafeEqual(a, b);
+}
 
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    return false;
+function allNetworkRules(settings) {
+  return Array.from(new Set([...(settings.allowedNetworks || []), ...(settings.environmentNetworks || [])]));
+}
+
+async function validateAttendanceAccess(req) {
+  const settings = await getAttendanceSettings();
+  const ipAddress = resolveClientIp(req);
+
+  if (!tokensMatch(req.body?.qr_token, settings.qrToken)) {
+    throw new AppError('Scan the office QR code to record attendance.', 403, { code: 'qr_required' });
   }
 
-  // Validate coordinate ranges to prevent edge case calculations
-  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-    return false;
+  if (settings.requireOfficeNetwork) {
+    const rules = allNetworkRules(settings);
+    if (!rules.length) {
+      throw new AppError('The office network has not been configured yet. Ask your administrator.', 403, {
+        code: 'office_network_not_configured',
+      });
+    }
+
+    if (!isIpAllowed(ipAddress, rules)) {
+      throw new AppError(`Connect to the office Wi-Fi to record attendance (detected IP: ${ipAddress || 'unknown'}).`, 403, {
+        code: 'office_network_required',
+        detected_ip: ipAddress || 'unknown',
+      });
+    }
   }
 
-  return distanceInMeters(latitude, longitude, GEOFENCE_LAT, GEOFENCE_LNG) <= GEOFENCE_RADIUS_METERS;
+  return { ipAddress };
 }
 
 function attendanceRestrictionSummary() {
-  return {
-    access_mode: ACCESS_MODE,
-    configured_access_mode: CONFIGURED_ACCESS_MODE,
-    ip_restrictions_enabled: ALLOWED_IPS.length > 0 || ALLOWED_IP_PREFIXES.length > 0 || ALLOWED_CIDRS.length > 0,
-    geofence_enabled: isGeoFenceConfigured(),
-  };
-}
-
-function hasIpRestrictionsConfigured() {
-  return ALLOWED_IPS.length > 0 || ALLOWED_IP_PREFIXES.length > 0 || ALLOWED_CIDRS.length > 0;
-}
-
-function buildIpDeniedError(baseMessage, candidateIps) {
-  const primaryIp = Array.isArray(candidateIps) && candidateIps.length ? candidateIps[0] : '';
-  const printableIp = primaryIp || 'unknown';
-  const suffix = ` (detected IP: ${printableIp})`;
-
-  return new AppError(`${baseMessage}${suffix}`, 403, {
-    detected_ip: printableIp,
-    ip_candidates: Array.isArray(candidateIps) ? candidateIps : [],
-  });
-}
-
-function validateAttendanceAccess({ ipAddress, ipCandidates, latitude, longitude }) {
-  const candidateIps = Array.isArray(ipCandidates) && ipCandidates.length ? ipCandidates : [ipAddress];
-  const ipAllowed = isIpAllowed(candidateIps);
-  const geoAllowed = isLocationAllowed(latitude, longitude);
-  const hasGeoAttempt = Number.isFinite(latitude) && Number.isFinite(longitude);
-
-  if (ACCESS_MODE === 'off' || !ACCESS_MODE) {
-    return attendanceRestrictionSummary();
-  }
-
-  if (ACCESS_MODE === 'ip') {
-    if (!hasIpRestrictionsConfigured()) {
-      throw new AppError('Attendance IP restriction mode is enabled, but no allowed IP rules are configured on the server', 500);
-    }
-    if (!ipAllowed) {
-      throw buildIpDeniedError('Attendance is only allowed from the approved company network', candidateIps);
-    }
-    return attendanceRestrictionSummary();
-  }
-
-  if (ACCESS_MODE === 'geo') {
-    if (!isGeoFenceConfigured()) {
-      throw new AppError('Attendance geofence is not configured on the server', 500);
-    }
-    if (!hasGeoAttempt) {
-      throw new AppError('Location permission is required to record attendance', 403);
-    }
-    if (!geoAllowed) {
-      throw new AppError('You are outside the approved attendance location boundary', 403);
-    }
-    return attendanceRestrictionSummary();
-  }
-
-  if (ACCESS_MODE === 'either') {
-    if (!hasIpRestrictionsConfigured() && !isGeoFenceConfigured()) {
-      throw new AppError('Attendance access mode "either" is enabled, but neither IP nor geofence rules are configured on the server', 500);
-    }
-    if (!ipAllowed && !geoAllowed) {
-      throw new AppError('Attendance requires either the approved company network or the approved location boundary', 403);
-    }
-    return attendanceRestrictionSummary();
-  }
-
-  if (ACCESS_MODE === 'both') {
-    if (!hasIpRestrictionsConfigured()) {
-      throw new AppError('Attendance access mode "both" is enabled, but no allowed IP rules are configured on the server', 500);
-    }
-    if (!ipAllowed) {
-      throw buildIpDeniedError('Attendance requires the approved company network', candidateIps);
-    }
-    if (!isGeoFenceConfigured()) {
-      throw new AppError('Attendance geofence is not configured on the server', 500);
-    }
-    if (!hasGeoAttempt) {
-      throw new AppError('Location permission is required to record attendance', 403);
-    }
-    if (!geoAllowed) {
-      throw new AppError('You are outside the approved attendance location boundary', 403);
-    }
-    return attendanceRestrictionSummary();
-  }
-
-  throw new AppError(`Unsupported attendance access mode: ${ACCESS_MODE}`, 500);
+  return { mode: 'qr' };
 }
 
 function buildDeviceInfo(req) {
   const agent = req.headers['user-agent'] || 'unknown-device';
-  const latitude = Number(req.body?.latitude);
-  const longitude = Number(req.body?.longitude);
-  const accuracy = Number(req.body?.accuracy);
-  const parts = [agent];
-
-  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-    const geoSummary = `geo:${latitude.toFixed(6)},${longitude.toFixed(6)}${Number.isFinite(accuracy) ? ` +/-${Math.round(accuracy)}m` : ''}`;
-    parts.push(geoSummary);
-  }
-
-  return parts.join(' | ');
-}
-
-function extractAttendanceContext(req) {
-  const ipCandidates = extractClientIpCandidates(req);
-
-  return {
-    ipAddress: ipCandidates[0] || '',
-    ipCandidates,
-    latitude: Number(req.body?.latitude),
-    longitude: Number(req.body?.longitude),
-    accuracy: Number(req.body?.accuracy),
-  };
+  return `${String(agent).slice(0, 400)} | via:qr`;
 }
 
 module.exports = {
   attendanceRestrictionSummary,
   buildDeviceInfo,
-  extractAttendanceContext,
+  isIpAllowed,
+  matchesNetworkRule,
+  normalizeIp,
+  resolveClientIp,
+  tokensMatch,
   validateAttendanceAccess,
 };

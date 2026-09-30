@@ -1,6 +1,7 @@
 const QRCode = require('qrcode');
+const { getAttendanceSettings } = require('./attendanceSettingsService');
 
-function getTargetUrl(req) {
+function getCheckinBaseUrl(req) {
   const configured = (process.env.QR_TARGET_URL || '').trim();
   if (configured) {
     return configured;
@@ -17,11 +18,19 @@ function getTargetUrl(req) {
   return 'http://localhost:5000/checkin';
 }
 
-async function generateAttendanceQr(req) {
-  const targetUrl = getTargetUrl(req);
+function buildCheckinUrl(baseUrl, token) {
+  const url = new URL(baseUrl);
+  url.searchParams.set('k', token);
+  return url.toString();
+}
+
+async function generateAttendanceQr(req, settingsOverride = null) {
+  const settings = settingsOverride || await getAttendanceSettings();
+  const targetUrl = buildCheckinUrl(getCheckinBaseUrl(req), settings.qrToken);
   const dataUrl = await QRCode.toDataURL(targetUrl, {
-    margin: 1,
-    width: 320,
+    margin: 2,
+    width: 640,
+    errorCorrectionLevel: 'M',
     color: {
       dark: '#111827',
       light: '#FFFFFFFF',
@@ -32,9 +41,11 @@ async function generateAttendanceQr(req) {
     targetUrl,
     dataUrl,
     generatedAt: new Date().toISOString(),
+    tokenUpdatedAt: settings.updatedAt,
   };
 }
 
 module.exports = {
+  buildCheckinUrl,
   generateAttendanceQr,
 };

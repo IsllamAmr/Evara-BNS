@@ -1,12 +1,13 @@
 ﻿import { getAppConfig, getSupabase, isSupabaseReady } from './supabaseClient.js';
 import { apiRequestWithFallback } from './apiClient.js';
+import { requestCheckoutDetails, clearCheckoutDraft } from './checkoutForm.js';
 import {
   applyDocumentLanguage,
   getLocale,
   t,
   toggleLanguage,
 } from './i18n.js';
-import { formatDate, formatTime, statusLabel, todayIso as todayBusinessIso } from './shared.js';
+import { formatDate, formatTime, statusLabel, todayIso as todayBusinessIso, offsetDate } from './shared.js';
 
 const config = getAppConfig();
 const supabase = isSupabaseReady() ? getSupabase() : null;
@@ -25,6 +26,73 @@ const todayLabel = document.getElementById('checkinToday');
 const clockLabel = document.getElementById('checkinClock');
 let currentSession = null;
 let currentProfile = null;
+let attendanceActionInFlight = false;
+
+// Attendance is QR-only. The office QR opens /checkin?k=<secret>. The secret is kept
+// in this tab for a short time (so it survives the sign-in redirect) and is cleared
+// after each successful action, so check-out needs a fresh scan at the office.
+const QR_SCAN_STORAGE_KEY = 'evara:qr-scan';
+const QR_SCAN_TTL_MS = 15 * 60 * 1000;
+
+function captureScannedQrToken() {
+  const url = new URL(window.location.href);
+  const token = url.searchParams.get('k');
+  if (!token) return;
+  try {
+    window.sessionStorage.setItem(QR_SCAN_STORAGE_KEY, JSON.stringify({ token, at: Date.now() }));
+  } catch (_error) {
+    // Storage can be blocked (private mode); the in-memory copy below still works for this page view.
+  }
+  scannedTokenMemory = { token, at: Date.now() };
+  url.searchParams.delete('k');
+  window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+let scannedTokenMemory = null;
+
+function getScannedQrToken() {
+  let entry = scannedTokenMemory;
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(QR_SCAN_STORAGE_KEY) || 'null');
+    if (stored?.token) entry = stored;
+  } catch (_error) {
+    // ignore unreadable storage
+  }
+  if (!entry?.token || (Date.now() - Number(entry.at || 0)) > QR_SCAN_TTL_MS) {
+    return '';
+  }
+  return entry.token;
+}
+
+function clearScannedQrToken() {
+  scannedTokenMemory = null;
+  try {
+    window.sessionStorage.removeItem(QR_SCAN_STORAGE_KEY);
+  } catch (_error) {
+    // ignore
+  }
+}
+
+function attendanceErrorMessage(error) {
+  const known = {
+    qr_required: 'qrOnly.errors.qrRequired',
+    office_network_required: 'qrOnly.errors.officeNetworkRequired',
+    office_network_not_configured: 'qrOnly.errors.officeNetworkNotConfigured',
+  };
+  if (error?.code && known[error.code]) {
+    return t(known[error.code], { ip: error.details?.detected_ip || '—' });
+  }
+  return error?.message || t('common.requestFailed');
+}
+
+function configureScanRequired(pendingAction) {
+  setNotice('');
+  statusText.textContent = t('qrOnly.scanNotice');
+  configureActionButton({
+    disabled: true,
+    label: pendingAction === 'checkout' ? t('qrOnly.scanToCheckOut') : t('qrOnly.scanToCheckIn'),
+  });
+}
 
 boot();
 
@@ -167,16 +235,20 @@ async function fetchProfile(userId) {
 async function fetchTodayAttendance(userId) {
   const { data, error } = await supabase
     .from('attendance')
-    .select('attendance_date, check_in_time, check_out_time, attendance_status')
+    .select('attendance_date, check_in_time, check_out_time, attendance_status, work_notes')
     .eq('user_id', userId)
-    .eq('attendance_date', todayIso())
-    .limit(1);
+    .gte('attendance_date', offsetDate(-1))
+    .lte('attendance_date', todayIso())
+    .order('attendance_date', { ascending: false })
+    .limit(5);
 
   if (error) {
     throw new Error(error.message || t('checkin.unableAttendance'));
   }
 
-  return data?.[0] || null;
+  const openShift = data?.find((row) => row.check_in_time && !row.check_out_time
+    && (Date.now() - new Date(row.check_in_time).getTime()) <= 24 * 60 * 60 * 1000);
+  return openShift || data?.find((row) => row.attendance_date === todayIso()) || null;
 }
 
 async function renderState(session, profile) {
@@ -196,6 +268,10 @@ async function renderState(session, profile) {
     statusTitle.textContent = t('checkin.readyTitle');
     statusText.textContent = t('checkin.readyText');
     renderStatusMeta([]);
+    if (!getScannedQrToken()) {
+      configureScanRequired('checkin');
+      return;
+    }
     configureActionButton({
       disabled: false,
       label: t('checkin.checkInNow'),
@@ -214,6 +290,10 @@ async function renderState(session, profile) {
       { label: t('checkin.checkInTimeLabel'), value: formatTime(todayRecord.check_in_time) },
       { label: t('checkin.statusSummaryLabel'), value: statusLabel(todayRecord.attendance_status) },
     ]);
+    if (!getScannedQrToken()) {
+      configureScanRequired('checkout');
+      return;
+    }
     configureActionButton({
       disabled: false,
       label: t('checkin.checkOutNow'),
@@ -231,6 +311,7 @@ async function renderState(session, profile) {
     { label: t('checkin.checkInTimeLabel'), value: formatTime(todayRecord.check_in_time) },
     { label: t('checkin.checkOutTimeLabel'), value: formatTime(todayRecord.check_out_time) },
   ]);
+  setNotice(todayRecord.work_notes || '');
   configureActionButton({
     disabled: false,
     label: t('common.openDashboard'),
@@ -243,20 +324,39 @@ async function renderState(session, profile) {
 }
 
 async function submitAttendance(session, type) {
+  if (attendanceActionInFlight) return;
+  attendanceActionInFlight = true;
   try {
     actionButton.disabled = true;
     actionButton.textContent = type === 'checkin' ? t('checkin.checkinLoading') : t('checkin.checkoutLoading');
-    const context = {};
-    await apiRequest(`/attendance/${type}`, session, { method: 'POST', body: context });
+    const qrToken = getScannedQrToken();
+    if (!qrToken) {
+      configureScanRequired(type);
+      return;
+    }
+    setError();
+    const context = type === 'checkout' ? await requestCheckoutDetails({ draftKey: session.user.id }) : {};
+    if (context === null) {
+      actionButton.disabled = false;
+      actionButton.textContent = t('checkin.checkOutNow');
+      return;
+    }
+    await apiRequest(`/attendance/${type}`, session, { method: 'POST', body: { ...context, qr_token: qrToken } });
+    if (type === 'checkout') clearCheckoutDraft(session.user.id);
+    clearScannedQrToken();
     await renderState(session, currentProfile || await fetchProfile(session.user.id));
   } catch (error) {
-    setError(error.message);
+    if (error?.code === 'qr_required') clearScannedQrToken();
+    setError(attendanceErrorMessage(error));
     actionButton.disabled = false;
     actionButton.textContent = type === 'checkin' ? t('checkin.checkInNow') : t('checkin.checkOutNow');
+  } finally {
+    attendanceActionInFlight = false;
   }
 }
 
 async function boot() {
+  captureScannedQrToken();
   applyDocumentLanguage();
   updateClock();
   window.setInterval(updateClock, 1000);

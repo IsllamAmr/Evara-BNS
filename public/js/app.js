@@ -1,8 +1,10 @@
-﻿import { getAppConfig, getSupabase, isSupabaseReady } from './supabaseClient.js';
+import { getAppConfig, getSupabase, isSupabaseReady } from './supabaseClient.js';
 import { apiRequestWithFallback } from './apiClient.js';
+import { createQueryCache, fetchAllRows } from './dataStore.js';
+import { renderTimesheet } from './timesheet.js';
+import { initRotatingQuotes } from './rotatingQuotes.js';
 import {
   exportAttendanceCsv,
-  exportEmployeeTimesheetCsv,
   exportEmployeesCsv,
   exportReportsCsv,
 } from './exporters.js';
@@ -54,7 +56,7 @@ import {
 const config = getAppConfig();
 const supabase = isSupabaseReady() ? getSupabase() : null;
 const PROFILE_SELECT = 'id, full_name, email, role, is_active, employee_code, phone, department, position, status, created_at, updated_at';
-const ATTENDANCE_SELECT = 'id, user_id, attendance_date, check_in_time, check_out_time, attendance_status, ip_address, device_info, created_at, updated_at';
+const ATTENDANCE_SELECT = 'id, user_id, attendance_date, check_in_time, check_out_time, attendance_status, ip_address, device_info, work_notes, work_place, training_minutes, created_at, updated_at';
 const DEPARTMENT_OPTIONS = [
   'Administration',
   'Business Development',
@@ -173,6 +175,7 @@ const elements = {
   loginHint: document.getElementById('loginHint'),
   togglePasswordBtn: document.getElementById('togglePasswordBtn'),
   sidebar: document.getElementById('sidebar'),
+  sidebarBackdrop: document.getElementById('sidebarBackdrop'),
   sidebarNav: document.getElementById('sidebarNav'),
   sidebarName: document.getElementById('sidebarName'),
   sidebarRole: document.getElementById('sidebarRole'),
@@ -202,10 +205,9 @@ const elements = {
 let modalCloseHandler = null;
 let realtimeChannels = [];
 let employeeSearchDebounceId = null;
-const queryCache = new Map();
+const { buildCacheKey, getFreshCachedValue, getCachedQuery, invalidateQueryCache } = createQueryCache();
 let prefetchTimerId = null;
 let lastActivityWriteAt = 0;
-let attendanceActionInFlight = false;
 let routeRenderInFlight = false;
 let routeRenderQueued = false;
 
@@ -404,13 +406,16 @@ function closeModal(payload = null) {
 }
 
 function syncPasswordToggleLabel() {
-  elements.togglePasswordBtn.textContent = elements.loginPassword.type === 'password'
-    ? t('login.showPassword')
-    : t('login.hidePassword');
+  const visible = elements.loginPassword.type !== 'password';
+  const label = t(visible ? 'login.hidePasswordLabel' : 'login.showPasswordLabel');
+  elements.togglePasswordBtn.setAttribute('aria-label', label);
+  elements.togglePasswordBtn.setAttribute('title', label);
+  elements.togglePasswordBtn.setAttribute('aria-pressed', String(visible));
 }
 
 function setLoginError(message = '') {
   elements.loginError.textContent = message;
+  elements.loginError.classList.toggle('config-notice', !isSupabaseReady());
   elements.loginError.classList.toggle('hidden', !message);
 }
 
@@ -470,7 +475,7 @@ function resetSessionState() {
 
   state.attendanceRestrictions = null;
   state.attendanceRestrictionsFetchedAt = 0;
-  queryCache.clear();
+  invalidateQueryCache();
 
   if (employeeSearchDebounceId) {
     window.clearTimeout(employeeSearchDebounceId);
@@ -558,7 +563,7 @@ async function fetchMyProfile(userId) {
     .from('profiles')
     .select(PROFILE_SELECT)
     .eq('id', userId)
-    .single();
+    .maybeSingle();
 
   if (error) {
     throw new Error(error.message || t('errors.loadProfile'));
@@ -570,16 +575,15 @@ async function fetchMyProfile(userId) {
 async function fetchEmployees(options = {}) {
   const key = buildCacheKey('employees', { all: true });
   return getCachedQuery(key, QUERY_CACHE_TTL_MS.employees, async () => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select(PROFILE_SELECT)
-      .order('created_at', { ascending: false });
-
-    if (error) {
+    try {
+      return await fetchAllRows(() => supabase
+        .from('profiles')
+        .select(PROFILE_SELECT)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true }));
+    } catch (error) {
       throw new Error(error.message || t('errors.loadEmployees'));
     }
-
-    return data || [];
   }, options);
 }
 
@@ -743,37 +747,32 @@ async function fetchAttendance(filters = {}) {
   const { force, ...queryFilters } = filters;
   const key = buildCacheKey('attendance', queryFilters);
   return getCachedQuery(key, QUERY_CACHE_TTL_MS.attendance, async () => {
-    let query = supabase
-      .from('attendance')
-      .select(ATTENDANCE_SELECT)
-      .order('attendance_date', { ascending: false })
-      .order('check_in_time', { ascending: false });
+    const buildQuery = () => {
+      let query = supabase
+        .from('attendance')
+        .select(ATTENDANCE_SELECT)
+        .order('attendance_date', { ascending: false })
+        .order('check_in_time', { ascending: false })
+        .order('id', { ascending: false });
 
-    if (queryFilters.userId) {
-      query = query.eq('user_id', queryFilters.userId);
-    }
-    if (queryFilters.date) {
-      query = query.eq('attendance_date', queryFilters.date);
-    }
-    if (queryFilters.from) {
-      query = query.gte('attendance_date', queryFilters.from);
-    }
-    if (queryFilters.to) {
-      query = query.lte('attendance_date', queryFilters.to);
-    }
-    if (queryFilters.status && queryFilters.status !== 'all') {
-      query = query.eq('attendance_status', queryFilters.status);
-    }
-    if (queryFilters.limit) {
-      query = query.limit(queryFilters.limit);
-    }
+      if (queryFilters.userId) query = query.eq('user_id', queryFilters.userId);
+      if (queryFilters.date) query = query.eq('attendance_date', queryFilters.date);
+      if (queryFilters.from) query = query.gte('attendance_date', queryFilters.from);
+      if (queryFilters.to) query = query.lte('attendance_date', queryFilters.to);
+      if (queryFilters.status && queryFilters.status !== 'all') query = query.eq('attendance_status', queryFilters.status);
+      return query;
+    };
 
-    const { data, error } = await query;
-    if (error) {
+    try {
+      if (queryFilters.limit) {
+        const { data, error } = await buildQuery().limit(queryFilters.limit);
+        if (error) throw error;
+        return data || [];
+      }
+      return await fetchAllRows(buildQuery);
+    } catch (error) {
       throw new Error(error.message || t('errors.loadAttendance'));
     }
-
-    return data || [];
   }, { force });
 }
 
@@ -884,339 +883,46 @@ function buildQueryString(params = {}) {
   return serialized ? `?${serialized}` : '';
 }
 
-function stableSerialize(value) {
-  if (value === null || value === undefined) {
-    return '';
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableSerialize(item)).join(',')}]`;
-  }
-  if (typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) => `${key}:${stableSerialize(value[key])}`).join('|')}}`;
-  }
-  return String(value);
-}
-
-function buildCacheKey(namespace, params = {}) {
-  return `${namespace}:${stableSerialize(params)}`;
-}
-
-function getFreshCachedValue(key, ttlMs) {
-  const entry = queryCache.get(key);
-  if (!entry) {
-    return null;
-  }
-  if (entry.data !== undefined && entry.expiresAt > Date.now()) {
-    return entry.data;
-  }
-  if (!entry.promise) {
-    queryCache.delete(key);
-  }
-  return null;
-}
-
-async function getCachedQuery(key, ttlMs, loader, options = {}) {
-  const force = Boolean(options.force);
-  const now = Date.now();
-  const existing = queryCache.get(key);
-
-  if (!force && existing?.data !== undefined && existing.expiresAt > now) {
-    return existing.data;
-  }
-
-  if (!force && existing?.promise) {
-    return existing.promise;
-  }
-
-  const promise = Promise.resolve()
-    .then(loader)
-    .then((data) => {
-      queryCache.set(key, {
-        data,
-        expiresAt: Date.now() + ttlMs,
-        promise: null,
-      });
-      return data;
-    })
-    .catch((error) => {
-      queryCache.delete(key);
-      throw error;
-    });
-
-  queryCache.set(key, {
-    data: existing?.data,
-    expiresAt: existing?.expiresAt || 0,
-    promise,
-  });
-
-  return promise;
-}
-
-function invalidateQueryCache(prefixes = []) {
-  const list = Array.isArray(prefixes) ? prefixes : [prefixes];
-  if (!list.length) {
-    queryCache.clear();
-    return;
-  }
-
-  [...queryCache.keys()].forEach((key) => {
-    if (list.some((prefix) => key.startsWith(prefix))) {
-      queryCache.delete(key);
-    }
-  });
-}
-
-function warmQueryInBackground(key, ttlMs, loader) {
-  if (getFreshCachedValue(key, ttlMs)) {
-    return;
-  }
-
-  getCachedQuery(key, ttlMs, loader).catch(() => {
-    // Ignore background prefetch failures.
-  });
-}
-
 function schedulePagePrefetch() {
-  if (!state.profile) {
-    return;
-  }
+  if (!state.profile) return;
+  if (prefetchTimerId) window.clearTimeout(prefetchTimerId);
 
-  if (prefetchTimerId) {
-    window.clearTimeout(prefetchTimerId);
-  }
-
+  // Warm only the most likely next screen. Previously every navigation sent
+  // many concurrent reads, including reports and QR data that may never be used.
   const runner = () => {
-    const today = todayIso();
-    const currentMonth = monthRange(currentMonthInput());
-
-    if (isAdmin()) {
-      warmQueryInBackground(
-        buildCacheKey('employees', { all: true }),
-        QUERY_CACHE_TTL_MS.employees,
-        () => fetchEmployees({ force: true })
-      );
-      warmQueryInBackground(
-        buildCacheKey('employeeDirectoryPage', {
-          filters: state.employeeFilters,
-          requestedPage: state.employeePagination.page,
-          pageSize: state.employeePagination.pageSize,
-        }),
-        QUERY_CACHE_TTL_MS.employeeDirectory,
-        () => fetchEmployeeDirectoryPage(state.employeeFilters, state.employeePagination, { force: true })
-      );
-      warmQueryInBackground(
-        buildCacheKey('employeeDirectoryStats', { all: true }),
-        QUERY_CACHE_TTL_MS.employeeStats,
-        () => fetchEmployeeDirectoryStats({ force: true })
-      );
-      warmQueryInBackground(
-        buildCacheKey('attendance', { date: today, limit: 250 }),
-        QUERY_CACHE_TTL_MS.attendance,
-        () => fetchAttendance({ date: today, limit: 250, force: true })
-      );
-      warmQueryInBackground(
-        buildCacheKey('attendance', { date: today }),
-        QUERY_CACHE_TTL_MS.attendance,
-        () => fetchAttendance({ date: today, force: true })
-      );
-      warmQueryInBackground(
-        buildCacheKey('attendance', { from: offsetDate(-14), to: today, limit: 14 }),
-        QUERY_CACHE_TTL_MS.attendance,
-        () => fetchAttendance({ from: offsetDate(-14), to: today, limit: 14, force: true })
-      );
-      warmQueryInBackground(
-        buildCacheKey('attendancePage', {
-          filters: {
-            from: state.historyFilters.from,
-            to: state.historyFilters.to,
-            status: state.historyFilters.status,
-          },
-          requestedPage: state.historyPagination.page,
-          pageSize: state.historyPagination.pageSize,
-        }),
-        QUERY_CACHE_TTL_MS.attendancePage,
-        () => fetchAttendancePage({
-          from: state.historyFilters.from,
-          to: state.historyFilters.to,
-          status: state.historyFilters.status,
-        }, state.historyPagination, { force: true })
-      );
-      warmQueryInBackground(
-        buildCacheKey('requests', {
-          type: state.requestFilters.type,
-          status: state.requestFilters.status,
-        }),
-        QUERY_CACHE_TTL_MS.requests,
-        () => fetchRequests({
-          type: state.requestFilters.type,
-          status: state.requestFilters.status,
-        }, { force: true })
-      );
-      warmQueryInBackground(
-        buildCacheKey('attendance', { from: currentMonth.from, to: currentMonth.to }),
-        QUERY_CACHE_TTL_MS.reports,
-        () => fetchAttendance({ from: currentMonth.from, to: currentMonth.to, force: true })
-      );
-      warmQueryInBackground(
-        buildCacheKey('qr', { current: true }),
-        QUERY_CACHE_TTL_MS.qr,
-        () => apiRequest('/attendance/qr')
-      );
-    } else {
-      warmQueryInBackground(
-        buildCacheKey('attendance', { userId: state.profile.id, date: today, limit: 1 }),
-        QUERY_CACHE_TTL_MS.attendance,
-        () => fetchAttendance({ userId: state.profile.id, date: today, limit: 1, force: true })
-      );
-      warmQueryInBackground(
-        buildCacheKey('attendance', { userId: state.profile.id, from: offsetDate(-14), to: today, limit: 14 }),
-        QUERY_CACHE_TTL_MS.attendance,
-        () => fetchAttendance({ userId: state.profile.id, from: offsetDate(-14), to: today, limit: 14, force: true })
-      );
-      warmQueryInBackground(
-        buildCacheKey('attendance', { userId: state.profile.id, from: currentMonth.from, to: currentMonth.to, limit: 60 }),
-        QUERY_CACHE_TTL_MS.attendance,
-        () => fetchAttendance({ userId: state.profile.id, from: currentMonth.from, to: currentMonth.to, limit: 60, force: true })
-      );
-      warmQueryInBackground(
-        buildCacheKey('attendancePage', {
-          filters: {
-            from: state.historyFilters.from,
-            to: state.historyFilters.to,
-            status: state.historyFilters.status,
-            userId: state.profile.id,
-          },
-          requestedPage: state.historyPagination.page,
-          pageSize: state.historyPagination.pageSize,
-        }),
-        QUERY_CACHE_TTL_MS.attendancePage,
-        () => fetchAttendancePage({
-          from: state.historyFilters.from,
-          to: state.historyFilters.to,
-          status: state.historyFilters.status,
-          userId: state.profile.id,
-        }, state.historyPagination, { force: true })
-      );
-      warmQueryInBackground(
-        buildCacheKey('requests', {
-          type: state.requestFilters.type,
-          status: state.requestFilters.status,
-        }),
-        QUERY_CACHE_TTL_MS.requests,
-        () => fetchRequests({
-          type: state.requestFilters.type,
-          status: state.requestFilters.status,
-        }, { force: true })
-      );
-      warmQueryInBackground(
-        buildCacheKey('requestAllowance', { user_id: state.profile.id }),
-        QUERY_CACHE_TTL_MS.requestAllowance,
-        () => fetchRequestAllowanceSummary({ user_id: state.profile.id }, { force: true })
-      );
+    prefetchTimerId = null;
+    if (!state.profile) return;
+    let nextQuery = null;
+    if (state.currentPage === 'dashboard') {
+      nextQuery = isAdmin()
+        ? fetchEmployeeDirectoryPage(state.employeeFilters, state.employeePagination)
+        : fetchRequests(state.requestFilters);
+    } else if (state.currentPage === 'attendance') {
+      nextQuery = fetchAttendancePage({
+        ...state.historyFilters,
+        ...(!isAdmin() ? { userId: state.profile.id } : {}),
+      }, state.historyPagination);
     }
-
-    warmQueryInBackground(
-      buildCacheKey('attendance', { userId: state.profile.id, from: offsetDate(-30), to: today, limit: 30 }),
-      QUERY_CACHE_TTL_MS.profile,
-      () => fetchAttendance({ userId: state.profile.id, from: offsetDate(-30), to: today, limit: 30, force: true })
-    );
-
-    warmQueryInBackground(
-      buildCacheKey('health', { restrictions: true }),
-      HEALTH_CACHE_TTL_MS,
-      () => fetchSystemHealth({ force: true })
-    );
+    Promise.resolve(nextQuery).catch(() => {});
   };
 
-  if (typeof window.requestIdleCallback === 'function') {
-    window.requestIdleCallback(runner, { timeout: 1200 });
-    return;
-  }
-
-  prefetchTimerId = window.setTimeout(runner, 250);
+  prefetchTimerId = window.setTimeout(() => {
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(runner, { timeout: 1500 });
+    } else {
+      runner();
+    }
+  }, 350);
 }
 
 
-
-function getCurrentPosition(options = {}) {
-  if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    return Promise.resolve({ context: {}, warning: '' });
-  }
-
-  return new Promise((resolve) => {
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        resolve({
-          context: {
-            latitude: Number(position.coords.latitude),
-            longitude: Number(position.coords.longitude),
-            accuracy: Number(position.coords.accuracy),
-          },
-          warning: '',
-        });
-      },
-      (error) => {
-        let warning = '';
-        if (error?.code === error.PERMISSION_DENIED) {
-          warning = 'Location permission was denied. If attendance fencing is active, the action may be rejected.';
-        } else if (error?.code === error.TIMEOUT) {
-          warning = 'Location lookup timed out. We will continue and let the server validate the request.';
-        } else if (error?.code === error.POSITION_UNAVAILABLE) {
-          warning = 'Location is currently unavailable on this device.';
-        }
-
-        resolve({ context: {}, warning });
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 8000,
-        maximumAge: options.maximumAge ?? 60000,
-      }
-    );
-  });
-}
-
-async function collectAttendanceContext() {
-  return {
-    context: {},
-    warning: '',
-  };
-}
 
 function sumMetrics(items = [], selector) {
   return items.reduce((total, item) => total + Number(selector(item) || 0), 0);
 }
 
-function attendanceRestrictionMessage(summary) {
-  if (!summary || !summary.access_mode || summary.access_mode === 'off') {
-    return '';
-  }
-
-  if (summary.access_mode === 'ip') {
-    return t('attendanceRestrictions.ipOnly');
-  }
-
-  if (summary.access_mode === 'geo') {
-    return t('attendanceRestrictions.geoOnly');
-  }
-
-  if (summary.access_mode === 'either') {
-    if (summary.ip_restrictions_enabled && summary.geofence_enabled) {
-      return t('attendanceRestrictions.eitherNetworkOrGeo');
-    }
-    if (summary.ip_restrictions_enabled) {
-      return t('attendanceRestrictions.eitherIpOnlyConfigured');
-    }
-    if (summary.geofence_enabled) {
-      return t('attendanceRestrictions.eitherGeoOnlyConfigured');
-    }
-  }
-
-  if (summary.access_mode === 'both') {
-    return t('attendanceRestrictions.both');
-  }
-
-  return '';
+function attendanceRestrictionMessage() {
+  return t('qrOnly.attendanceNote');
 }
 
 async function ensureProfileDirectory(records = []) {
@@ -1269,51 +975,18 @@ function syncPageFrame(page) {
     value.classList.toggle('active', key === page);
   });
   syncShell();
-  refreshTopbarMessage().catch(() => {
-    // Keep the existing copy if the attendance state cannot be loaded right now.
-  });
+  refreshTopbarMessage();
 }
 
-async function refreshTopbarMessage() {
+function refreshTopbarMessage() {
   if (!state.profile) {
     return;
   }
-
-  let message = {
-    headline: t('topbar.preCheckInHeadline'),
-    subline: t('topbar.preCheckInSubline'),
-  };
-
-  try {
-    const todayRecord = (await fetchAttendance({
-      userId: state.profile.id,
-      date: todayIso(),
-      limit: 1,
-    }))[0] || null;
-
-    if (todayRecord?.check_out_time) {
-      message = {
-        headline: t('topbar.afterCheckOutHeadline'),
-        subline: t('topbar.afterCheckOutSubline'),
-      };
-    } else if (todayRecord?.check_in_time) {
-      message = {
-        headline: t('topbar.inShiftHeadline'),
-        subline: t('topbar.inShiftSubline'),
-      };
-    }
-  } catch (_error) {
-    message = {
-      headline: t('topbar.preCheckInHeadline'),
-      subline: t('topbar.preCheckInSubline'),
-    };
-  }
-
   if (elements.topbarHeadline) {
-    elements.topbarHeadline.textContent = message.headline;
+    elements.topbarHeadline.textContent = t(`nav.${state.currentPage}`);
   }
   if (elements.topbarSubline) {
-    elements.topbarSubline.textContent = message.subline;
+    elements.topbarSubline.textContent = t('meta.description');
   }
 }
 
@@ -1325,9 +998,8 @@ function bindStaticEvents() {
     syncPasswordToggleLabel();
   });
   elements.logoutBtn.addEventListener('click', handleLogout);
-  elements.menuToggle.addEventListener('click', () => {
-    elements.sidebar.classList.toggle('open');
-  });
+  elements.menuToggle.addEventListener('click', () => setMobileMenuOpen(!elements.sidebar.classList.contains('open')));
+  elements.sidebarBackdrop.addEventListener('click', () => setMobileMenuOpen(false));
   document.addEventListener('click', (event) => {
     const trigger = event.target.closest('[data-language-toggle]');
     if (!trigger) {
@@ -1338,6 +1010,10 @@ function bindStaticEvents() {
   });
   elements.modalBackdrop.addEventListener('click', () => closeModal(false));
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && elements.sidebar.classList.contains('open')) {
+      setMobileMenuOpen(false);
+      elements.menuToggle.focus();
+    }
     if (event.key === 'Escape' && !elements.modal.classList.contains('hidden')) {
       closeModal(false);
     }
@@ -1355,6 +1031,12 @@ function bindStaticEvents() {
       showToast(error.message, 'error');
     });
   });
+}
+
+function setMobileMenuOpen(open) {
+  elements.sidebar.classList.toggle('open', open);
+  elements.sidebarBackdrop.classList.toggle('open', open);
+  elements.menuToggle.setAttribute('aria-expanded', String(open));
 }
 
 function scheduleLiveRefresh() {
@@ -1399,13 +1081,17 @@ function setupRealtimeSubscriptions() {
 
 async function boot() {
   applyDocumentLanguage();
+  initRotatingQuotes();
   syncPasswordToggleLabel();
   bindStaticEvents();
   startClock();
   onLanguageChange(async () => {
     syncPasswordToggleLabel();
     syncShell();
-    await refreshTopbarMessage().catch(() => {});
+    refreshTopbarMessage();
+    if (!isSupabaseReady()) {
+      setLoginError(t('errors.supabaseFrontendConfigMissing'));
+    }
     if (state.profile) {
       await renderRoute().catch((error) => showToast(error.message, 'error'));
     }
@@ -1538,7 +1224,7 @@ async function renderRoute() {
       }
 
       syncPageFrame(page);
-      elements.sidebar.classList.remove('open');
+      setMobileMenuOpen(false);
       if (page === 'dashboard') {
         await renderDashboardPage();
       } else if (page === 'profile') {
@@ -1892,6 +1578,9 @@ function buildTodayAttendanceRoster(employees, attendanceRows, attendanceDate) {
         attendance_status: row?.attendance_status || displayState.code,
         ip_address: row?.ip_address || null,
         device_info: row?.device_info || displayState.note,
+        work_notes: row?.work_notes || null,
+        work_place: row?.work_place || null,
+        training_minutes: row?.training_minutes ?? null,
       };
     })
     .sort((left, right) => {
@@ -2318,30 +2007,7 @@ async function renderDashboardPage() {
               <p class="card-subtle">${escapeHtml(t('dashboard.employee.ledgerText'))}</p>
             </div>
           </div>
-          <div class="table-shell">
-            <table>
-              <thead>
-                <tr><th>${escapeHtml(t('common.date'))}</th><th>${escapeHtml(t('common.dayType'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.worked'))}</th><th>${escapeHtml(t('common.shortfall'))}</th><th>${escapeHtml(t('common.overtime'))}</th><th>${escapeHtml(t('common.note'))}</th></tr>
-              </thead>
-              <tbody>
-                ${monthLedger.length ? monthLedger.map((entry) => {
-                  return `
-                  <tr>
-                    <td>${escapeHtml(formatDate(entry.attendanceDate))}</td>
-                    <td>${escapeHtml(entry.dayTypeLabel)}</td>
-                    <td>${attendanceStateBadgeMarkup(entry.displayState)}</td>
-                    <td>${escapeHtml(formatTime(entry.row?.check_in_time))}</td>
-                    <td>${escapeHtml(formatTime(entry.row?.check_out_time))}</td>
-                    <td>${escapeHtml(formatDuration(entry.workedMinutes))}</td>
-                    <td>${escapeHtml(formatDuration(entry.shortfallMinutes))}</td>
-                    <td>${escapeHtml(formatDuration(entry.overtimeMinutes))}</td>
-                    <td>${escapeHtml(entry.noteLabel)}</td>
-                  </tr>
-                `;
-                }).join('') : `<tr><td colspan="9"><div class="empty-state">${escapeHtml(t('notes.noMonthRecords'))}</div></td></tr>`}
-              </tbody>
-            </table>
-          </div>
+          ${renderTimesheet(monthAttendance, currentMonth.from.slice(0, 7), state.profile.full_name)}
         </section>
       </div>
     `;
@@ -2570,7 +2236,7 @@ async function renderReportsPage() {
           </div>
           <div class="inline-actions">
             <button id="reportsExportBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.exportReportCsv'))}</button>
-            ${selectedEmployee ? `<button id="reportsTimesheetExportBtn" type="button" class="btn btn-primary">${escapeHtml(t('common.exportTimesheetCsv'))}</button>` : ''}
+            ${selectedEmployee ? `<button id="reportsTimesheetExportBtn" type="button" class="btn btn-primary">${escapeHtml(t('timesheetExport.button'))}</button>` : ''}
           </div>
         </div>
         <section class="card-block">
@@ -2750,28 +2416,7 @@ async function renderReportsPage() {
               ${buildSummaryCard(t('common.overtime'), formatDuration(selectedEmployee.overtimeMinutes), t('notes.overtimeMonthMeta'))}
               ${buildSummaryCard(t('dashboard.employee.totalShortfall'), formatDuration(selectedEmployee.shortfallMinutes), t('notes.combinedShortfall'))}
             </div>
-            <div class="table-shell">
-              <table>
-                <thead>
-                  <tr><th>${escapeHtml(t('common.date'))}</th><th>${escapeHtml(t('common.dayType'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.worked'))}</th><th>${escapeHtml(t('common.shortfall'))}</th><th>${escapeHtml(t('common.overtime'))}</th><th>${escapeHtml(t('common.note'))}</th></tr>
-                </thead>
-                <tbody>
-                  ${selectedEmployeeLedger.length ? selectedEmployeeLedger.map((entry) => `
-                    <tr>
-                      <td>${escapeHtml(formatDate(entry.attendanceDate))}</td>
-                      <td>${escapeHtml(entry.dayTypeLabel)}</td>
-                      <td>${attendanceStateBadgeMarkup(entry.displayState)}</td>
-                      <td>${escapeHtml(formatTime(entry.row?.check_in_time))}</td>
-                      <td>${escapeHtml(formatTime(entry.row?.check_out_time))}</td>
-                      <td>${escapeHtml(formatDuration(entry.workedMinutes))}</td>
-                      <td>${escapeHtml(formatDuration(entry.shortfallMinutes))}</td>
-                      <td>${escapeHtml(formatDuration(entry.overtimeMinutes))}</td>
-                      <td>${escapeHtml(entry.noteLabel)}</td>
-                    </tr>
-                  `).join('') : `<tr><td colspan="9"><div class="empty-state">${escapeHtml(t('notes.noMonthRecords'))}</div></td></tr>`}
-                </tbody>
-              </table>
-            </div>
+            ${renderTimesheet(selectedEmployee.detailedRows.map((entry) => entry.row), state.reportsFilters.month, selectedEmployee.employee.full_name)}
           ` : `<div class="empty-state">${escapeHtml(t('notes.reportsSelectEmployee'))}</div>`}
         </section>
       </div>
@@ -2808,8 +2453,7 @@ async function renderReportsPage() {
       if (!selectedEmployee) {
         return;
       }
-      exportEmployeeTimesheetCsv(selectedEmployee, state.reportsFilters);
-      showToast(t('toasts.timesheetExported'), 'success');
+      openTimesheetExportModal(selectedEmployee.employee);
     });
     drawWorkingHoursTrend(container.querySelector('#reportsHoursCanvas'), report.dailyTrend);
     drawDepartmentHoursChart(container.querySelector('#reportsDepartmentCanvas'), report.departmentHours);
@@ -2896,6 +2540,7 @@ function drawEmployeesPage() {
                     <div class="table-actions">
                       <button class="btn btn-secondary" data-action="view" data-id="${employee.id}">${escapeHtml(t('common.view'))}</button>
                       <button class="btn btn-secondary" data-action="edit" data-id="${employee.id}">${escapeHtml(t('common.edit'))}</button>
+                      <button class="btn btn-secondary" data-action="excel" data-id="${employee.id}">${escapeHtml(t('timesheetExport.rowAction'))}</button>
                       <button class="btn btn-secondary" data-action="toggle" data-id="${employee.id}" ${isSelf || isLastActiveAdmin ? 'disabled' : ''} title="${escapeHtml(protectionReason)}">${escapeHtml(employee.is_active ? t('common.deactivate') : t('common.activate'))}</button>
                       <button class="btn btn-danger" data-action="delete" data-id="${employee.id}" ${isSelf || isLastActiveAdmin ? 'disabled' : ''} title="${escapeHtml(protectionReason)}">${escapeHtml(t('common.delete'))}</button>
                     </div>
@@ -2977,6 +2622,10 @@ function drawEmployeesPage() {
     }
     if (action.dataset.action === 'edit') {
       openEmployeeForm('edit', employee);
+      return;
+    }
+    if (action.dataset.action === 'excel') {
+      openTimesheetExportModal(employee);
       return;
     }
     if (action.dataset.action === 'toggle') {
@@ -3184,6 +2833,139 @@ function openEmployeeForm(mode, employee = null) {
       showFormError('employeeFormError', error.message);
       submitButton.disabled = false;
       submitButton.textContent = mode === 'create' ? t('common.createEmployee') : t('common.saveChanges');
+    }
+  });
+}
+
+function fileNameFromDisposition(header, fallback) {
+  const value = String(header || '');
+  const encoded = value.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1]);
+    } catch (_error) {
+      // fall through to the plain filename
+    }
+  }
+  const plain = value.match(/filename="([^"]+)"/i);
+  return plain ? plain[1] : fallback;
+}
+
+async function downloadTimesheetExcel(employee, from, to) {
+  const token = await getAccessToken();
+  const response = await fetch(`${config.apiBaseUrl}/admin/employees/${encodeURIComponent(employee.id)}/timesheet-export`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ from, to }),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const detail = payload?.details?.errors?.map((item) => item.message).join(' ');
+    throw new Error(detail || payload?.message || t('timesheetExport.failed'));
+  }
+
+  const blob = await response.blob();
+  const fileName = fileNameFromDisposition(response.headers.get('Content-Disposition'), `${employee.full_name} - Timesheet.xlsx`);
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+  return fileName;
+}
+
+async function openTimesheetExportModal(employee) {
+  openModal(`
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">${escapeHtml(t('timesheetExport.eyebrow'))}</p>
+        <h2>${escapeHtml(employee.full_name)}</h2>
+      </div>
+      <button id="closeModalBtn" type="button" class="ghost-inline">${escapeHtml(t('common.close'))}</button>
+    </div>
+    <div id="timesheetExportBody"><div class="loading-state"><div class="spinner"></div><div>${escapeHtml(t('timesheetExport.loading'))}</div></div></div>
+  `);
+  document.getElementById('closeModalBtn')?.addEventListener('click', closeModal);
+
+  let summary;
+  try {
+    const payload = await apiRequest(`/admin/employees/${employee.id}/timesheet-export`);
+    summary = payload.data;
+  } catch (error) {
+    const body = document.getElementById('timesheetExportBody');
+    if (body) body.innerHTML = `<div class="form-alert error">${escapeHtml(error.message)}</div>`;
+    return;
+  }
+
+  const body = document.getElementById('timesheetExportBody');
+  if (!body) {
+    return;
+  }
+
+  const last = summary.last_export;
+  const lastText = last
+    ? t('timesheetExport.lastExport', {
+      from: formatDate(last.period_from),
+      to: formatDate(last.period_to),
+      date: formatDateTime(last.exported_at),
+    })
+    : t('timesheetExport.firstExport');
+
+  body.innerHTML = `
+    <form id="timesheetExportForm" class="stack-form">
+      <p class="inline-note">${escapeHtml(lastText)}</p>
+      ${summary.up_to_date ? `<p class="inline-note attention-note">${escapeHtml(t('timesheetExport.upToDate'))}</p>` : ''}
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="timesheet_from">${escapeHtml(t('timesheetExport.from'))}</label>
+          <input id="timesheet_from" type="date" value="${escapeHtml(summary.suggested_from)}" required />
+        </div>
+        <div class="form-group">
+          <label for="timesheet_to">${escapeHtml(t('timesheetExport.to'))}</label>
+          <input id="timesheet_to" type="date" value="${escapeHtml(summary.suggested_to)}" required />
+        </div>
+      </div>
+      <p class="inline-note">${escapeHtml(t('timesheetExport.hint', { days: String(summary.max_days) }))}</p>
+      <div id="timesheetExportError" class="form-alert error hidden"></div>
+      <div class="modal-footer">
+        <div></div>
+        <div class="inline-actions">
+          <button id="cancelTimesheetExportBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.cancel'))}</button>
+          <button id="submitTimesheetExportBtn" type="submit" class="btn btn-primary">${escapeHtml(t('timesheetExport.download'))}</button>
+        </div>
+      </div>
+    </form>
+  `;
+
+  document.getElementById('cancelTimesheetExportBtn')?.addEventListener('click', closeModal);
+  document.getElementById('timesheetExportForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    showFormError('timesheetExportError');
+    const from = document.getElementById('timesheet_from').value;
+    const to = document.getElementById('timesheet_to').value;
+    if (!from || !to || to < from) {
+      showFormError('timesheetExportError', t('timesheetExport.invalidRange'));
+      return;
+    }
+
+    const submitButton = document.getElementById('submitTimesheetExportBtn');
+    submitButton.disabled = true;
+    submitButton.textContent = t('timesheetExport.preparing');
+    try {
+      await downloadTimesheetExcel(employee, from, to);
+      closeModal();
+      showToast(t('timesheetExport.done', { name: employee.full_name }), 'success');
+    } catch (error) {
+      showFormError('timesheetExportError', error.message);
+      submitButton.disabled = false;
+      submitButton.textContent = t('timesheetExport.download');
     }
   });
 }
@@ -3592,7 +3374,7 @@ async function renderAttendancePage() {
             <div class="table-shell">
               <table>
                 <thead>
-                  <tr><th>${escapeHtml(t('common.employee'))}</th><th>${escapeHtml(t('common.department'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('common.device'))}</th></tr>
+                  <tr><th>${escapeHtml(t('common.employee'))}</th><th>${escapeHtml(t('common.department'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('common.device'))}</th><th>${escapeHtml(t('timesheet.notes'))}</th></tr>
                 </thead>
                 <tbody>
                   ${todayRoster.length ? todayRoster.map((entry) => {
@@ -3605,9 +3387,10 @@ async function renderAttendancePage() {
                         <td>${escapeHtml(formatTime(entry.check_out_time))}</td>
                         <td>${attendanceStateBadgeMarkup(entry.displayState)}</td>
                         <td>${escapeHtml(entry.device_info ? entry.device_info.slice(0, 72) : entry.displayState.note || '-')}</td>
+                        <td class="work-notes-cell">${escapeHtml(entry.work_notes || '—')}</td>
                       </tr>
                     `;
-                  }).join('') : `<tr><td colspan="6"><div class="empty-state">${escapeHtml(t('notes.noEmployeeAttendanceToday'))}</div></td></tr>`}
+                  }).join('') : `<tr><td colspan="7"><div class="empty-state">${escapeHtml(t('notes.noEmployeeAttendanceToday'))}</div></td></tr>`}
                 </tbody>
               </table>
             </div>
@@ -3630,15 +3413,18 @@ async function renderAttendancePage() {
       return;
     }
 
-    const todayRecord = todayRecords[0] || null;
+    const openPreviousShift = recentRecords.find((row) => row.check_in_time && !row.check_out_time
+      && (Date.now() - new Date(row.check_in_time).getTime()) <= 24 * 60 * 60 * 1000);
+    const todayRecord = todayRecords[0] || openPreviousShift || null;
     const missingTodayState = todayRecord
       ? null
       : getAttendanceDisplayState({
         employee: state.profile,
         attendanceDate: today,
       });
-    const canCheckIn = !todayRecord?.check_in_time;
-    const canCheckOut = Boolean(todayRecord?.check_in_time) && !todayRecord?.check_out_time;
+    const nextQrAction = !todayRecord?.check_in_time
+      ? t('qrOnly.nextCheckIn')
+      : (!todayRecord?.check_out_time ? t('qrOnly.nextCheckOut') : t('qrOnly.nextDone'));
 
     container.innerHTML = `
         <div class="page-shell">
@@ -3657,8 +3443,7 @@ async function renderAttendancePage() {
             <p class="inline-note">${escapeHtml(todayRecord ? buildAttendanceRecordNote(todayRecord) : (missingTodayState?.note || t('attendancePage.noSubmittedAttendance')))}</p>
           </div>
           <div class="inline-actions">
-            ${canCheckIn ? `<button id="employeeCheckInBtn" type="button" class="btn btn-primary">${escapeHtml(t('common.checkIn'))}</button>` : ''}
-            ${canCheckOut ? `<button id="employeeCheckOutBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.checkOut'))}</button>` : ''}
+            <span class="qr-only-hint">${escapeHtml(nextQrAction)}</span>
             <button id="attendanceRefreshBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.refresh'))}</button>
           </div>
         </section>
@@ -3672,7 +3457,7 @@ async function renderAttendancePage() {
           <div class="table-shell">
             <table>
               <thead>
-                <tr><th>${escapeHtml(t('common.date'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.status'))}</th></tr>
+                <tr><th>${escapeHtml(t('common.date'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('timesheet.notes'))}</th></tr>
               </thead>
               <tbody>
                 ${recentRecords.length ? recentRecords.map((row) => `
@@ -3681,8 +3466,9 @@ async function renderAttendancePage() {
                     <td>${escapeHtml(formatTime(row.check_in_time))}</td>
                     <td>${escapeHtml(formatTime(row.check_out_time))}</td>
                     <td>${badgeMarkup(row.attendance_status, row.attendance_status)}</td>
+                    <td class="work-notes-cell">${escapeHtml(row.work_notes || '—')}</td>
                   </tr>
-                `).join('') : `<tr><td colspan="4"><div class="empty-state">${escapeHtml(t('notes.noHistoryRecords'))}</div></td></tr>`}
+                `).join('') : `<tr><td colspan="5"><div class="empty-state">${escapeHtml(t('notes.noHistoryRecords'))}</div></td></tr>`}
               </tbody>
             </table>
           </div>
@@ -3691,52 +3477,8 @@ async function renderAttendancePage() {
     `;
 
     container.querySelector('#attendanceRefreshBtn')?.addEventListener('click', () => renderAttendancePage().catch((error) => setPageError(container, error.message)));
-    container.querySelector('#employeeCheckInBtn')?.addEventListener('click', () => submitAttendanceAction('checkin'));
-    container.querySelector('#employeeCheckOutBtn')?.addEventListener('click', () => submitAttendanceAction('checkout'));
   } catch (error) {
     setPageError(container, error.message);
-  }
-}
-
-async function submitAttendanceAction(type) {
-  if (attendanceActionInFlight) {
-    return;
-  }
-
-  attendanceActionInFlight = true;
-  const checkInButton = document.getElementById('employeeCheckInBtn');
-  const checkOutButton = document.getElementById('employeeCheckOutBtn');
-
-  if (checkInButton) {
-    checkInButton.disabled = true;
-  }
-  if (checkOutButton) {
-    checkOutButton.disabled = true;
-  }
-
-  try {
-    const { context, warning } = await collectAttendanceContext();
-    if (warning) {
-      showToast(warning, 'info');
-    }
-
-    await apiRequest(`/attendance/${type}`, { method: 'POST', body: context });
-    invalidateAttendanceCache();
-    showToast(type === 'checkin' ? t('toasts.checkInSuccess') : t('toasts.checkOutSuccess'), 'success');
-    await Promise.all([
-      renderAttendancePage(),
-      refreshTopbarMessage().catch(() => {}),
-    ]);
-  } catch (error) {
-    showToast(error.message, 'error');
-  } finally {
-    attendanceActionInFlight = false;
-    if (checkInButton) {
-      checkInButton.disabled = false;
-    }
-    if (checkOutButton) {
-      checkOutButton.disabled = false;
-    }
   }
 }
 
@@ -4140,7 +3882,7 @@ async function renderHistoryPage() {
           <div class="table-shell">
             <table>
               <thead>
-                <tr><th>${escapeHtml(t('common.employee'))}</th><th>${escapeHtml(t('common.date'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('historyPage.ipAddress'))}</th></tr>
+                <tr><th>${escapeHtml(t('common.employee'))}</th><th>${escapeHtml(t('common.date'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('historyPage.ipAddress'))}</th><th>${escapeHtml(t('timesheet.notes'))}</th></tr>
               </thead>
               <tbody>
                 ${pageData.items.length ? pageData.items.map((row) => {
@@ -4153,9 +3895,10 @@ async function renderHistoryPage() {
                       <td>${escapeHtml(formatTime(row.check_out_time))}</td>
                       <td>${badgeMarkup(row.attendance_status, row.attendance_status)}</td>
                       <td>${escapeHtml(row.ip_address || '-')}</td>
+                      <td class="work-notes-cell">${escapeHtml(row.work_notes || '—')}</td>
                     </tr>
                   `;
-                }).join('') : `<tr><td colspan="6"><div class="empty-state">${escapeHtml(t('notes.noFilteredRecords'))}</div></td></tr>`}
+                }).join('') : `<tr><td colspan="7"><div class="empty-state">${escapeHtml(t('notes.noFilteredRecords'))}</div></td></tr>`}
               </tbody>
             </table>
           </div>
@@ -4206,55 +3949,158 @@ async function renderHistoryPage() {
   }
 }
 
-async function renderQrPage() {
+function networkRulesFromText(value) {
+  return String(value || '')
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function printQrCode(qrImage) {
+  const printWindow = window.open('', '_blank', 'width=720,height=900');
+  if (!printWindow) {
+    showToast(t('qrOnly.popupBlocked'), 'error');
+    return;
+  }
+  printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>EVARA BNS QR</title>
+    <style>body{font-family:Arial,sans-serif;text-align:center;padding:32px;color:#111827}img{width:420px;height:420px}h1{font-size:28px;margin:8px 0}p{font-size:18px;margin:6px 0}</style>
+    </head><body><h1>EVARA BNS</h1><p>${escapeHtml(t('qrOnly.printLine1'))}</p><p dir="rtl">${escapeHtml(t('qrOnly.printLineAr'))}</p>
+    <img src="${escapeHtml(qrImage)}" alt="QR" /><p>${escapeHtml(t('qrOnly.printLine2'))}</p></body></html>`);
+  printWindow.document.close();
+  printWindow.focus();
+  window.setTimeout(() => printWindow.print(), 300);
+}
+
+async function renderQrPage(prefetched = null) {
   const container = elements.pages.qr;
   if (!isAdmin()) {
     setPageError(container, t('errors.adminQrOnly'));
     return;
   }
-  if (!getFreshCachedValue(buildCacheKey('qr', { current: true }), QUERY_CACHE_TTL_MS.qr)) {
+  if (!prefetched) {
     setPageLoading(container, t('pages.loading.qr'));
   }
 
   try {
-    const payload = await getCachedQuery(buildCacheKey('qr', { current: true }), QUERY_CACHE_TTL_MS.qr, () => apiRequest('/attendance/qr'));
-    const qr = payload.data;
+    const settings = prefetched || (await apiRequest('/admin/attendance-settings')).data;
+    const allRules = [...settings.allowed_networks, ...settings.environment_networks];
+    const blocked = settings.require_office_network && !allRules.length;
     container.innerHTML = `
       <div class="page-shell">
         <div class="section-header">
           <div>
             <p class="eyebrow">${escapeHtml(t('qrPage.eyebrow'))}</p>
-            <h1>${escapeHtml(t('qrPage.title'))}</h1>
-            <p>${escapeHtml(t('qrPage.intro'))}</p>
+            <h1>${escapeHtml(t('qrOnly.title'))}</h1>
+            <p>${escapeHtml(t('qrOnly.intro'))}</p>
           </div>
-          <button id="qrRefreshBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.regenerate'))}</button>
         </div>
+        ${blocked ? `<div class="form-alert error">${escapeHtml(t('qrOnly.blockedWarning'))}</div>` : ''}
         <section class="card-block">
+          <div class="card-head">
+            <div>
+              <h3>${escapeHtml(t('qrOnly.qrCardTitle'))}</h3>
+              <p class="card-subtle">${escapeHtml(t('qrOnly.qrCardText'))}</p>
+            </div>
+          </div>
           <div class="page-shell">
             <div class="qr-frame">
-              <img src="${escapeHtml(qr.qr_image)}" alt="${escapeHtml(t('qrPage.imageAlt'))}" />
+              <img src="${escapeHtml(settings.qr_image)}" alt="${escapeHtml(t('qrPage.imageAlt'))}" />
             </div>
-            <div class="status-card compact">
-              <div>
-                <span class="status-label">${escapeHtml(t('qrPage.checkinUrl'))}</span>
-                <strong>${escapeHtml(qr.checkin_url)}</strong>
-                <p class="inline-note">${escapeHtml(t('notes.latestGenerated', { date: formatDateTime(qr.generated_at) }))}</p>
-              </div>
-            </div>
+            <p class="inline-note">${escapeHtml(t('qrOnly.qrUpdated', { date: settings.qr_updated_at ? formatDateTime(settings.qr_updated_at) : '—' }))}</p>
             <div class="inline-actions">
-              <button id="downloadQrBtn" type="button" class="btn btn-primary">${escapeHtml(t('common.downloadQr'))}</button>
+              <button id="printQrBtn" type="button" class="btn btn-primary">${escapeHtml(t('qrOnly.print'))}</button>
+              <button id="downloadQrBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.downloadQr'))}</button>
+              <button id="rotateQrBtn" type="button" class="btn btn-danger">${escapeHtml(t('qrOnly.rotate'))}</button>
             </div>
           </div>
+        </section>
+        <section class="card-block">
+          <div class="card-head">
+            <div>
+              <h3>${escapeHtml(t('qrOnly.networkTitle'))}</h3>
+              <p class="card-subtle">${escapeHtml(t('qrOnly.networkText'))}</p>
+            </div>
+          </div>
+          <form id="officeNetworkForm" class="stack-form">
+            <div class="status-card compact">
+              <div>
+                <span class="status-label">${escapeHtml(t('qrOnly.detectedIp'))}</span>
+                <strong dir="ltr">${escapeHtml(settings.detected_ip || '—')}</strong>
+                <p class="inline-note">${escapeHtml(settings.detected_ip_allowed ? t('qrOnly.detectedAllowed') : t('qrOnly.detectedNotAllowed'))}</p>
+              </div>
+              ${settings.detected_ip && !settings.detected_ip_allowed ? `<button id="addDetectedIpBtn" type="button" class="btn btn-secondary">${escapeHtml(t('qrOnly.addDetectedIp'))}</button>` : ''}
+            </div>
+            <label class="toggle-line">
+              <input id="requireOfficeNetwork" type="checkbox" ${settings.require_office_network ? 'checked' : ''} />
+              <span>${escapeHtml(t('qrOnly.requireNetwork'))}</span>
+            </label>
+            <div class="form-group">
+              <label for="allowedNetworks">${escapeHtml(t('qrOnly.allowedNetworks'))}</label>
+              <textarea id="allowedNetworks" rows="4" dir="ltr" spellcheck="false" placeholder="41.33.10.5&#10;192.168.1.*">${escapeHtml(settings.allowed_networks.join('\n'))}</textarea>
+              <small class="inline-note">${escapeHtml(t('qrOnly.allowedNetworksHint'))}</small>
+              ${settings.environment_networks.length ? `<small class="inline-note">${escapeHtml(t('qrOnly.environmentNetworks', { list: settings.environment_networks.join(', ') }))}</small>` : ''}
+            </div>
+            <div id="officeNetworkError" class="form-alert error hidden"></div>
+            <div class="inline-actions">
+              <button id="saveOfficeNetworkBtn" type="submit" class="btn btn-primary">${escapeHtml(t('common.saveChanges'))}</button>
+            </div>
+          </form>
         </section>
       </div>
     `;
 
-    container.querySelector('#qrRefreshBtn')?.addEventListener('click', () => renderQrPage().catch((error) => setPageError(container, error.message)));
+    container.querySelector('#printQrBtn')?.addEventListener('click', () => printQrCode(settings.qr_image));
     container.querySelector('#downloadQrBtn')?.addEventListener('click', () => {
       const anchor = document.createElement('a');
-      anchor.href = qr.qr_image;
-      anchor.download = 'evara-bns-qr.png';
+      anchor.href = settings.qr_image;
+      anchor.download = 'evara-bns-office-qr.png';
       anchor.click();
+    });
+    container.querySelector('#rotateQrBtn')?.addEventListener('click', async () => {
+      const confirmed = await confirmAction({
+        title: t('qrOnly.rotateConfirmTitle'),
+        message: t('qrOnly.rotateConfirmText'),
+        confirmLabel: t('qrOnly.rotate'),
+      });
+      if (!confirmed) {
+        return;
+      }
+      try {
+        const payload = await apiRequest('/admin/attendance-settings/rotate-qr', { method: 'POST' });
+        showToast(t('qrOnly.rotated'), 'success');
+        await renderQrPage(payload.data);
+      } catch (error) {
+        showToast(error.message, 'error');
+      }
+    });
+    container.querySelector('#addDetectedIpBtn')?.addEventListener('click', () => {
+      const textarea = container.querySelector('#allowedNetworks');
+      const rules = networkRulesFromText(textarea.value);
+      if (!rules.includes(settings.detected_ip)) {
+        rules.push(settings.detected_ip);
+      }
+      textarea.value = rules.join('\n');
+      textarea.focus();
+    });
+    container.querySelector('#officeNetworkForm')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      showFormError('officeNetworkError');
+      const button = container.querySelector('#saveOfficeNetworkBtn');
+      button.disabled = true;
+      try {
+        const payload = await apiRequest('/admin/attendance-settings', {
+          method: 'PUT',
+          body: {
+            require_office_network: container.querySelector('#requireOfficeNetwork').checked,
+            allowed_networks: networkRulesFromText(container.querySelector('#allowedNetworks').value),
+          },
+        });
+        showToast(t('qrOnly.saved'), 'success');
+        await renderQrPage(payload.data);
+      } catch (error) {
+        showFormError('officeNetworkError', error.message);
+        button.disabled = false;
+      }
     });
   } catch (error) {
     setPageError(container, error.message);
