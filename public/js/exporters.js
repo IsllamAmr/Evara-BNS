@@ -8,7 +8,7 @@ import {
   todayIso as todayBusinessIso,
 } from './shared.js';
 import { formatDurationPlain as formatDuration } from './reporting.js';
-import { buildTimesheetRows, timesheetValues, hoursValue } from './timesheet.js';
+import { hoursValue } from './timesheet.js';
 
 function csvValue(value) {
   const str = String(value ?? '');
@@ -117,19 +117,3 @@ export function exportReportsCsv(report, filters) {
   );
 }
 
-export function exportEmployeeTimesheetCsv(employeeReport, filters) {
-  if (!employeeReport) {
-    return;
-  }
-
-  const employeeToken = (employeeReport.employee.employee_code || employeeReport.employee.full_name || 'employee')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-+|-+$/g, '') || 'employee';
-
-  const entries = buildTimesheetRows(employeeReport.detailedRows.map((entry) => entry.row), filters?.month || currentBusinessMonthInput());
-  const rows = entries.map(timesheetValues);
-  rows.push(['Total hours', '', '', '', hoursValue(entries.reduce((sum, entry) => sum + (entry.trainingMinutes || 0), 0)), hoursValue(entries.reduce((sum, entry) => sum + (entry.workMinutes || 0), 0)), '', '']);
-  downloadCsvFile(`timesheet-${employeeToken}-${monthToken(filters)}.csv`,
-    ['Day', 'Date', 'From', 'To', 'Training', 'Work', 'Place', 'Notes'], rows);
-}

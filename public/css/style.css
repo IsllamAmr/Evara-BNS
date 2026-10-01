@@ -288,11 +288,6 @@ html[dir='rtl'] body {
   line-height: 1.05;
   max-width: 18ch;
 }
-.hero-line {
-  display: block;
-  white-space: nowrap;
-}
-.login-screen .hero-line,
 .login-screen .story-copy,
 .login-screen .login-hint,
 .login-screen .login-footer {
@@ -330,7 +325,6 @@ html[dir='rtl'] body {
   background: var(--surface-hover);
 }
 .story-label,
-.meta-label,
 .status-label {
   display: block;
   margin-bottom: 0.45rem;
@@ -716,7 +710,6 @@ html[dir='rtl'] .login-contact {
 .summary-card,
 .card-block,
 .status-card,
-.metric-card,
 .chart-shell,
 .qr-frame {
   border: 1px solid var(--line);
@@ -725,14 +718,12 @@ html[dir='rtl'] .login-contact {
 
 .summary-card,
 .card-block,
-.status-card,
-.metric-card {
+.status-card {
   border-radius: var(--radius-lg);
   padding: 1.4rem;
   background: var(--card-bg);
 }
-.summary-card strong,
-.metric-card strong {
+.summary-card strong {
   display: block;
   font-size: 1.8rem;
   margin-top: 0.25rem;
@@ -1073,36 +1064,22 @@ tr:last-child td { border-bottom: 0; }
   display: grid;
   gap: 1rem;
 }
-.checkin-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
 .checkin-brand {
   width: 146px;
   height: 48px;
   flex: 0 0 auto;
 }
-.checkin-live-meta,
 .checkin-actions,
 .checkin-status-meta {
   display: grid;
   gap: 0.75rem;
 }
-.checkin-live-meta {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  min-width: min(100%, 260px);
-}
-.checkin-live-chip,
 .checkin-status-meta-item {
   border-radius: 16px;
   padding: 0.8rem 0.9rem;
   background: var(--surface-overlay);
   border: 1px solid var(--line-soft);
 }
-.checkin-live-chip strong,
 .checkin-status-meta-item strong {
   display: block;
   font-size: 1rem;
@@ -1275,7 +1252,6 @@ html[dir='rtl'] button {
   .status-card,
   .topbar,
   .modal-footer { align-items: stretch; flex-direction: column; }
-  .hero-line { white-space: normal; }
   .checkin-card {
     padding: 1.15rem;
     gap: 0.85rem;
@@ -1284,18 +1260,10 @@ html[dir='rtl'] button {
     width: 122px;
     height: 42px;
   }
-  .checkin-head {
-    flex-direction: column;
-  }
-  .checkin-live-meta,
   .checkin-status-meta {
     grid-template-columns: 1fr 1fr;
     gap: 0.6rem;
   }
-  .checkin-live-meta {
-    width: 100%;
-  }
-  .checkin-live-chip,
   .checkin-status-meta-item {
     padding: 0.7rem 0.75rem;
     border-radius: 14px;

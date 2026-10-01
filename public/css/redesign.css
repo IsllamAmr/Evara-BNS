@@ -100,7 +100,7 @@ body { background: var(--bg-canvas); }
 /* Hidden outside the admin dashboard (sign-in, check-in and employee screens are English only). */
 .language-toggle[hidden] { display: none !important; }
 .language-toggle:hover { background: var(--overlay-brand); color: var(--brand-hover); }
-.eyebrow, .story-label, .meta-label, .status-label { letter-spacing: .075em; }
+.eyebrow, .story-label, .status-label { letter-spacing: .075em; }
 .btn, .ghost-inline, input, select, textarea { border-radius: 11px; }
 .btn { min-height: 42px; }
 .btn-secondary { background: #f2f5fa; color: var(--ink); border-color: var(--line); }
@@ -152,14 +152,12 @@ body { background: var(--bg-canvas); }
 .login-story .language-toggle { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.22); color: #fff; }
 .login-story .language-toggle:hover { background: rgba(255,255,255,.18); }
 .brand-mark::before { display: none; }
-.brand-mark::after { display: block; bottom: 0; font-size: .55rem; line-height: 1; letter-spacing: .2em; color: #86b7ff; }
-.brand-mark.small::after { font-size: .44rem; bottom: 0; }
-.brand-mark .brand-logo { height: calc(100% - 7px); }
+/* The SVG logo carries "BNS" itself, so no overlay text and no backing box are needed. */
+.brand-mark::after { display: none !important; }
+.brand-mark .brand-logo { height: 100%; object-position: center; }
 .login-kicker, .login-form-kicker { margin: 0 0 1rem; font-size: .75rem; font-weight: 800; text-transform: uppercase; letter-spacing: .18em; }
 .login-kicker { color: #81c5ff; }
 .login-story h1 { max-width: 13ch; font-size: clamp(2.75rem, 4.5vw, 4.6rem); line-height: 1.04; letter-spacing: -.055em; color: #fff; }
-.login-story .hero-line { color: #fff; white-space: normal; }
-.login-story .hero-line:last-child { color: #91cdff; }
 .login-story h1.rotating-quote { max-width: 100%; min-height: 2.24em; font-size: clamp(1.65rem, 3.15vw, 2.9rem); line-height: 1.12; letter-spacing: -.04em; }
 .login-story .quote-line { display: block; }
 .login-story .quote-line:last-child { color: #91cdff; }
@@ -171,7 +169,7 @@ body { background: var(--bg-canvas); }
 .story-card strong { font-size: .85rem; font-weight: 700; }
 .login-card { justify-content: center; padding: clamp(2rem, 4.5vw, 4.25rem); background: #fff; }
 .login-card-header.centered { justify-content: flex-start; margin-bottom: 2.5rem; }
-.login-card .brand-mark { width: 140px; height: 53px; padding: 8px 14px 12px; border-radius: 12px; background: #17365d; }
+.login-card .brand-mark { width: 150px; height: 58px; }
 .login-form-kicker { margin-bottom: .5rem; color: var(--brand); }
 .login-card h2 { font-size: clamp(1.65rem, 2.4vw, 2.1rem); letter-spacing: -.04em; }
 .login-form-copy { margin: .55rem 0 2rem; color: var(--muted); line-height: 1.5; }
@@ -253,7 +251,7 @@ body { background: var(--bg-canvas); }
 .section-header h1 { font-size: clamp(1.25rem, 2vw, 1.65rem); letter-spacing: -.035em; }
 .section-header .eyebrow { color: var(--brand); }
 .summary-grid { gap: .85rem; }
-.summary-card, .card-block, .status-card, .metric-card { padding: 1.35rem; border-radius: 16px; border-color: #e5ebf3; box-shadow: var(--shadow-sm); }
+.summary-card, .card-block, .status-card { padding: 1.35rem; border-radius: 16px; border-color: #e5ebf3; box-shadow: var(--shadow-sm); }
 .summary-card { position: relative; overflow: hidden; min-height: 135px; }
 .summary-card::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--brand); opacity: .85; }
 .summary-card:nth-child(4n+2)::before { background: #10a989; }
@@ -277,9 +275,9 @@ tbody tr:hover { background: #f7faff; }
 .checkin-body { background: radial-gradient(circle at 18% 12%, #e5ecfb, transparent 38%), #f3f6fb; }
 .checkin-shell { width: min(700px, 100%); }
 .checkin-card { border-radius: 22px; padding: clamp(1.4rem, 3vw, 2.2rem); border-color: #e4ebf4; box-shadow: var(--shadow-md); }
-.checkin-card .brand-mark { background: #17365d; padding: .5rem; border-radius: 9px; }
+.checkin-card .brand-mark { width: 118px; height: 46px; }
 .checkin-card h1 { color: var(--ink); font-size: clamp(2rem, 5vw, 3rem); max-width: 15ch; letter-spacing: -.055em; }
-.checkin-live-chip, .checkin-status-meta-item { background: #f7f9fc; border-color: var(--line); }
+.checkin-status-meta-item { background: #f7f9fc; border-color: var(--line); }
 .checkin-status-card { background: #f8faff; }
 .checkin-actions .btn { min-height: 52px; }
 
@@ -312,7 +310,6 @@ html[dir='rtl'] .sidebar-user .ghost-inline { text-align: center; }
   .login-kicker, .story-grid { display: none; }
   .login-story h1 { display: block; max-width: 100%; font-size: clamp(1.8rem, 7.5vw, 2.25rem); line-height: 1.12; letter-spacing: -.04em; }
   .login-story h1.rotating-quote { font-size: clamp(1.65rem, 7.2vw, 2.15rem); }
-  .login-story .hero-line:not(:first-child) { display: inline; }
   .login-story .story-copy { display: block; max-width: 35ch; margin-top: .55rem; font-size: .8rem; line-height: 1.45; }
   .login-card { position: relative; z-index: 1; flex: 1; justify-content: flex-start; margin-top: -18px; padding: 1.8rem 1.25rem max(1.5rem, env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0; }
   .login-card-header.centered { display: none; }
@@ -362,17 +359,6 @@ html[dir='rtl'] .sidebar-user .ghost-inline { text-align: center; }
 .work-notes-cell { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 240px; max-width: 480px; }
 
 /* QR-only attendance */
-.qr-only-hint {
-  display: inline-flex;
-  align-items: center;
-  padding: .55rem .85rem;
-  border-radius: 999px;
-  background: rgba(36, 83, 200, .08);
-  color: #2453c8;
-  font-size: .85rem;
-  font-weight: 600;
-  line-height: 1.4;
-}
 .toggle-line {
   display: flex;
   align-items: center;

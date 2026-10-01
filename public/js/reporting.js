@@ -81,10 +81,6 @@ export function isWorkday(date) {
   return BUSINESS_WORKDAY_INDEXES.has(day);
 }
 
-export function businessStartTimeLabel() {
-  return formatAverageTime(DAY_START_MINUTES);
-}
-
 export function businessEndTimeLabel() {
   return formatAverageTime(DAY_END_MINUTES);
 }

@@ -33,11 +33,13 @@ const REQUEST_LOG_FORMAT = String(process.env.REQUEST_LOG_FORMAT || '').trim().t
 const USE_JSON_REQUEST_LOGS = REQUEST_LOG_FORMAT === 'json';
 const TRUST_PROXY_HOPS = Number(process.env.TRUST_PROXY_HOPS || 0);
 const publicDirectory = path.join(__dirname, 'public');
-const HTML_TEMPLATES = {
-  index: fs.readFileSync(path.join(publicDirectory, 'index.html'), 'utf8'),
-  checkin: fs.readFileSync(path.join(publicDirectory, 'checkin.html'), 'utf8'),
-  passwordReset: fs.readFileSync(path.join(publicDirectory, 'password-reset.html'), 'utf8'),
+const HTML_TEMPLATE_FILES = {
+  index: 'index.html',
+  checkin: 'checkin.html',
+  passwordReset: 'password-reset.html',
 };
+const readHtmlTemplate = (name) => fs.readFileSync(path.join(publicDirectory, HTML_TEMPLATE_FILES[name]), 'utf8');
+const HTML_TEMPLATES = Object.fromEntries(Object.keys(HTML_TEMPLATE_FILES).map((name) => [name, readHtmlTemplate(name)]));
 const PAGE_METADATA = {
   passwordReset: {
     title: 'EVARA BNS | Password Recovery',
@@ -214,7 +216,8 @@ function escapeHtmlAttribute(value) {
 }
 
 function renderHtmlTemplate(templateName, req) {
-  const template = HTML_TEMPLATES[templateName];
+  // Outside production the page is re-read per request, so a `git pull` shows up without a restart.
+  const template = IS_PRODUCTION ? HTML_TEMPLATES[templateName] : readHtmlTemplate(templateName);
   const metadata = PAGE_METADATA[templateName];
   const pageUrl = buildAbsoluteUrl(req, req.originalUrl || '/');
   const replacements = {
@@ -232,6 +235,10 @@ function renderHtmlTemplate(templateName, req) {
 
 function sendRenderedHtml(res, templateName, req) {
   res.type('html');
+  // Phones otherwise keep showing a cached copy of the page after a deploy.
+  if (!res.get('Cache-Control')) {
+    res.set('Cache-Control', 'no-cache');
+  }
   res.send(renderHtmlTemplate(templateName, req));
 }
 

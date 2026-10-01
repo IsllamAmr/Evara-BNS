@@ -26,20 +26,25 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="icon" type="image/png" href="assets/image.png" />
-  <link rel="shortcut icon" type="image/png" href="assets/image.png" />
-  <link rel="apple-touch-icon" href="assets/image.png" />
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/assets/icon-192.png" />
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/redesign.css" />
   <link rel="stylesheet" href="css/employee.css" />
 </head>
 <body>
-  <section id="loginScreen" class="login-screen">
+  <div id="bootSplash" class="boot-splash" role="status">
+    <img src="assets/logo-dark.svg" alt="EVARA BNS" width="150" height="58" />
+    <span class="boot-spinner" aria-hidden="true"></span>
+  </div>
+
+  <section id="loginScreen" class="login-screen hidden">
     <div class="login-layout">
       <div class="login-story">
         <div class="login-story-head">
           <div class="brand-mark">
-            <img src="assets/image.png" alt="EVARA BNS logo" class="brand-logo" />
+            <img src="assets/logo-light.svg" alt="EVARA BNS" class="brand-logo" />
           </div>
           <div class="login-story-actions">
             <button type="button" class="quote-toggle" data-quote-toggle aria-label="Pause sayings" title="Pause sayings">
@@ -64,7 +69,7 @@
       <div class="login-card">
         <div class="login-card-header centered">
           <div class="brand-mark login-brand">
-            <img src="assets/image.png" alt="EVARA BNS logo" class="brand-logo" />
+            <img src="assets/logo-dark.svg" alt="EVARA BNS" class="brand-logo" />
           </div>
         </div>
         <p class="login-form-kicker" data-i18n="login.welcomeBack">Welcome back</p>
@@ -102,7 +107,7 @@
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-branding">
         <div class="brand-mark small">
-          <img src="assets/image.png" alt="EVARA BNS logo" class="brand-logo" />
+          <img src="assets/logo-light.svg" alt="EVARA BNS" class="brand-logo" />
         </div>
         <span class="sidebar-brand-text">WORKSPACE</span>
       </div>

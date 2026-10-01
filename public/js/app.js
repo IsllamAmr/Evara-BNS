@@ -234,6 +234,8 @@ let prefetchTimerId = null;
 let lastActivityWriteAt = 0;
 let routeRenderInFlight = false;
 let routeRenderQueued = false;
+// Collapses concurrent opens of the same user (boot, sign-in and auth events can overlap).
+let sessionOpening = null;
 
 boot();
 
@@ -534,13 +536,19 @@ function syncLoginHint() {
 function showLogin(message = '') {
   setLanguageLock('en');
   applyDocumentLanguage();
+  hideBootSplash();
   elements.app.classList.add('hidden');
   elements.loginScreen.classList.remove('hidden');
   setLoginError(message);
   syncLoginHint();
 }
 
+function hideBootSplash() {
+  document.getElementById('bootSplash')?.remove();
+}
+
 function showAppShell() {
+  hideBootSplash();
   elements.loginScreen.classList.add('hidden');
   elements.app.classList.remove('hidden');
 }
@@ -1193,35 +1201,77 @@ async function boot() {
 
   if (!isSupabaseReady()) {
     elements.loginBtn.disabled = true;
-    setLoginError(t('errors.supabaseFrontendConfigMissing'));
+    showLogin(t('errors.supabaseFrontendConfigMissing'));
     return;
   }
 
-  supabase.auth.onAuthStateChange((_event, session) => {
-    window.setTimeout(async () => {
-      if (!session) {
-        resetSessionState();
-        showLogin();
-        return;
-      }
-
-      try {
-        await handleAuthenticatedSession(session);
-      } catch (error) {
-        setLoginError(error.message);
-      }
-    }, 0);
+  // Deferred so Supabase finishes its own bookkeeping before we query with the session.
+  supabase.auth.onAuthStateChange((event, session) => {
+    window.setTimeout(() => handleAuthEvent(event, session), 0);
   });
 
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session) {
-    await handleAuthenticatedSession(session);
-  } else {
-    showLogin();
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    await openSession(session);
+  } catch (error) {
+    showLogin(error.message);
   }
 }
 
-async function handleAuthenticatedSession(session) {
+// Supabase also reports INITIAL_SESSION on load, TOKEN_REFRESHED about hourly and
+// SIGNED_IN again when the tab regains focus. Re-opening the whole app on each of those
+// refetched the profile, re-rendered the page and re-subscribed realtime, so only a real
+// sign-out or a different user changes what is on screen; the rest just keep the token fresh.
+function handleAuthEvent(event, session) {
+  if (event === 'SIGNED_OUT' || !session) {
+    if (state.profile || sessionOpening) {
+      resetSessionState();
+      showLogin();
+    }
+    return;
+  }
+
+  if (event === 'INITIAL_SESSION') {
+    return;
+  }
+
+  if (state.profile?.id === session.user.id) {
+    state.session = session;
+    return;
+  }
+
+  openSession(session);
+}
+
+async function openSession(session) {
+  if (!session) {
+    showLogin();
+    return;
+  }
+
+  try {
+    await handleAuthenticatedSession(session);
+  } catch (error) {
+    resetSessionState();
+    showLogin(error.message);
+  }
+}
+
+function handleAuthenticatedSession(session) {
+  if (sessionOpening?.userId === session.user.id) {
+    return sessionOpening.promise;
+  }
+
+  const promise = loadAuthenticatedSession(session).finally(() => {
+    if (sessionOpening?.promise === promise) {
+      sessionOpening = null;
+    }
+  });
+  sessionOpening = { userId: session.user.id, promise };
+  return promise;
+}
+
+async function loadAuthenticatedSession(session) {
   const profile = await fetchMyProfile(session.user.id);
 
   if (!profile) {
@@ -1714,17 +1764,6 @@ function buildPaginationMeta(totalItems, paginationState) {
   };
 }
 
-function paginateItems(items, paginationState) {
-  const meta = buildPaginationMeta(items.length, paginationState);
-  const startIndex = (meta.currentPage - 1) * paginationState.pageSize;
-  const endIndex = startIndex + paginationState.pageSize;
-
-  return {
-    items: items.slice(startIndex, endIndex),
-    ...meta,
-  };
-}
-
 function buildPaginationMarkup(id, meta) {
   if (meta.totalItems <= meta.pageSize) {
     return `
@@ -2095,19 +2134,6 @@ async function renderDashboardPage() {
     setPageError(container, error.message);
   }
 }
-function filteredEmployees() {
-  return state.employees.filter((employee) => {
-    const matchesSearch = `${employee.full_name} ${employee.employee_code || ''} ${employee.email} ${employee.department || ''} ${employee.position || ''}`
-      .toLowerCase()
-      .includes(state.employeeFilters.search.toLowerCase());
-    const matchesDepartment = state.employeeFilters.department === 'all'
-      || departmentLabel(employee.department) === state.employeeFilters.department;
-    const matchesStatus = state.employeeFilters.status === 'all'
-      || employee.status === state.employeeFilters.status;
-    return matchesSearch && matchesDepartment && matchesStatus;
-  });
-}
-
 async function renderEmployeesPage() {
   const container = elements.pages.employees;
   if (!isAdmin()) {
@@ -2823,12 +2849,13 @@ function employeeFormMarkup(mode, employee = null) {
         ${isEdit ? '' : `
           <div class="form-group">
             <label for="employee_password">${escapeHtml(t('common.password'))}</label>
-            <input id="employee_password" name="password" type="password" required />
+            <input id="employee_password" name="password" type="password" autocomplete="new-password" aria-describedby="employee_password_hint" required />
           </div>
           <div class="form-group">
             <label for="employee_password_confirm">${escapeHtml(t('common.confirmPassword'))}</label>
-            <input id="employee_password_confirm" name="password_confirm" type="password" required />
+            <input id="employee_password_confirm" name="password_confirm" type="password" autocomplete="new-password" required />
           </div>
+          <p id="employee_password_hint" class="inline-note full">${escapeHtml(t('employeeForm.passwordHint'))}</p>
         `}
       </div>
       <div id="employeeFormError" class="form-alert error hidden"></div>
