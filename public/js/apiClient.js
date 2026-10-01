@@ -56,7 +56,11 @@ export function formatApiErrorMessage({
 // Keep the server's machine-readable error code (details.code) so pages can show
 // a translated message instead of the raw English text.
 function apiError(message, payload, status) {
-  const error = new Error(message);
+  // A 422 only says "Validation failed"; the per-field reasons are in details.errors.
+  const fieldMessages = Array.isArray(payload?.details?.errors)
+    ? [...new Set(payload.details.errors.map((item) => item?.message).filter(Boolean))]
+    : [];
+  const error = new Error(fieldMessages.length ? fieldMessages.join(' • ') : message);
   error.code = payload?.details?.code || null;
   error.details = payload?.details || null;
   error.status = status || null;
