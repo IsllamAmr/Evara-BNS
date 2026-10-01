@@ -174,7 +174,9 @@ body { background: var(--bg-canvas); }
 .login-card h2 { font-size: clamp(1.65rem, 2.4vw, 2.1rem); letter-spacing: -.04em; }
 .login-form-copy { margin: .55rem 0 2rem; color: var(--muted); line-height: 1.5; }
 .login-card .stack-form { gap: 1.25rem; }
-.login-card input { min-height: 52px; background: #f8fafd; font-size: 1rem; }
+/* The old dark login used white field text; the card is light now. */
+.login-screen { --field-text: var(--text-strong); }
+.login-card input { min-height: 52px; background: #f8fafd; color: var(--text-strong); font-size: 1rem; }
 .login-card .btn-primary { min-height: 52px; background: #315bdf; color: #fff; box-shadow: 0 5px 14px #315bdf1c; }
 .login-card .btn-primary:hover:not(:disabled) { background: #244bc5; }
 .login-card .btn-primary:disabled { background: #9aaeed; box-shadow: none; opacity: 1; }
