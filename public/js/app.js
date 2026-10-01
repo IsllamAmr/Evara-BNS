@@ -1143,23 +1143,27 @@ function setupRealtimeSubscriptions() {
     return;
   }
 
+  // Admins watch every row; an employee only needs their own rows, so one person's
+  // check-in does not re-render every employee's screen.
+  const ownRows = (column) => (isAdmin() ? {} : { filter: `${column}=eq.${state.profile.id}` });
+
   const attendanceChannel = supabase
     .channel(`attendance-feed-${state.profile.id}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, scheduleLiveRefresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance', ...ownRows('user_id') }, scheduleLiveRefresh)
     .subscribe();
 
   realtimeChannels.push(attendanceChannel);
 
   const profileChannel = supabase
     .channel(`profiles-feed-${state.profile.id}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, scheduleLiveRefresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', ...ownRows('id') }, scheduleLiveRefresh)
     .subscribe();
 
   realtimeChannels.push(profileChannel);
 
   const requestChannel = supabase
     .channel(`requests-feed-${state.profile.id}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_requests' }, scheduleLiveRefresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_requests', ...ownRows('user_id') }, scheduleLiveRefresh)
     .subscribe();
 
   realtimeChannels.push(requestChannel);

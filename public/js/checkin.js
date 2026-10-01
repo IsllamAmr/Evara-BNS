@@ -200,42 +200,6 @@ function updateClock() {
   todayLabel.textContent = formatDate(todayIso());
 }
 
-function getCurrentPosition() {
-  if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    return Promise.resolve({ context: {}, warning: '' });
-  }
-
-  return new Promise((resolve) => {
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        resolve({
-          context: {
-            latitude: Number(position.coords.latitude),
-            longitude: Number(position.coords.longitude),
-            accuracy: Number(position.coords.accuracy),
-          },
-          warning: '',
-        });
-      },
-      (error) => {
-        let warning = '';
-        if (error?.code === error.PERMISSION_DENIED) {
-          warning = t('checkin.locationDeniedWarning');
-        } else if (error?.code === error.TIMEOUT) {
-          warning = t('checkin.locationTimeoutWarning');
-        }
-
-        resolve({ context: {}, warning });
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 8000,
-        maximumAge: 60000,
-      }
-    );
-  });
-}
-
 async function apiRequest(path, session, options = {}) {
   const requestOptions = {
     method: options.method || 'GET',
