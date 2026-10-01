@@ -97,6 +97,8 @@
 
 body { background: var(--bg-canvas); }
 .language-toggle { display: inline-flex !important; align-items: center; justify-content: center; background: #fff; color: var(--brand); }
+/* Hidden outside the admin dashboard (sign-in, check-in and employee screens are English only). */
+.language-toggle[hidden] { display: none !important; }
 .language-toggle:hover { background: var(--overlay-brand); color: var(--brand-hover); }
 .eyebrow, .story-label, .meta-label, .status-label { letter-spacing: .075em; }
 .btn, .ghost-inline, input, select, textarea { border-radius: 11px; }

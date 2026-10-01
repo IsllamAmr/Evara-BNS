@@ -1606,7 +1606,6 @@ dictionaries.en.mobile = {
   profile: {
     account: 'Account details',
     settings: 'Settings',
-    language: 'Language',
     joined: 'Joined',
     monthRate: 'This month',
     avgCheckIn: 'Avg. check-in',
@@ -1694,7 +1693,6 @@ dictionaries.ar.mobile = {
   profile: {
     account: 'بيانات الحساب',
     settings: 'الإعدادات',
-    language: 'اللغة',
     joined: 'تاريخ الانضمام',
     monthRate: 'هذا الشهر',
     avgCheckIn: 'متوسط الحضور',
@@ -1737,8 +1735,17 @@ function interpolate(template, variables = {}) {
   });
 }
 
+// Arabic is offered to admins only. Every page starts locked to English (sign-in,
+// QR check-in, password recovery, employee screens); app.js lifts the lock once an
+// admin signs in. The admin's saved choice is left untouched while locked.
+let lockedLanguage = 'en';
+
+export function setLanguageLock(language) {
+  lockedLanguage = language ? normalizeLanguage(language) : null;
+}
+
 export function getCurrentLanguage() {
-  return getStoredLanguage();
+  return lockedLanguage || getStoredLanguage();
 }
 
 export function isArabic() {
@@ -1756,6 +1763,9 @@ export function t(key, variables = {}) {
 }
 
 export function setCurrentLanguage(language) {
+  if (lockedLanguage) {
+    return lockedLanguage;
+  }
   const nextLanguage = LANGUAGE_SWITCH_ENABLED ? normalizeLanguage(language) : DEFAULT_LANGUAGE;
   persistLanguage(nextLanguage);
   applyDocumentLanguage();
@@ -1788,9 +1798,10 @@ export function applyTranslations(root = document) {
 
 export function syncLanguageToggleButtons(root = document) {
   root.querySelectorAll('[data-language-toggle]').forEach((button) => {
-    button.hidden = !LANGUAGE_SWITCH_ENABLED;
-    button.disabled = !LANGUAGE_SWITCH_ENABLED;
-    button.setAttribute('aria-hidden', String(!LANGUAGE_SWITCH_ENABLED));
+    const unavailable = !LANGUAGE_SWITCH_ENABLED || Boolean(lockedLanguage);
+    button.hidden = unavailable;
+    button.disabled = unavailable;
+    button.setAttribute('aria-hidden', String(unavailable));
     button.textContent = isArabic() ? t('language.switchToEnglish') : t('language.switchToArabic');
     button.setAttribute('aria-label', t('language.switch'));
     button.setAttribute('title', t('language.switch'));
@@ -1799,7 +1810,9 @@ export function syncLanguageToggleButtons(root = document) {
 
 export function applyDocumentLanguage() {
   const language = getCurrentLanguage();
-  persistLanguage(language);
+  if (!lockedLanguage) {
+    persistLanguage(language);
+  }
 
   const titleKey = window.location.pathname.includes('/checkin') ? 'meta.checkinTitle' : 'meta.appTitle';
   document.documentElement.lang = language;
