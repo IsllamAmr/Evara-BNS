@@ -8,6 +8,8 @@ import {
   toggleLanguage,
 } from './i18n.js';
 import { formatDate, formatTime, statusLabel, todayIso as todayBusinessIso, offsetDate } from './shared.js';
+import { buildAttendanceRowMetrics, formatDuration } from './reporting.js';
+import { icon } from './employeeViews.js';
 
 const config = getAppConfig();
 const supabase = isSupabaseReady() ? getSupabase() : null;
@@ -24,6 +26,9 @@ const actionButton = document.getElementById('checkinActionBtn');
 const secondaryActionButton = document.getElementById('checkinSecondaryBtn');
 const todayLabel = document.getElementById('checkinToday');
 const clockLabel = document.getElementById('checkinClock');
+const orb = document.getElementById('checkinOrb');
+const orbIcon = document.getElementById('checkinOrbIcon');
+const successOverlay = document.getElementById('checkinSuccess');
 let currentSession = null;
 let currentProfile = null;
 let attendanceActionInFlight = false;
@@ -92,6 +97,7 @@ function attendanceErrorMessage(error) {
 
 function configureScanRequired(pendingAction) {
   setNotice('');
+  setOrb('scan', 'qr');
   statusText.textContent = t('qrOnly.scanNotice');
   configureActionButton({
     disabled: true,
@@ -118,6 +124,32 @@ function setNotice(message = '') {
 function setStatePill(label, tone = 'neutral') {
   statePill.textContent = label;
   statePill.className = `status-pill ${tone}`;
+  const orbState = { ready: 'ready', progress: 'progress', success: 'success', warning: 'warning' }[tone] || 'loading';
+  const orbIconName = { ready: 'login', progress: 'alarm', success: 'check', warning: 'alert' }[tone] || 'refresh';
+  setOrb(orbState, orbIconName);
+}
+
+function setOrb(stateName, iconName) {
+  if (!orb || !orbIcon) return;
+  orb.dataset.state = stateName;
+  orbIcon.innerHTML = icon(iconName);
+}
+
+// Full-screen confirmation after a successful scan, with a short vibration on phones.
+function celebrate(type) {
+  if (!successOverlay) return;
+  document.getElementById('checkinSuccessTitle').textContent = t(type === 'checkin' ? 'mobile.success.checkin' : 'mobile.success.checkout');
+  document.getElementById('checkinSuccessText').textContent = t('mobile.success.at', { time: formatTime(new Date()) });
+  successOverlay.dataset.type = type;
+  successOverlay.classList.remove('hidden');
+  try {
+    navigator.vibrate?.([35, 50, 70]);
+  } catch (_error) {
+    // Vibration is optional.
+  }
+  const hide = () => successOverlay.classList.add('hidden');
+  successOverlay.onclick = hide;
+  window.setTimeout(hide, 2600);
 }
 
 function setIdentity(profile) {
@@ -293,6 +325,7 @@ async function renderState(session, profile) {
     statusText.textContent = t('checkin.checkedInText', { time: formatTime(todayRecord.check_in_time) });
     renderStatusMeta([
       { label: t('checkin.checkInTimeLabel'), value: formatTime(todayRecord.check_in_time) },
+      { label: t('mobile.checkinWorked'), value: formatDuration(buildAttendanceRowMetrics(todayRecord).workedMinutes) },
       { label: t('checkin.statusSummaryLabel'), value: statusLabel(todayRecord.attendance_status) },
     ]);
     if (!getScannedQrToken()) {
@@ -355,10 +388,12 @@ async function submitAttendance(session, type) {
     await apiRequest(`/attendance/${type}`, session, { method: 'POST', body: { ...context, qr_token: qrToken } });
     if (type === 'checkout') clearCheckoutDraft(session.user.id);
     clearScannedQrToken();
+    celebrate(type);
     await renderState(session, currentProfile || await fetchProfile(session.user.id));
   } catch (error) {
     if (error?.code === 'qr_required') clearScannedQrToken();
     setError(attendanceErrorMessage(error));
+    setOrb('warning', 'alert');
     actionButton.disabled = false;
     actionButton.textContent = type === 'checkin' ? t('checkin.checkInNow') : t('checkin.checkOutNow');
   } finally {

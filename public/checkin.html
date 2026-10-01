@@ -2,10 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>%PAGE_TITLE%</title>
   <meta name="description" content="%PAGE_DESCRIPTION%" />
   <meta name="theme-color" content="#f4f7fb" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="EVARA" />
+  <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="canonical" href="%PAGE_URL%" />
   <meta property="og:site_name" content="EVARA BNS" />
   <meta property="og:type" content="website" />
@@ -20,31 +25,31 @@
   <meta name="twitter:image" content="%OG_IMAGE_URL%" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="icon" type="image/png" href="assets/image.png" />
   <link rel="shortcut icon" type="image/png" href="assets/image.png" />
   <link rel="apple-touch-icon" href="assets/image.png" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/redesign.css" />
+  <link rel="stylesheet" href="css/employee.css" />
 </head>
 <body class="checkin-body">
   <main class="checkin-shell">
     <section class="checkin-card">
-      <button type="button" class="language-toggle checkin-language-toggle" data-language-toggle>العربية</button>
-      <div class="checkin-head">
+      <header class="checkin-topline">
         <div class="brand-mark checkin-brand">
           <img src="assets/image.png" alt="EVARA BNS logo" class="brand-logo" />
         </div>
-        <div class="checkin-live-meta">
-          <div class="checkin-live-chip">
-            <span class="meta-label" data-i18n="checkin.today">Today</span>
-            <strong id="checkinToday">--</strong>
-          </div>
-          <div class="checkin-live-chip">
-            <span class="meta-label" data-i18n="checkin.currentTime">Current time</span>
-            <strong id="checkinClock">--:--</strong>
-          </div>
-        </div>
+        <button type="button" class="language-toggle checkin-language-toggle" data-language-toggle>العربية</button>
+      </header>
+      <div class="checkin-clock">
+        <strong id="checkinClock">--:--</strong>
+        <span id="checkinToday">--</span>
+      </div>
+      <div id="checkinOrb" class="checkin-orb" data-state="loading" aria-hidden="true">
+        <span class="orb-wave"></span>
+        <span class="orb-wave second"></span>
+        <span id="checkinOrbIcon" class="orb-core"></span>
       </div>
       <div class="checkin-hero">
         <h1 id="checkinHeroTitle">Start your morning with calm focus.</h1>
@@ -73,6 +78,14 @@
       </div>
     </section>
   </main>
+
+  <div id="checkinSuccess" class="checkin-success hidden" role="status" aria-live="assertive">
+    <div class="success-mark">
+      <svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24"/><path d="M15 27l7 7 15-16"/></svg>
+    </div>
+    <strong id="checkinSuccessTitle"></strong>
+    <span id="checkinSuccessText"></span>
+  </div>
 
   <script src="vendor/supabase.js"></script>
   <script src="env.js"></script>
