@@ -21,12 +21,12 @@ EVARA BNS is a Supabase-powered employee attendance system with role-based acces
 - Client-side pagination for employee and history views
 - Rate limiting, sanitization, and HTTP header hardening
 - Modular frontend helpers for reporting and export workflows
-- Bilingual frontend foundation with English/Arabic toggle and RTL support
+- English/Arabic toggle with RTL support in the admin dashboard; sign-in, QR check-in, password recovery and all employee screens are English only
 
 ## Frontend architecture and performance
 
 - `public/css/style.css` contains the component layout and `public/css/redesign.css` contains the current visual system, including responsive and RTL refinements.
-- The login and password recovery headers show original bilingual sayings from `public/js/rotatingQuotes.js`. They rotate every 15 seconds without repeating within a cycle, choose a different saying on the next visit, and offer a pause control. Reduced-motion preferences start rotation paused, and hidden tabs do not rotate. No network request is needed for the sayings.
+- The login and password recovery headers show original sayings (in English) from `public/js/rotatingQuotes.js`. They rotate every 15 seconds without repeating within a cycle, choose a different saying on the next visit, and offer a pause control. Reduced-motion preferences start rotation paused, and hidden tabs do not rotate. No network request is needed for the sayings.
 - `public/js/app.js` coordinates navigation and page rendering. `public/js/dataStore.js` owns query caching and complete, batched Supabase reads.
 - Attendance and employee reads used in monthly reports are fetched in 500-row pages, avoiding silent truncation at the Supabase API row limit.
 - After a page renders, the app only preloads the most likely next screen instead of issuing requests for every section. Data cache entries are invalidated when related data changes.

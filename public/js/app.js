@@ -50,6 +50,7 @@ import {
   applyDocumentLanguage,
   getLocale,
   onLanguageChange,
+  setLanguageLock,
   t,
   toggleLanguage,
 } from './i18n.js';
@@ -531,6 +532,8 @@ function syncLoginHint() {
 }
 
 function showLogin(message = '') {
+  setLanguageLock('en');
+  applyDocumentLanguage();
   elements.app.classList.add('hidden');
   elements.loginScreen.classList.remove('hidden');
   setLoginError(message);
@@ -1233,6 +1236,9 @@ async function handleAuthenticatedSession(session) {
 
   state.session = session;
   state.profile = profile;
+  // Only admins may switch to Arabic; employees always see English.
+  setLanguageLock(profile.role === 'admin' ? null : 'en');
+  applyDocumentLanguage();
   updateSessionActivity();
   state.profileMap.set(profile.id, profile);
   syncShell();
@@ -2207,13 +2213,11 @@ async function renderProfilePage() {
           </section>
           <section class="emp-card settings-list">
             <h3>${escapeHtml(t('mobile.profile.settings'))}</h3>
-            ${settingsRow('profileLanguageBtn', 'globe', t('mobile.profile.language'), getLocale().startsWith('ar') ? 'العربية' : 'English')}
             ${settingsRow('openChangePasswordFromProfileBtn', 'lock', t('profilePage.changePassword'))}
             ${settingsRow('profileLogoutBtn', 'logout', t('nav.logout'), '', 'danger')}
           </section>
         </div>
       `;
-      container.querySelector('#profileLanguageBtn')?.addEventListener('click', () => toggleLanguage());
       container.querySelector('#openChangePasswordFromProfileBtn')?.addEventListener('click', () => openChangeOwnPasswordModal());
       container.querySelector('#profileLogoutBtn')?.addEventListener('click', () => handleLogout());
       return;
