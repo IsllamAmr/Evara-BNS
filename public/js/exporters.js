@@ -7,7 +7,7 @@ import {
   statusLabel,
   todayIso as todayBusinessIso,
 } from './shared.js';
-import { formatDuration } from './reporting.js';
+import { formatDurationPlain as formatDuration } from './reporting.js';
 import { buildTimesheetRows, timesheetValues, hoursValue } from './timesheet.js';
 
 function csvValue(value) {

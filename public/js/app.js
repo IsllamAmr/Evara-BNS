@@ -4,6 +4,22 @@ import { createQueryCache, fetchAllRows } from './dataStore.js';
 import { renderTimesheet } from './timesheet.js';
 import { initRotatingQuotes } from './rotatingQuotes.js';
 import {
+  bindMonthStrip,
+  detailRowMarkup,
+  firstName,
+  greeting,
+  icon,
+  monthStripMarkup,
+  quotaCardMarkup,
+  rateRingMarkup,
+  recordListMarkup,
+  requestCardMarkup,
+  shiftHeroMarkup,
+  skeletonMarkup,
+  startLiveShift,
+  statTileMarkup,
+} from './employeeViews.js';
+import {
   exportAttendanceCsv,
   exportEmployeesCsv,
   exportReportsCsv,
@@ -189,6 +205,8 @@ const elements = {
   topbarSubline: document.getElementById('topbarSubline'),
   topbarClock: document.getElementById('topbarClock'),
   topbarDate: document.getElementById('topbarDate'),
+  topbarAvatar: document.getElementById('topbarAvatar'),
+  tabbar: document.getElementById('tabbar'),
   modal: document.getElementById('modal'),
   modalBackdrop: document.getElementById('modalBackdrop'),
   modalPanel: document.getElementById('modalPanel'),
@@ -206,6 +224,8 @@ const elements = {
 };
 
 let modalCloseHandler = null;
+// Stops the ticking shift ring of the page that was rendered last.
+let stopLiveShift = () => {};
 let realtimeChannels = [];
 let employeeSearchDebounceId = null;
 const { buildCacheKey, getFreshCachedValue, getCachedQuery, invalidateQueryCache } = createQueryCache();
@@ -362,6 +382,10 @@ function pageFromHash() {
 }
 
 function setPageLoading(container, label) {
+  if (state.profile && !isAdmin()) {
+    container.innerHTML = `${skeletonMarkup()}<span class="sr-only">${escapeHtml(label)}</span>`;
+    return;
+  }
   container.innerHTML = `<div class="loading-state"><div class="spinner"></div><div>${escapeHtml(label)}</div></div>`;
 }
 
@@ -997,11 +1021,25 @@ function syncShell() {
   elements.sidebarName.textContent = state.profile?.full_name || 'EVARA User';
   elements.sidebarRole.textContent = roleLabel(state.profile?.role || 'employee');
   elements.sidebarAvatar.textContent = toInitials(state.profile?.full_name || 'EVARA');
+  if (elements.topbarAvatar) {
+    elements.topbarAvatar.textContent = toInitials(state.profile?.full_name || 'EVARA');
+  }
+  document.body.classList.toggle('role-employee', Boolean(state.profile) && !isAdmin());
+  document.body.classList.toggle('role-admin', isAdmin());
 
   const pages = allowedPages();
   elements.sidebarNav.querySelectorAll('.nav-item').forEach((button) => {
     button.classList.toggle('hidden', !pages.includes(button.dataset.page));
     button.classList.toggle('active', button.dataset.page === state.currentPage);
+  });
+  elements.tabbar?.querySelectorAll('.tab-item').forEach((button) => {
+    const active = button.dataset.page === state.currentPage;
+    button.classList.toggle('active', active);
+    if (active) {
+      button.setAttribute('aria-current', 'page');
+    } else {
+      button.removeAttribute('aria-current');
+    }
   });
 }
 
@@ -1018,11 +1056,16 @@ function refreshTopbarMessage() {
   if (!state.profile) {
     return;
   }
+  const employeeHome = !isAdmin() && state.currentPage === 'dashboard';
   if (elements.topbarHeadline) {
-    elements.topbarHeadline.textContent = t(`nav.${state.currentPage}`);
+    elements.topbarHeadline.textContent = employeeHome
+      ? `${greeting()}${getLocale().startsWith('ar') ? '،' : ','} ${firstName(state.profile.full_name)}`
+      : t(`nav.${state.currentPage}`);
   }
   if (elements.topbarSubline) {
-    elements.topbarSubline.textContent = t('meta.description');
+    elements.topbarSubline.textContent = isAdmin()
+      ? t('meta.description')
+      : new Date().toLocaleDateString(getLocale(), { weekday: 'long', day: 'numeric', month: 'long' });
   }
 }
 
@@ -1062,6 +1105,13 @@ function bindStaticEvents() {
 
     navigate(trigger.dataset.page);
   });
+  elements.tabbar?.addEventListener('click', (event) => {
+    const trigger = event.target.closest('[data-page]');
+    if (trigger) {
+      navigate(trigger.dataset.page);
+    }
+  });
+  elements.topbarAvatar?.addEventListener('click', () => navigate('profile'));
   window.addEventListener('hashchange', () => {
     renderRoute().catch((error) => {
       showToast(error.message, 'error');
@@ -1093,23 +1143,27 @@ function setupRealtimeSubscriptions() {
     return;
   }
 
+  // Admins watch every row; an employee only needs their own rows, so one person's
+  // check-in does not re-render every employee's screen.
+  const ownRows = (column) => (isAdmin() ? {} : { filter: `${column}=eq.${state.profile.id}` });
+
   const attendanceChannel = supabase
     .channel(`attendance-feed-${state.profile.id}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, scheduleLiveRefresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance', ...ownRows('user_id') }, scheduleLiveRefresh)
     .subscribe();
 
   realtimeChannels.push(attendanceChannel);
 
   const profileChannel = supabase
     .channel(`profiles-feed-${state.profile.id}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, scheduleLiveRefresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', ...ownRows('id') }, scheduleLiveRefresh)
     .subscribe();
 
   realtimeChannels.push(profileChannel);
 
   const requestChannel = supabase
     .channel(`requests-feed-${state.profile.id}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_requests' }, scheduleLiveRefresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_requests', ...ownRows('user_id') }, scheduleLiveRefresh)
     .subscribe();
 
   realtimeChannels.push(requestChannel);
@@ -1260,8 +1314,14 @@ async function renderRoute() {
         continue;
       }
 
+      const pageChanged = state.currentPage !== page;
+      stopLiveShift();
+      stopLiveShift = () => {};
       syncPageFrame(page);
       setMobileMenuOpen(false);
+      if (pageChanged && !isAdmin()) {
+        window.scrollTo({ top: 0 });
+      }
       if (page === 'dashboard') {
         await renderDashboardPage();
       } else if (page === 'profile') {
@@ -1947,7 +2007,6 @@ async function renderDashboardPage() {
         employee: state.profile,
         attendanceDate: today,
       });
-    const todayMetrics = todayRecord ? buildAttendanceRowMetrics(todayRecord) : null;
     const monthLedger = buildEmployeeMonthLedger(state.profile, monthAttendance, currentMonth);
     const checkedDays = monthLedger.filter((entry) => entry.countsAsCheckedDay).length;
     const lateDays = monthLedger.filter((entry) => entry.countsAsLate).length;
@@ -1959,97 +2018,73 @@ async function renderDashboardPage() {
     const shiftShortfallMinutes = sumMetrics(monthLedger, (entry) => (!entry.countsAsAbsent ? entry.shortfallMinutes : 0));
     const monthOvertimeMinutes = sumMetrics(monthLedger, (entry) => entry.overtimeMinutes);
     const monthShortfallMinutes = absenceShortfallMinutes + shiftShortfallMinutes;
-    let balanceLabel = t('notes.balanceWaiting');
-    let balanceMeta = t('notes.noAttendanceToday');
-
-    if (!todayRecord && missingTodayState) {
-      if (missingTodayState.code === 'weekend') {
-        balanceLabel = t('states.weeklyLeave');
-      } else if (missingTodayState.code === 'on_leave') {
-        balanceLabel = t('outcomes.onLeave');
-      } else if (missingTodayState.code === 'absent') {
-        balanceLabel = t('states.absentToday');
-      } else if (missingTodayState.code === 'absent_so_far') {
-        balanceLabel = t('states.checkInOverdue');
-      } else if (missingTodayState.code === 'not_checked_in_yet') {
-        balanceLabel = t('states.checkInPending');
-      } else {
-        balanceLabel = missingTodayState.label;
-      }
-
-      balanceMeta = missingTodayState.note;
-    } else if (todayMetrics?.isOpenShift) {
-      balanceLabel = t('notes.balanceRemaining', { duration: formatDuration(todayMetrics.projectedRemainingMinutes) });
-      balanceMeta = t('notes.balanceRemainingMeta');
-    } else if (todayMetrics?.overtimeMinutes) {
-      balanceLabel = t('notes.balanceOvertime', { duration: formatDuration(todayMetrics.overtimeMinutes) });
-      balanceMeta = t('notes.balanceOvertimeMeta');
-    } else if (todayMetrics?.shortfallMinutes) {
-      balanceLabel = formatDuration(todayMetrics.shortfallMinutes);
-      balanceMeta = t('notes.balanceShortfallMeta');
-    } else if (todayMetrics?.isCompleteShift) {
-      balanceLabel = t('states.fullShiftReached');
-      balanceMeta = t('notes.balanceFullShiftMeta');
-    }
+    // Rate over days that are already decided (attended or absent); today's pending check-in does not count against it.
+    const decidedDays = monthLedger.filter((entry) => entry.countsAsCheckedDay || entry.countsAsAbsent).length;
+    const attendanceRate = decidedDays ? Math.round((checkedDays / decidedDays) * 100) : 100;
 
     container.innerHTML = `
-      <div class="page-shell">
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">${escapeHtml(t('dashboard.employee.eyebrow'))}</p>
-            <h1>${escapeHtml(state.profile.full_name)}</h1>
-            <p>${escapeHtml(t('dashboard.employee.intro', { schedule: businessScheduleLabel() }))}</p>
-          </div>
-          <div class="inline-actions">
-            <button id="employeeAttendanceShortcut" type="button" class="btn btn-secondary">${escapeHtml(t('common.openAttendance'))}</button>
-          </div>
-        </div>
-        <section class="card-block">
-          <div class="card-head">
-            <div>
-              <h3>${escapeHtml(t('dashboard.employee.todayTitle'))}</h3>
-              <p class="card-subtle">${escapeHtml(t('dashboard.employee.todayText'))}</p>
-            </div>
-          </div>
-          <div class="summary-grid compact-grid">
-            ${buildSummaryCard(t('dashboard.employee.todayStatus'), todayRecord ? statusLabel(todayRecord.attendance_status) : (missingTodayState?.label || (todayIsWorkday ? t('states.pending') : t('states.weeklyLeave'))), todayRecord ? buildAttendanceRecordNote(todayRecord) : (missingTodayState?.note || (todayIsWorkday ? t('notes.noAttendanceToday') : t('schedule.weeklyLeaveHint'))))}
-            ${buildSummaryCard(t('dashboard.employee.workedToday'), formatDuration(todayMetrics?.workedMinutes || 0), todayMetrics ? attendanceOutcome(todayMetrics) : (missingTodayState?.note || (todayIsWorkday ? t('notes.noAttendanceToday') : t('notes.noRequiredShift'))))}
-            ${buildSummaryCard(t('dashboard.employee.todayBalance'), balanceLabel, balanceMeta)}
-          </div>
+      <div class="emp-page emp-home">
+        ${shiftHeroMarkup({ record: todayRecord, missingState: missingTodayState || (todayIsWorkday ? null : { code: 'weekend' }) })}
+        <section class="quick-actions" aria-label="${escapeHtml(t('mobile.quick.title'))}">
+          <button type="button" class="quick-action" data-quick="request">${icon('plus')}<span>${escapeHtml(t('mobile.quick.newRequest'))}</span></button>
+          <button type="button" class="quick-action" data-quick="history">${icon('history')}<span>${escapeHtml(t('mobile.quick.history'))}</span></button>
+          <button type="button" class="quick-action" data-quick="requests">${icon('requests')}<span>${escapeHtml(t('mobile.quick.requests'))}</span></button>
+          <button type="button" class="quick-action" data-quick="timesheet">${icon('table')}<span>${escapeHtml(t('mobile.quick.timesheet'))}</span></button>
         </section>
-        <section class="card-block">
-          <div class="card-head">
+        <section class="emp-card">
+          <div class="emp-card-head">
             <div>
-              <h3>${escapeHtml(t('dashboard.employee.monthTitle'))}</h3>
-              <p class="card-subtle">${escapeHtml(t('dashboard.employee.monthText'))}</p>
+              <h3>${escapeHtml(t('mobile.month.title'))}</h3>
+              <p>${escapeHtml(currentMonth.label)}</p>
             </div>
+            ${rateRingMarkup(attendanceRate, t('mobile.month.rate'))}
           </div>
-          <p class="inline-note">${escapeHtml(t('notes.totalShortfallHint'))}</p>
-          <div class="summary-grid">
-            ${buildSummaryCard(t('dashboard.employee.attendedDays'), String(checkedDays), t('notes.checkedSinceMonthStart'))}
-            ${buildSummaryCard(t('dashboard.employee.absentDays'), String(absentDays), t('notes.workdaysWithoutAttendance'))}
-            ${buildSummaryCard(t('dashboard.employee.weeklyLeaveDays'), String(weeklyLeaveDays), t('notes.weeklyLeaveSinceMonthStart'))}
-            ${buildSummaryCard(t('dashboard.employee.fullShiftDays'), String(fullShiftDays), t('notes.completedWithoutShortfall'))}
-            ${buildSummaryCard(t('dashboard.employee.lateArrivals'), String(lateDays), t('notes.lateAfterStart'))}
-            ${buildSummaryCard(t('dashboard.employee.absenceShortfall'), formatDuration(absenceShortfallMinutes), t('notes.absenceCardMeta', { days: String(absentDays) }))}
-            ${buildSummaryCard(t('dashboard.employee.shiftShortfall'), formatDuration(shiftShortfallMinutes), t('notes.shiftShortfallMeta', { days: String(partialShortfallDays) }))}
-            ${buildSummaryCard(t('dashboard.employee.overtimeThisMonth'), formatDuration(monthOvertimeMinutes), t('notes.overtimeMonthMeta'))}
-            ${buildSummaryCard(t('dashboard.employee.totalShortfall'), formatDuration(monthShortfallMinutes), t('notes.combinedShortfall'))}
+          <div class="stat-grid">
+            ${statTileMarkup({ iconName: 'calendar', label: t('mobile.month.attended'), value: String(checkedDays), tone: 'success' })}
+            ${statTileMarkup({ iconName: 'alarm', label: t('mobile.month.late'), value: String(lateDays), tone: 'warning' })}
+            ${statTileMarkup({ iconName: 'up', label: t('mobile.month.overtime'), value: formatDuration(monthOvertimeMinutes), tone: 'brand' })}
+            ${statTileMarkup({ iconName: 'down', label: t('mobile.month.shortfall'), value: formatDuration(monthShortfallMinutes), tone: 'danger' })}
           </div>
+          <details class="emp-more">
+            <summary>${escapeHtml(t('mobile.month.more'))}${icon('chevron', 'chevron')}</summary>
+            <p class="emp-hint">${escapeHtml(t('notes.totalShortfallHint'))}</p>
+            <div class="detail-list">
+              ${detailRowMarkup(t('dashboard.employee.absentDays'), String(absentDays))}
+              ${detailRowMarkup(t('dashboard.employee.fullShiftDays'), String(fullShiftDays))}
+              ${detailRowMarkup(t('dashboard.employee.weeklyLeaveDays'), String(weeklyLeaveDays))}
+              ${detailRowMarkup(t('dashboard.employee.absenceShortfall'), formatDuration(absenceShortfallMinutes))}
+              ${detailRowMarkup(t('dashboard.employee.shiftShortfall'), `${formatDuration(shiftShortfallMinutes)} · ${partialShortfallDays}`)}
+            </div>
+          </details>
         </section>
-        <section class="card-block">
-          <div class="card-head">
-            <div>
-              <h3>${escapeHtml(t('dashboard.employee.ledgerTitle'))}</h3>
-              <p class="card-subtle">${escapeHtml(t('dashboard.employee.ledgerText'))}</p>
-            </div>
-          </div>
+        ${monthStripMarkup(monthLedger, today)}
+        <details class="emp-card emp-timesheet" id="employeeTimesheet">
+          <summary>
+            <span class="emp-summary-icon">${icon('table')}</span>
+            <span class="emp-summary-copy"><strong>${escapeHtml(t('mobile.timesheet.title'))}</strong><span>${escapeHtml(t('mobile.timesheet.hint'))}</span></span>
+            ${icon('chevron', 'chevron')}
+          </summary>
           ${renderTimesheet(monthAttendance, currentMonth.from.slice(0, 7), state.profile.full_name)}
-        </section>
+        </details>
       </div>
     `;
 
-    container.querySelector('#employeeAttendanceShortcut')?.addEventListener('click', () => navigate('attendance'));
+    stopLiveShift = startLiveShift(container);
+    bindMonthStrip(container);
+    container.querySelector('.quick-actions')?.addEventListener('click', (event) => {
+      const action = event.target.closest('[data-quick]')?.dataset.quick;
+      if (action === 'request') {
+        openRequestForm({ onSaved: () => navigate('requests') });
+      } else if (action === 'history' || action === 'requests') {
+        navigate(action);
+      } else if (action === 'timesheet') {
+        const sheet = container.querySelector('#employeeTimesheet');
+        if (sheet) {
+          sheet.open = true;
+          sheet.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    });
   } catch (error) {
     setPageError(container, error.message);
   }
@@ -2129,6 +2164,60 @@ async function renderProfilePage() {
     const monthlyPresentDays = new Set(monthRecords.filter((row) => row.check_in_time).map((row) => row.attendance_date)).size;
     const monthlyRatio = currentMonth ? Math.round((monthlyPresentDays / Math.max(enumerateDates(currentMonth.startDate, currentMonth.endDate).filter(isWorkday).length, 1)) * 100) : 0;
     const monthlyAverageCheckIn = formatAverageTime(average(monthRecords.map((row) => minutesFromTimestamp(row.check_in_time))));
+
+    if (!isAdmin()) {
+      const profile = state.profile;
+      const settingsRow = (id, iconName, label, value = '', tone = '') => `
+        <button id="${id}" type="button" class="settings-row${tone ? ` ${tone}` : ''}">
+          <span class="settings-icon">${icon(iconName)}</span>
+          <span class="settings-label">${escapeHtml(label)}</span>
+          ${value ? `<span class="settings-value">${escapeHtml(value)}</span>` : ''}
+          ${tone ? '' : icon('chevron', 'chevron')}
+        </button>
+      `;
+      const infoRow = (iconName, label, value) => `
+        <div class="settings-row static">
+          <span class="settings-icon">${icon(iconName)}</span>
+          <span class="settings-label">${escapeHtml(label)}</span>
+          <span class="settings-value" dir="auto">${escapeHtml(value || '-')}</span>
+        </div>
+      `;
+      container.innerHTML = `
+        <div class="emp-page emp-profile">
+          <section class="profile-hero">
+            <div class="profile-avatar">${escapeHtml(toInitials(profile.full_name))}</div>
+            <h2>${escapeHtml(profile.full_name)}</h2>
+            <p>${escapeHtml([profile.position, departmentLabel(profile.department)].filter(Boolean).join(' · '))}</p>
+            <div class="profile-chips">
+              ${profile.employee_code ? `<span class="profile-chip">${icon('id')}${escapeHtml(profile.employee_code)}</span>` : ''}
+              <span class="profile-chip ok">${escapeHtml(statusLabel(profile.status))}</span>
+            </div>
+          </section>
+          <div class="profile-stats">
+            <div><strong>${escapeHtml(`${monthlyRatio}%`)}</strong><span>${escapeHtml(t('mobile.profile.monthRate'))}</span></div>
+            <div><strong dir="auto">${escapeHtml(monthlyAverageCheckIn)}</strong><span>${escapeHtml(t('mobile.profile.avgCheckIn'))}</span></div>
+            <div><strong>${escapeHtml(String(lateDays))}</strong><span>${escapeHtml(t('mobile.profile.lateDays'))}</span></div>
+          </div>
+          <section class="emp-card settings-list">
+            <h3>${escapeHtml(t('mobile.profile.account'))}</h3>
+            ${infoRow('mail', t('common.email'), profile.email)}
+            ${infoRow('phone', t('common.phone'), profile.phone)}
+            ${infoRow('briefcase', t('common.position'), profile.position)}
+            ${infoRow('calendar', t('mobile.profile.joined'), formatDate(profile.created_at))}
+          </section>
+          <section class="emp-card settings-list">
+            <h3>${escapeHtml(t('mobile.profile.settings'))}</h3>
+            ${settingsRow('profileLanguageBtn', 'globe', t('mobile.profile.language'), getLocale().startsWith('ar') ? 'العربية' : 'English')}
+            ${settingsRow('openChangePasswordFromProfileBtn', 'lock', t('profilePage.changePassword'))}
+            ${settingsRow('profileLogoutBtn', 'logout', t('nav.logout'), '', 'danger')}
+          </section>
+        </div>
+      `;
+      container.querySelector('#profileLanguageBtn')?.addEventListener('click', () => toggleLanguage());
+      container.querySelector('#openChangePasswordFromProfileBtn')?.addEventListener('click', () => openChangeOwnPasswordModal());
+      container.querySelector('#profileLogoutBtn')?.addEventListener('click', () => handleLogout());
+      return;
+    }
 
     container.innerHTML = `
       <div class="page-shell">
@@ -3467,60 +3556,28 @@ async function renderAttendancePage() {
         employee: state.profile,
         attendanceDate: today,
       });
-    const nextQrAction = !todayRecord?.check_in_time
-      ? t('qrOnly.nextCheckIn')
-      : (!todayRecord?.check_out_time ? t('qrOnly.nextCheckOut') : t('qrOnly.nextDone'));
-
     container.innerHTML = `
-        <div class="page-shell">
-          <div class="section-header">
-            <div>
-            <p class="eyebrow">${escapeHtml(t('attendancePage.employeeEyebrow'))}</p>
-            <h1>${escapeHtml(t('attendancePage.employeeTitle'))}</h1>
-            <p>${escapeHtml(t('attendancePage.employeeIntro', { schedule: businessScheduleLabel() }))}</p>
-            ${restrictionNote ? `<p class="inline-note attention-note">${escapeHtml(restrictionNote)}</p>` : ''}
-          </div>
-        </div>
-        <section class="status-card">
-          <div>
-            <span class="status-label">${escapeHtml(t('common.todayStatus'))}</span>
-            <strong>${escapeHtml(todayRecord ? statusLabel(todayRecord.attendance_status) : (missingTodayState?.label || t('states.pending')))}</strong>
-            <p class="inline-note">${escapeHtml(todayRecord ? buildAttendanceRecordNote(todayRecord) : (missingTodayState?.note || t('attendancePage.noSubmittedAttendance')))}</p>
-          </div>
-          <div class="inline-actions">
-            <span class="qr-only-hint">${escapeHtml(nextQrAction)}</span>
-            <button id="attendanceRefreshBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.refresh'))}</button>
-          </div>
+      <div class="emp-page emp-today">
+        ${shiftHeroMarkup({ record: todayRecord, missingState: missingTodayState })}
+        <section class="emp-card how-card">
+          <div class="emp-card-head"><h3>${escapeHtml(t('mobile.how.title'))}</h3></div>
+          <ol class="how-steps">
+            <li>${icon('wifi')}<span>${escapeHtml(t('mobile.how.step1'))}</span></li>
+            <li>${icon('qr')}<span>${escapeHtml(t('mobile.how.step2'))}</span></li>
+            <li>${icon('note')}<span>${escapeHtml(t('mobile.how.step3'))}</span></li>
+          </ol>
         </section>
-        <section class="card-block">
-          <div class="card-head">
-            <div>
-              <h3>${escapeHtml(t('attendancePage.personalRecentTitle'))}</h3>
-              <p class="card-subtle">${escapeHtml(t('attendancePage.personalRecentText'))}</p>
-            </div>
+        <section class="emp-section">
+          <div class="emp-section-head">
+            <h3>${escapeHtml(t('mobile.recent.title'))}</h3>
+            <button id="attendanceRefreshBtn" type="button" class="icon-btn" aria-label="${escapeHtml(t('common.refresh'))}">${icon('refresh')}</button>
           </div>
-          <div class="table-shell">
-            <table>
-              <thead>
-                <tr><th>${escapeHtml(t('common.date'))}</th><th>${escapeHtml(t('common.checkIn'))}</th><th>${escapeHtml(t('common.checkOut'))}</th><th>${escapeHtml(t('common.status'))}</th><th>${escapeHtml(t('timesheet.notes'))}</th></tr>
-              </thead>
-              <tbody>
-                ${recentRecords.length ? recentRecords.map((row) => `
-                  <tr>
-                    <td>${escapeHtml(formatDate(row.attendance_date))}</td>
-                    <td>${escapeHtml(formatTime(row.check_in_time))}</td>
-                    <td>${escapeHtml(formatTime(row.check_out_time))}</td>
-                    <td>${badgeMarkup(row.attendance_status, row.attendance_status)}</td>
-                    <td class="work-notes-cell">${escapeHtml(row.work_notes || '—')}</td>
-                  </tr>
-                `).join('') : `<tr><td colspan="5"><div class="empty-state">${escapeHtml(t('notes.noHistoryRecords'))}</div></td></tr>`}
-              </tbody>
-            </table>
-          </div>
+          ${recordListMarkup(recentRecords, t('mobile.recent.empty'))}
         </section>
       </div>
     `;
 
+    stopLiveShift = startLiveShift(container);
     container.querySelector('#attendanceRefreshBtn')?.addEventListener('click', () => renderAttendancePage().catch((error) => setPageError(container, error.message)));
   } catch (error) {
     setPageError(container, error.message);
@@ -3552,12 +3609,19 @@ function requestFormMarkup(defaultType = 'late_2_hours', defaultUserId = '') {
             </select>
           </div>
         ` : ''}
-        <div class="form-group">
-          <label for="request_type">${escapeHtml(t('requestPage.requestType'))}</label>
-          <select id="request_type" name="request_type" required>
-            ${REQUEST_TYPES.map((type) => `<option value="${type}" ${defaultType === type ? 'selected' : ''}>${escapeHtml(requestTypeLabel(type))}</option>`).join('')}
-          </select>
-        </div>
+        <fieldset class="form-group full type-picker">
+          <legend>${escapeHtml(t('requestPage.requestType'))}</legend>
+          ${REQUEST_TYPES.map((type) => `
+            <label class="type-option">
+              <input type="radio" name="request_type" value="${type}" ${defaultType === type ? 'checked' : ''} required />
+              <span class="type-option-icon">${icon(type === 'annual_leave' ? 'plane' : 'hourglass')}</span>
+              <span class="type-option-copy">
+                <strong>${escapeHtml(requestTypeLabel(type))}</strong>
+                <span>${escapeHtml(t(type === 'annual_leave' ? 'mobile.requests.typeHintLeave' : 'mobile.requests.typeHintDelay'))}</span>
+              </span>
+            </label>
+          `).join('')}
+        </fieldset>
         <div class="form-group" id="requestLateDateGroup">
           <label for="request_late_date">${escapeHtml(t('requestPage.lateDate'))}</label>
           <input id="request_late_date" name="late_date" type="date" value="${escapeHtml(todayIso())}" />
@@ -3643,7 +3707,11 @@ function openRequestForm({ onSaved = null, defaultType = 'late_2_hours', default
 
   document.getElementById('closeModalBtn')?.addEventListener('click', () => closeModal(false));
   document.getElementById('cancelRequestFormBtn')?.addEventListener('click', () => closeModal(false));
-  form.request_type.addEventListener('change', () => syncRequestFormFields(form));
+  form.addEventListener('change', (event) => {
+    if (event.target.name === 'request_type') {
+      syncRequestFormFields(form);
+    }
+  });
   syncRequestFormFields(form);
 
   form.addEventListener('submit', async (event) => {
@@ -3754,6 +3822,40 @@ async function renderRequestsPage() {
     const pendingCount = items.filter((item) => item.status === 'pending').length;
     const approvedCount = items.filter((item) => item.status === 'approved').length;
     const rejectedCount = items.filter((item) => item.status === 'rejected' || item.status === 'cancelled').length;
+
+    if (!isAdmin()) {
+      const statusChips = ['all', 'pending', 'approved', 'rejected'];
+      container.innerHTML = `
+        <div class="emp-page emp-requests">
+          <div class="quota-grid">
+            ${quotaCardMarkup({ iconName: 'hourglass', title: t('mobile.requests.delayTitle'), used: allowance?.late_2_hours?.used || 0, limit: REQUEST_MONTHLY_DELAY_LIMIT, period: t('mobile.requests.delayPeriod'), tone: 'warning' })}
+            ${quotaCardMarkup({ iconName: 'plane', title: t('mobile.requests.leaveTitle'), used: allowance?.annual_leave_days?.used || 0, limit: REQUEST_ANNUAL_LEAVE_LIMIT, period: t('mobile.requests.leavePeriod'), tone: 'brand' })}
+          </div>
+          <div class="chip-row" role="group" aria-label="${escapeHtml(t('common.status'))}">
+            ${statusChips.map((status) => `<button type="button" class="chip${state.requestFilters.status === status ? ' active' : ''}" data-status-chip="${status}" aria-pressed="${state.requestFilters.status === status}">${escapeHtml(status === 'all' ? t('mobile.requests.all') : statusLabel(status))}</button>`).join('')}
+          </div>
+          ${items.length
+    ? `<div class="request-list">${items.map((item) => requestCardMarkup(item, {
+      typeLabel: requestTypeLabel(item.request_type),
+      dateLabel: requestDateLabel(item),
+      durationLabel: requestDurationLabel(item),
+    })).join('')}</div>`
+    : `<div class="emp-empty">${icon('requests')}<strong>${escapeHtml(t('mobile.requests.emptyTitle'))}</strong><p>${escapeHtml(t('mobile.requests.emptyText'))}</p></div>`}
+          <button id="openRequestFormBtn" type="button" class="fab">${icon('plus')}<span>${escapeHtml(t('requestPage.newRequest'))}</span></button>
+        </div>
+      `;
+      container.querySelector('#openRequestFormBtn')?.addEventListener('click', () => {
+        openRequestForm({ onSaved: () => renderRequestsPage() });
+      });
+      container.querySelector('.chip-row')?.addEventListener('click', (event) => {
+        const chip = event.target.closest('[data-status-chip]');
+        if (!chip || chip.dataset.statusChip === state.requestFilters.status) return;
+        state.requestFilters.type = 'all';
+        state.requestFilters.status = chip.dataset.statusChip;
+        renderRequestsPage().catch((error) => setPageError(container, error.message));
+      });
+      return;
+    }
 
     container.innerHTML = `
       <div class="page-shell">
@@ -3899,6 +4001,72 @@ async function renderHistoryPage() {
     }, state.historyPagination);
     state.historyPageData = pageData;
     await ensureProfileDirectory(pageData.items);
+
+    if (!isAdmin()) {
+      const presets = {
+        last14: offsetDate(-14),
+        last30: offsetDate(-29),
+        thisMonth: monthRange(currentMonthInput()).from,
+      };
+      const activePreset = state.historyFilters.to === todayIso() && state.historyFilters.status === 'all'
+        ? Object.keys(presets).find((key) => presets[key] === state.historyFilters.from) || ''
+        : '';
+      container.innerHTML = `
+        <div class="emp-page emp-history">
+          <div class="chip-row" role="group">
+            ${Object.keys(presets).map((key) => `<button type="button" class="chip${activePreset === key ? ' active' : ''}" data-range-chip="${key}" aria-pressed="${activePreset === key}">${escapeHtml(t(`mobile.history.${key}`))}</button>`).join('')}
+          </div>
+          <details class="emp-card history-filters"${activePreset ? '' : ' open'}>
+            <summary>${icon('calendar')}<span>${escapeHtml(t('mobile.history.custom'))}</span>${icon('chevron', 'chevron')}</summary>
+            <div class="history-filter-grid">
+              <label>${escapeHtml(t('mobile.history.from'))}<input id="historyFrom" type="date" value="${escapeHtml(state.historyFilters.from)}" /></label>
+              <label>${escapeHtml(t('mobile.history.to'))}<input id="historyTo" type="date" value="${escapeHtml(state.historyFilters.to)}" /></label>
+              <label class="full">${escapeHtml(t('common.status'))}
+                <select id="historyStatus">
+                  <option value="all">${escapeHtml(t('common.allStatuses'))}</option>
+                  ${['present', 'late', 'checked_out', 'absent'].map((status) => `<option value="${status}" ${state.historyFilters.status === status ? 'selected' : ''}>${escapeHtml(statusLabel(status))}</option>`).join('')}
+                </select>
+              </label>
+              <button id="historySearchBtn" type="button" class="btn btn-primary full">${escapeHtml(t('common.apply'))}</button>
+            </div>
+          </details>
+          <div class="emp-section-head">
+            <h3>${escapeHtml(t('mobile.history.count', { count: String(pageData.totalItems) }))}</h3>
+            <button id="historyExportBtn" type="button" class="icon-btn" aria-label="${escapeHtml(t('common.exportCsv'))}" title="${escapeHtml(t('common.exportCsv'))}">${icon('download')}</button>
+          </div>
+          ${recordListMarkup(pageData.items, t('mobile.history.empty'))}
+          ${pageData.totalItems > pageData.pageSize ? buildPaginationMarkup('historyPager', pageData) : ''}
+        </div>
+      `;
+      const rerender = () => renderHistoryPage().catch((error) => setPageError(container, error.message));
+      container.querySelector('.chip-row')?.addEventListener('click', (event) => {
+        const chip = event.target.closest('[data-range-chip]');
+        if (!chip) return;
+        state.historyFilters.from = presets[chip.dataset.rangeChip];
+        state.historyFilters.to = todayIso();
+        state.historyFilters.status = 'all';
+        state.historyPagination.page = 1;
+        rerender();
+      });
+      container.querySelector('#historySearchBtn')?.addEventListener('click', () => {
+        state.historyFilters.from = container.querySelector('#historyFrom').value;
+        state.historyFilters.to = container.querySelector('#historyTo').value;
+        state.historyFilters.status = container.querySelector('#historyStatus').value;
+        state.historyPagination.page = 1;
+        rerender();
+      });
+      container.querySelector('#historyExportBtn')?.addEventListener('click', async () => {
+        try {
+          const records = await fetchAttendance({ ...state.historyFilters, userId: state.profile.id });
+          exportAttendanceCsv(records, { resolveProfile: employeeById, fallbackProfile: state.profile });
+          showToast(t('toasts.historyExported'), 'success');
+        } catch (error) {
+          showToast(error.message, 'error');
+        }
+      });
+      bindPagination(container, 'historyPager', state.historyPagination, rerender);
+      return;
+    }
 
     container.innerHTML = `
       <div class="page-shell">

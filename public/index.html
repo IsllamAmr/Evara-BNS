@@ -2,10 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>%PAGE_TITLE%</title>
   <meta name="description" content="%PAGE_DESCRIPTION%" />
   <meta name="theme-color" content="#f4f7fb" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="EVARA" />
+  <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="canonical" href="%PAGE_URL%" />
   <meta property="og:site_name" content="EVARA BNS" />
   <meta property="og:type" content="website" />
@@ -20,12 +25,13 @@
   <meta name="twitter:image" content="%OG_IMAGE_URL%" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="icon" type="image/png" href="assets/image.png" />
   <link rel="shortcut icon" type="image/png" href="assets/image.png" />
   <link rel="apple-touch-icon" href="assets/image.png" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/redesign.css" />
+  <link rel="stylesheet" href="css/employee.css" />
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -127,6 +133,7 @@
       <header class="topbar">
         <div class="topbar-start">
           <button id="menuToggle" type="button" class="ghost-inline mobile-only" data-i18n="common.menu" aria-controls="sidebar" aria-expanded="false">Menu</button>
+          <button id="topbarAvatar" type="button" class="topbar-avatar" data-page="profile" data-i18n-aria-label="nav.profile" aria-label="Profile">EV</button>
           <div class="topbar-copy">
             <strong id="topbarHeadline">Dashboard</strong>
             <span id="topbarSubline">Attendance, requests and team insights in one place.</span>
@@ -150,6 +157,31 @@
       <section id="page-reports" class="page-panel"></section>
       <section id="page-qr" class="page-panel"></section>
     </main>
+
+    <nav id="tabbar" class="tabbar" data-i18n-aria-label="mobile.tabs.label" aria-label="Main navigation">
+      <button type="button" class="tab-item" data-page="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/><path d="M10 20v-6h4v6"/></svg>
+        <span data-i18n="mobile.tabs.home">Home</span>
+      </button>
+      <button type="button" class="tab-item" data-page="history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
+        <span data-i18n="mobile.tabs.history">History</span>
+      </button>
+      <button type="button" class="tab-item tab-primary" data-page="attendance">
+        <span class="tab-primary-orb">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/></svg>
+        </span>
+        <span data-i18n="mobile.tabs.attendance">Today</span>
+      </button>
+      <button type="button" class="tab-item" data-page="requests">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>
+        <span data-i18n="mobile.tabs.requests">Requests</span>
+      </button>
+      <button type="button" class="tab-item" data-page="profile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+        <span data-i18n="mobile.tabs.profile">Me</span>
+      </button>
+    </nav>
   </div>
 
   <div id="modal" class="modal-shell hidden">

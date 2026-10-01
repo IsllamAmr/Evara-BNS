@@ -1,0 +1,13 @@
+{
+  "name": "EVARA BNS Attendance",
+  "short_name": "EVARA",
+  "description": "Attendance, requests and your daily timesheet.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f2542",
+  "theme_color": "#0f2542",
+  "icons": [
+    { "src": "/assets/app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

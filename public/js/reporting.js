@@ -4,7 +4,7 @@ import {
   escapeHtml,
   todayIso as todayBusinessIso,
 } from './shared.js';
-import { getLocale, t } from './i18n.js';
+import { getLocale, isArabic, t } from './i18n.js';
 
 // Configurable business schedule - can be loaded from API in future
 export const BUSINESS_CONFIG = {
@@ -279,7 +279,8 @@ export function formatAverageTime(minutes) {
   }).format(reference);
 }
 
-export function formatDuration(minutes) {
+// Fixed "8h 05m" form for CSV files, so exports read the same in either language.
+export function formatDurationPlain(minutes) {
   if (!Number.isFinite(minutes) || minutes <= 0) {
     return '0h 00m';
   }
@@ -287,6 +288,12 @@ export function formatDuration(minutes) {
   const hours = Math.floor(minutes / 60);
   const mins = String(minutes % 60).padStart(2, '0');
   return `${hours}h ${mins}m`;
+}
+
+// On-screen form: "8h 05m" in English, "8س 05د" in Arabic.
+export function formatDuration(minutes) {
+  const plain = formatDurationPlain(minutes);
+  return isArabic() ? plain.replace('h', 'س').replace('m', 'د') : plain;
 }
 
 function durationToHours(minutes) {
