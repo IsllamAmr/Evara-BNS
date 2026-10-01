@@ -100,7 +100,7 @@ body { background: var(--bg-canvas); }
 /* Hidden outside the admin dashboard (sign-in, check-in and employee screens are English only). */
 .language-toggle[hidden] { display: none !important; }
 .language-toggle:hover { background: var(--overlay-brand); color: var(--brand-hover); }
-.eyebrow, .story-label, .meta-label, .status-label { letter-spacing: .075em; }
+.eyebrow, .story-label, .status-label { letter-spacing: .075em; }
 .btn, .ghost-inline, input, select, textarea { border-radius: 11px; }
 .btn { min-height: 42px; }
 .btn-secondary { background: #f2f5fa; color: var(--ink); border-color: var(--line); }
@@ -158,8 +158,6 @@ body { background: var(--bg-canvas); }
 .login-kicker, .login-form-kicker { margin: 0 0 1rem; font-size: .75rem; font-weight: 800; text-transform: uppercase; letter-spacing: .18em; }
 .login-kicker { color: #81c5ff; }
 .login-story h1 { max-width: 13ch; font-size: clamp(2.75rem, 4.5vw, 4.6rem); line-height: 1.04; letter-spacing: -.055em; color: #fff; }
-.login-story .hero-line { color: #fff; white-space: normal; }
-.login-story .hero-line:last-child { color: #91cdff; }
 .login-story h1.rotating-quote { max-width: 100%; min-height: 2.24em; font-size: clamp(1.65rem, 3.15vw, 2.9rem); line-height: 1.12; letter-spacing: -.04em; }
 .login-story .quote-line { display: block; }
 .login-story .quote-line:last-child { color: #91cdff; }
@@ -253,7 +251,7 @@ body { background: var(--bg-canvas); }
 .section-header h1 { font-size: clamp(1.25rem, 2vw, 1.65rem); letter-spacing: -.035em; }
 .section-header .eyebrow { color: var(--brand); }
 .summary-grid { gap: .85rem; }
-.summary-card, .card-block, .status-card, .metric-card { padding: 1.35rem; border-radius: 16px; border-color: #e5ebf3; box-shadow: var(--shadow-sm); }
+.summary-card, .card-block, .status-card { padding: 1.35rem; border-radius: 16px; border-color: #e5ebf3; box-shadow: var(--shadow-sm); }
 .summary-card { position: relative; overflow: hidden; min-height: 135px; }
 .summary-card::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--brand); opacity: .85; }
 .summary-card:nth-child(4n+2)::before { background: #10a989; }
@@ -279,7 +277,7 @@ tbody tr:hover { background: #f7faff; }
 .checkin-card { border-radius: 22px; padding: clamp(1.4rem, 3vw, 2.2rem); border-color: #e4ebf4; box-shadow: var(--shadow-md); }
 .checkin-card .brand-mark { width: 118px; height: 46px; }
 .checkin-card h1 { color: var(--ink); font-size: clamp(2rem, 5vw, 3rem); max-width: 15ch; letter-spacing: -.055em; }
-.checkin-live-chip, .checkin-status-meta-item { background: #f7f9fc; border-color: var(--line); }
+.checkin-status-meta-item { background: #f7f9fc; border-color: var(--line); }
 .checkin-status-card { background: #f8faff; }
 .checkin-actions .btn { min-height: 52px; }
 
@@ -312,7 +310,6 @@ html[dir='rtl'] .sidebar-user .ghost-inline { text-align: center; }
   .login-kicker, .story-grid { display: none; }
   .login-story h1 { display: block; max-width: 100%; font-size: clamp(1.8rem, 7.5vw, 2.25rem); line-height: 1.12; letter-spacing: -.04em; }
   .login-story h1.rotating-quote { font-size: clamp(1.65rem, 7.2vw, 2.15rem); }
-  .login-story .hero-line:not(:first-child) { display: inline; }
   .login-story .story-copy { display: block; max-width: 35ch; margin-top: .55rem; font-size: .8rem; line-height: 1.45; }
   .login-card { position: relative; z-index: 1; flex: 1; justify-content: flex-start; margin-top: -18px; padding: 1.8rem 1.25rem max(1.5rem, env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0; }
   .login-card-header.centered { display: none; }
@@ -362,17 +359,6 @@ html[dir='rtl'] .sidebar-user .ghost-inline { text-align: center; }
 .work-notes-cell { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 240px; max-width: 480px; }
 
 /* QR-only attendance */
-.qr-only-hint {
-  display: inline-flex;
-  align-items: center;
-  padding: .55rem .85rem;
-  border-radius: 999px;
-  background: rgba(36, 83, 200, .08);
-  color: #2453c8;
-  font-size: .85rem;
-  font-weight: 600;
-  line-height: 1.4;
-}
 .toggle-line {
   display: flex;
   align-items: center;
