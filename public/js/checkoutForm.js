@@ -19,18 +19,12 @@ export function requestCheckoutDetails({ draftKey }) {
     <p>${escapeHtml(t('timesheet.checkoutHint'))}</p>
     <label for="checkout-work-notes">${escapeHtml(t('timesheet.notes'))} *</label>
     <textarea id="checkout-work-notes" name="work_notes" rows="6" maxlength="4000" required placeholder="${escapeHtml(t('timesheet.notesPlaceholder'))}"></textarea>
-    <label for="checkout-work-place">${escapeHtml(t('timesheet.placeOptional'))}</label>
-    <input id="checkout-work-place" name="work_place" maxlength="120" placeholder="${escapeHtml(t('timesheet.placePlaceholder'))}" />
     <div class="inline-actions"><button type="button" data-cancel class="btn btn-secondary">${escapeHtml(t('common.cancel'))}</button><button type="submit" class="btn btn-primary">${escapeHtml(t('timesheet.confirmCheckout'))}</button></div>
   </form>`;
   const form = dialog.querySelector('form');
   const notes = form.elements.work_notes;
   notes.value = draft.work_notes || '';
-  form.elements.work_place.value = draft.work_place || '';
-  const saveDraft = () => drafts.set(draftKey, {
-    work_notes: notes.value,
-    work_place: form.elements.work_place.value,
-  });
+  const saveDraft = () => drafts.set(draftKey, { work_notes: notes.value });
   const previousFocus = document.activeElement;
   document.body.append(dialog);
   activeDialog = dialog;
@@ -53,10 +47,7 @@ export function requestCheckoutDetails({ draftKey }) {
       event.preventDefault();
       notes.setCustomValidity(notes.value.trim() ? '' : t('timesheet.notesRequired'));
       if (!form.reportValidity()) return;
-      finish({
-        work_notes: notes.value.trim(),
-        work_place: form.elements.work_place.value.trim() || null,
-      });
+      finish({ work_notes: notes.value.trim() });
     });
     dialog.showModal();
     notes.focus();
