@@ -145,6 +145,12 @@ html[dir='rtl'] .shift-ring svg { transform: rotate(-90deg) scaleY(-1); }
   .shift-ring-bar { transition: none; }
 }
 
+/* Shown until the saved session is checked, instead of flashing the sign-in form. */
+.boot-splash { position: fixed; inset: 0; z-index: 70; display: grid; place-content: center; justify-items: center; gap: 1.4rem; background: var(--bg-canvas); }
+.boot-splash img { width: 150px; height: auto; }
+.boot-spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid #dce5f2; border-top-color: #315ee7; animation: orb-spin .8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .boot-spinner { animation-duration: 2.4s; } }
+
 /* Check-in page (opened by scanning the office QR) */
 .checkin-body { background: radial-gradient(120% 60% at 50% 0%, #dfe9fb 0%, #f3f6fb 60%); }
 .checkin-card { display: grid; gap: 1rem; text-align: center; }
@@ -185,7 +191,6 @@ html[dir='rtl'] .shift-ring svg { transform: rotate(-90deg) scaleY(-1); }
 @keyframes success-draw { to { stroke-dashoffset: 0; } }
 @media (max-width: 780px) {
   .checkin-card { min-height: 100dvh; padding: calc(1rem + env(safe-area-inset-top)) 1.1rem calc(1.2rem + env(safe-area-inset-bottom)); align-content: start; }
-  .checkin-head { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .orb-wave, .checkin-orb .orb-core .ico, .success-mark circle, .success-mark path, .checkin-success { animation: none !important; stroke-dashoffset: 0; }
