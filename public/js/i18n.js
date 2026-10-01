@@ -1520,6 +1520,10 @@ dictionaries.ar.checkin.checkedInText = 'تم تسجيل حضورك في {{time}
 Object.assign(dictionaries.en.attendancePage, { employeeTitle: 'Attendance by QR' });
 Object.assign(dictionaries.ar.attendancePage, { employeeTitle: 'الحضور والانصراف عبر QR' });
 
+// Matches the server rules for new employee passwords (routes/adminRoutes.js).
+dictionaries.en.employeeForm = { passwordHint: 'At least 8 characters with uppercase, lowercase, a number and a symbol. Avoid sequences such as 123 or abc, repeated characters such as aaa, and common words such as password or admin. Example: Evara#Cairo7' };
+dictionaries.ar.employeeForm = { passwordHint: '8 أحرف على الأقل تشمل حرفًا إنجليزيًا كبيرًا وصغيرًا ورقمًا ورمزًا. تجنّب التسلسلات مثل 123 أو abc، والأحرف المكررة مثل aaa، والكلمات الشائعة مثل password أو admin. مثال: Evara#Cairo7' };
+
 // Request statuses were missing from labels, so badges fell back to English.
 Object.assign(dictionaries.en.labels, { pending: 'Pending', approved: 'Approved', rejected: 'Rejected', cancelled: 'Cancelled' });
 Object.assign(dictionaries.ar.labels, { pending: 'قيد المراجعة', approved: 'مقبول', rejected: 'مرفوض', cancelled: 'ملغي' });

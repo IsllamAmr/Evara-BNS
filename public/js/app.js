@@ -2823,12 +2823,13 @@ function employeeFormMarkup(mode, employee = null) {
         ${isEdit ? '' : `
           <div class="form-group">
             <label for="employee_password">${escapeHtml(t('common.password'))}</label>
-            <input id="employee_password" name="password" type="password" required />
+            <input id="employee_password" name="password" type="password" autocomplete="new-password" aria-describedby="employee_password_hint" required />
           </div>
           <div class="form-group">
             <label for="employee_password_confirm">${escapeHtml(t('common.confirmPassword'))}</label>
-            <input id="employee_password_confirm" name="password_confirm" type="password" required />
+            <input id="employee_password_confirm" name="password_confirm" type="password" autocomplete="new-password" required />
           </div>
+          <p id="employee_password_hint" class="inline-note full">${escapeHtml(t('employeeForm.passwordHint'))}</p>
         `}
       </div>
       <div id="employeeFormError" class="form-alert error hidden"></div>
