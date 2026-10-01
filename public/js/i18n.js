@@ -1308,7 +1308,6 @@ Object.assign(dictionaries.en, { timesheet: {
   checkoutTitle: 'Complete your workday', checkoutHint: 'Write what you completed today, then confirm check-out.',
   notesPlaceholder: 'Tasks completed, deliverables, and anything still in progress…',
   notesRequired: 'Write your daily work summary before checking out.',
-  placeOptional: 'Workplace (optional)', placePlaceholder: 'Office, site, or remote',
   trainingOptional: 'Training hours (optional)', trainingHint: 'Enter training time included within this shift; the remaining hours count as work.',
   confirmCheckout: 'Save notes and check out',
 } });
@@ -1319,7 +1318,6 @@ Object.assign(dictionaries.ar, { timesheet: {
   checkoutTitle: 'إنهاء يوم العمل', checkoutHint: 'اكتب ما أنجزته اليوم، ثم أكّد تسجيل الانصراف.',
   notesPlaceholder: 'المهام المنجزة، التسليمات، وما لا يزال قيد التنفيذ…',
   notesRequired: 'اكتب ملخص أعمال اليوم قبل تسجيل الانصراف.',
-  placeOptional: 'مكان العمل (اختياري)', placePlaceholder: 'المكتب، الموقع، أو عن بُعد',
   trainingOptional: 'ساعات التدريب (اختياري)', trainingHint: 'أدخل مدة التدريب ضمن ساعات هذه الوردية؛ يُحسب الوقت المتبقي كساعات عمل.',
   confirmCheckout: 'حفظ الملخص وتسجيل الانصراف',
 } });
