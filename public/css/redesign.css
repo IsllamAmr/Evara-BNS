@@ -343,6 +343,21 @@ html[dir='rtl'] .sidebar-user .ghost-inline { text-align: center; }
   .sidebar-brand-text { display: none; }
 }
 :root { --timesheet-line: #dce5ee; }
+.qr-camera-dialog { width: min(480px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; padding: 20px; border: 1px solid #dce5ee; border-radius: 24px; background: #fff; color: #172b43; box-shadow: 0 24px 80px #10274455; }
+.qr-camera-dialog::backdrop { background: #0a1b32b3; }
+.qr-camera-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.qr-camera-header h2 { margin: 0; font-size: 1.3rem; line-height: 1.35; }
+.qr-camera-header p { margin: 6px 0 0; color: #586b80; font-size: .86rem; line-height: 1.5; }
+.qr-camera-close { flex: 0 0 44px; height: 44px; margin-inline-start: auto; border: 0; border-radius: 12px; background: #f0f4fa; color: #172b43; font-size: 1.6rem; cursor: pointer; }
+.qr-camera-preview { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 18px; background: #102744; }
+.qr-camera-preview video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.qr-camera-guide { position: absolute; inset: 15%; border: 3px solid #91cdff; border-radius: 18px; box-shadow: 0 0 0 80px #10274433; pointer-events: none; }
+.qr-camera-status { min-height: 3em; margin: 14px 0; font-size: .88rem; color: #586b80; line-height: 1.5; }
+.qr-camera-status.error { color: #a43947; }
+.qr-camera-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.qr-camera-actions .btn { min-height: 48px; }
+.qr-camera-dialog button:focus-visible { outline: 3px solid #315bdf; outline-offset: 3px; }
+@media (max-height: 600px) { .qr-camera-preview { max-height: 45dvh; aspect-ratio: auto; } }
 .checkout-dialog { border: 1px solid var(--timesheet-line); border-radius: 20px; padding: 28px; width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; color: var(--text-main, #172b43); background: #fff; box-shadow: 0 24px 80px #172b4333; }
 .checkout-dialog::backdrop { background: #10223999; }
 .checkout-form { display: grid; gap: 12px; }

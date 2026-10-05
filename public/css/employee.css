@@ -44,6 +44,12 @@ html[dir='rtl'] .shift-ring svg { transform: rotate(-90deg) scaleY(-1); }
 .shift-meta-cell span { font-size: .68rem; color: #b9cde6; }
 .shift-meta-cell strong { font-size: .85rem; font-variant-numeric: tabular-nums; }
 .shift-cta { width: 100%; display: flex; align-items: center; gap: .75rem; padding: .8rem .9rem; border-radius: 16px; background: #fff; color: #0f2542; text-align: start; }
+.shift-cta[data-open-qr-scanner] { border: 0; cursor: pointer; font-family: inherit; transition: background .15s, transform .15s; }
+.shift-cta[data-open-qr-scanner]:hover { background: #eef4ff; }
+.shift-cta[data-open-qr-scanner]:active { transform: scale(.99); }
+.shift-cta[data-open-qr-scanner]:focus-visible { outline: 3px solid #8ab8ff; outline-offset: 4px; }
+.shift-cta > .ico { flex-shrink: 0; }
+.shift-cta > .shift-cta-arrow { width: 20px; height: 20px; margin-inline-start: auto; }
 .shift-cta .ico { width: 30px; height: 30px; color: #315ee7; }
 .shift-cta strong { display: block; font-size: .9rem; }
 .shift-cta span { font-size: .75rem; color: #5b6f89; }

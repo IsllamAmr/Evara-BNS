@@ -1,6 +1,7 @@
 ﻿import { getAppConfig, getSupabase, isSupabaseReady } from './supabaseClient.js';
 import { apiRequestWithFallback } from './apiClient.js';
 import { requestCheckoutDetails, clearCheckoutDraft } from './checkoutForm.js';
+import { scanOfficeQr } from './qrScanner.js';
 import {
   applyDocumentLanguage,
   getLocale,
@@ -100,8 +101,12 @@ function configureScanRequired(pendingAction) {
   setOrb('scan', 'qr');
   statusText.textContent = t('qrOnly.scanNotice');
   configureActionButton({
-    disabled: true,
-    label: pendingAction === 'checkout' ? t('qrOnly.scanToCheckOut') : t('qrOnly.scanToCheckIn'),
+    disabled: false,
+    label: t('qrScanner.openCamera'),
+    onClick: async () => {
+      const destination = await scanOfficeQr();
+      if (destination) window.location.assign(destination);
+    },
   });
 }
 

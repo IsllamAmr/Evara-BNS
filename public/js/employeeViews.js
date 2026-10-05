@@ -5,6 +5,7 @@ import { getLocale, t } from './i18n.js';
 import { buildAttendanceRowMetrics, formatDuration, FULL_SHIFT_MINUTES } from './reporting.js';
 
 const ICON_PATHS = {
+  camera: '<path d="M14.5 4h-5L8 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-4z"/><circle cx="12" cy="14" r="4"/>',
   home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/><path d="M10 20v-6h4v6"/>',
   history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>',
   qr: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/>',
@@ -191,7 +192,7 @@ export function shiftHeroMarkup({ record = null, missingState = null, scanHint =
         <p>${escapeHtml(text)}</p>
       </div>
       ${meta ? `<div class="shift-meta">${meta}</div>` : ''}
-      ${cta ? `<div class="shift-cta">${icon('qr')}<div><strong>${escapeHtml(cta)}</strong><span>${escapeHtml(t('mobile.shift.scanHint'))}</span></div></div>` : ''}
+      ${cta ? `<button type="button" class="shift-cta" data-open-qr-scanner>${icon('camera')}<div><strong>${escapeHtml(cta)}</strong><span>${escapeHtml(t('qrScanner.tapToOpen'))}</span></div>${icon('chevron', 'shift-cta-arrow')}</button>` : ''}
     </section>
   `;
 }

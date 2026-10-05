@@ -1520,6 +1520,45 @@ dictionaries.ar.mobile = {
   checkinWorked: 'مدة العمل حتى الآن',
 };
 
+dictionaries.en.qrScanner = {
+  title: 'Scan the office QR',
+  hint: 'Point the rear camera at the QR code displayed at the office.',
+  tapToOpen: 'Tap to open the camera and scan the office QR',
+  openCamera: 'Open camera to scan QR',
+  preview: 'Camera preview for scanning the office QR',
+  close: 'Close camera',
+  opening: 'Opening the camera… Allow camera access when asked.',
+  scanning: 'Keep the office QR inside the frame. It will be read automatically.',
+  retry: 'Try again',
+  permissionDenied: 'Camera access was denied. Allow the camera in your browser settings, then try again.',
+  noCamera: 'No camera was found on this device. Use your phone to scan the office QR.',
+  cameraBusy: 'The camera is in use or unavailable. Close any other app using it, then try again.',
+  interrupted: 'The camera stopped. Try opening it again.',
+  secureRequired: 'Open the site using its HTTPS link to use the camera, or scan the code with your phone’s camera app.',
+  unsupported: 'This browser cannot open the camera. Use your phone’s camera app to scan the office QR.',
+  wrongCode: 'This is not an office QR for this site. Point the camera at the correct office code.',
+  readFailed: 'We couldn’t start the QR reader. Please try again.',
+};
+dictionaries.ar.qrScanner = {
+  title: 'مسح كود المكتب',
+  hint: 'وجّه الكاميرا الخلفية نحو كود QR الموجود في المكتب.',
+  tapToOpen: 'اضغط لفتح الكاميرا ومسح كود المكتب',
+  openCamera: 'فتح الكاميرا لمسح الكود',
+  preview: 'معاينة الكاميرا لمسح كود المكتب',
+  close: 'إغلاق الكاميرا',
+  opening: 'جارٍ فتح الكاميرا… اسمح باستخدامها عند ظهور الطلب.',
+  scanning: 'ضع كود المكتب داخل الإطار؛ ستتم قراءته تلقائيًا.',
+  retry: 'إعادة المحاولة',
+  permissionDenied: 'لم يُسمح باستخدام الكاميرا. فعّل إذن الكاميرا من إعدادات المتصفح ثم أعد المحاولة.',
+  noCamera: 'لم يتم العثور على كاميرا. استخدم هاتفك لمسح كود المكتب.',
+  cameraBusy: 'الكاميرا مشغولة أو غير متاحة. أغلق أي تطبيق يستخدمها ثم أعد المحاولة.',
+  interrupted: 'توقفت الكاميرا. جرّب فتحها مرة أخرى.',
+  secureRequired: 'افتح الموقع برابط HTTPS لتشغيل الكاميرا، أو امسح الكود بتطبيق كاميرا الهاتف.',
+  unsupported: 'هذا المتصفح لا يدعم فتح الكاميرا. امسح كود المكتب بتطبيق كاميرا الهاتف.',
+  wrongCode: 'هذا ليس كود مكتب لهذا الموقع. وجّه الكاميرا نحو كود المكتب الصحيح.',
+  readFailed: 'تعذّر تشغيل قارئ الكود. أعد المحاولة.',
+};
+
 function normalizeLanguage(language) {
   return Object.prototype.hasOwnProperty.call(dictionaries, language) ? language : DEFAULT_LANGUAGE;
 }

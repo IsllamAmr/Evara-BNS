@@ -35,7 +35,7 @@ export function initRotatingQuotes() {
   const lines = heading.querySelectorAll('.quote-line');
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const storedPaused = readPreference(PAUSED_KEY);
-  let paused = storedPaused === null ? reducedMotion.matches : storedPaused === 'true';
+  let paused = reducedMotion.matches || storedPaused === 'true';
   let previous = Number(readPreference(LAST_KEY) ?? -1);
   let order = [];
   let timer;

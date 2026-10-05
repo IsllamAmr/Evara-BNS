@@ -3,6 +3,7 @@ import { apiRequestWithFallback } from './apiClient.js';
 import { createQueryCache, fetchAllRows } from './dataStore.js';
 import { renderTimesheet } from './timesheet.js';
 import { initRotatingQuotes } from './rotatingQuotes.js';
+import { scanOfficeQr } from './qrScanner.js';
 import {
   bindMonthStrip,
   detailRowMarkup,
@@ -1081,6 +1082,12 @@ function refreshTopbarMessage() {
 }
 
 function bindStaticEvents() {
+  document.addEventListener('click', async (event) => {
+    if (!event.target.closest('[data-open-qr-scanner]')) return;
+    event.preventDefault();
+    const destination = await scanOfficeQr();
+    if (destination) window.location.assign(destination);
+  });
   elements.loginForm.addEventListener('submit', handleLogin);
   elements.togglePasswordBtn.addEventListener('click', () => {
     const nextType = elements.loginPassword.type === 'password' ? 'text' : 'password';
