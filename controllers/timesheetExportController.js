@@ -1,5 +1,6 @@
 const asyncHandler = require('../utils/asyncHandler');
 const timesheetExportService = require('../services/timesheetExportService');
+const payrollExportService = require('../services/payrollExportService');
 const { sendSuccess } = require('../utils/responseHelper');
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -31,7 +32,20 @@ const exportTimesheet = asyncHandler(async (req, res) => {
   return res.status(200).send(result.buffer);
 });
 
+const exportPayroll = asyncHandler(async (req, res) => {
+  const result = payrollExportService.buildPayrollWorkbook(req.body);
+
+  res.set({
+    'Content-Type': XLSX_MIME,
+    'Content-Disposition': contentDisposition(result.fileName),
+    'Content-Length': String(result.buffer.length),
+    'Cache-Control': 'no-store',
+  });
+  return res.status(200).send(result.buffer);
+});
+
 module.exports = {
+  exportPayroll,
   exportTimesheet,
   getExportSummary,
 };

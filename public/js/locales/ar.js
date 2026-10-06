@@ -22,7 +22,7 @@ export default {
     "refresh": "تحديث",
     "apply": "تطبيق",
     "exportCsv": "تصدير CSV",
-    "exportReportCsv": "تصدير تقرير CSV",
+    "exportPayrollExcel": "تصدير كشف المرتبات (Excel)",
     "openAttendance": "فتح الحضور",
     "openHistory": "فتح السجل",
     "addEmployee": "إضافة موظف",
@@ -524,7 +524,8 @@ export default {
     "deleteConfirm": "حذف نهائي"
   },
   "toasts": {
-    "reportsExported": "تم تصدير تقرير CSV بنجاح.",
+    "payrollExported": "تم تصدير كشف المرتبات: {{file}}",
+    "payrollExportFailed": "تعذّر تصدير كشف المرتبات. حاول مرة أخرى.",
     "employeesExported": "تم تصدير ملف الموظفين بنجاح.",
     "passwordReset": "تم إعادة ضبط كلمة المرور بنجاح.",
     "manualAttendanceSaved": "تم حفظ الحضور اليدوي بنجاح.",
