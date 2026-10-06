@@ -465,6 +465,12 @@ export function buildReportsDataset(employees, attendanceRows, filters) {
     const lateArrivals = workdayRows.filter((item) => item.metrics.isLateArrival).length;
     const onTimeArrivals = workdayRows.filter((item) => item.metrics.isOnTimeArrival).length;
     const workedMinutes = sumBy(detailedRows, (item) => item.metrics.workedMinutes);
+    // Past days with a check-in but no check-out: their hours are an estimate (until
+    // the end of the shift), so reports and payroll flag them for the admin to fix.
+    const missingCheckoutRows = detailedRows
+      .filter((item) => item.metrics.isPastDue)
+      .map((item) => item.row)
+      .sort((left, right) => left.attendance_date.localeCompare(right.attendance_date));
     const overtimeMinutes = sumBy(detailedRows, (item) => item.metrics.overtimeMinutes);
     const shortfallMinutes = sumBy(workdayRows.filter((item) => item.metrics.isPresent), (item) => item.metrics.shortfallMinutes)
       + (absentDays * FULL_SHIFT_MINUTES);
@@ -483,6 +489,7 @@ export function buildReportsDataset(employees, attendanceRows, filters) {
       lateArrivals,
       onTimeArrivals,
       workedMinutes,
+      missingCheckoutRows,
       overtimeMinutes,
       shortfallMinutes,
       expectedMinutes,
