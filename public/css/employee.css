@@ -23,10 +23,14 @@ html[dir='rtl'] .ico.chevron { transform: scaleX(-1); }
 .shift-hero-glow { position: absolute; inset: -40% -30% auto auto; width: 320px; height: 320px; border-radius: 50%; background: radial-gradient(circle, rgba(127,184,255,.35), transparent 65%); z-index: -1; }
 .shift-hero-head { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: .5rem; font-size: .8rem; }
 .live-chip { display: inline-flex; align-items: center; gap: .45rem; padding: .35rem .7rem; border-radius: 999px; background: rgba(255,255,255,.12); font-weight: 700; }
-.live-chip i { width: 8px; height: 8px; border-radius: 50%; background: #5cf0b4; box-shadow: 0 0 0 0 rgba(92,240,180,.7); animation: emp-pulse 1.8s infinite; }
+/* The pulse is a ring that scales and fades (transform/opacity run on the GPU);
+   animating box-shadow made the phone repaint the hero card every frame. */
+.live-chip i { position: relative; width: 8px; height: 8px; border-radius: 50%; background: #5cf0b4; }
+.live-chip i::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: rgba(92,240,180,.7); animation: emp-pulse 1.8s ease-out infinite; }
 .live-chip.muted { color: #cfe0f5; font-weight: 600; }
 .shift-hero-since { color: #cfe0f5; }
-@keyframes emp-pulse { 70% { box-shadow: 0 0 0 10px rgba(92,240,180,0); } 100% { box-shadow: 0 0 0 0 rgba(92,240,180,0); } }
+@keyframes emp-pulse { 0% { transform: scale(1); opacity: .7; } 70%, 100% { transform: scale(3.5); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .live-chip i::after { animation: none; opacity: 0; } }
 .shift-ring { position: relative; width: min(210px, 58vw); aspect-ratio: 1; }
 .shift-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
 html[dir='rtl'] .shift-ring svg { transform: rotate(-90deg) scaleY(-1); }
@@ -127,7 +131,7 @@ html[dir='rtl'] .shift-ring svg { transform: rotate(-90deg) scaleY(-1); }
 @media (max-width: 1080px) {
   .role-employee .sidebar, .role-employee #menuToggle, .role-employee .sidebar-backdrop { display: none !important; }
   .role-employee .app-main { padding: 0 1rem calc(96px + env(safe-area-inset-bottom)); }
-  .role-employee .topbar { position: sticky; top: 0; z-index: 20; margin: 0 -1rem 1rem; padding: calc(.7rem + env(safe-area-inset-top)) 1rem .7rem; background: rgba(243,246,251,.85); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid rgba(223,230,240,.7); }
+  .role-employee .topbar { position: sticky; top: 0; z-index: 20; margin: 0 -1rem 1rem; padding: calc(.7rem + env(safe-area-inset-top)) 1rem .7rem; background: #f3f6fb; border-bottom: 1px solid rgba(223,230,240,.7); }
   .role-employee .topbar-copy span { display: block; font-size: .75rem; }
   .role-employee .topbar-copy strong { font-size: 1.1rem; }
   .role-employee .topbar-start { display: flex; align-items: center; gap: .7rem; }
@@ -135,7 +139,9 @@ html[dir='rtl'] .shift-ring svg { transform: rotate(-90deg) scaleY(-1); }
   .role-employee .tabbar {
     position: fixed; inset: auto 0 0 0; z-index: 30; display: grid; grid-template-columns: repeat(5, 1fr); align-items: end;
     padding: .4rem .5rem calc(.45rem + env(safe-area-inset-bottom));
-    background: rgba(255,255,255,.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    /* Near-opaque instead of a live blur: re-blurring the page under both bars on every
+       scroll frame was the main cause of scroll stutter on mid-range phones. */
+    background: #fff;
     border-top: 1px solid #e5ebf3; box-shadow: 0 -8px 24px rgba(16,37,66,.06);
   }
   .tab-item { display: grid; justify-items: center; gap: .2rem; min-height: 52px; padding: .3rem 0; border: 0; background: none; color: #7a8aa0; font-size: .68rem; font-weight: 600; cursor: pointer; }

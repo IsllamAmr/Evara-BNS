@@ -93,9 +93,57 @@ function versionAssetLinks(html, version) {
   return html.replace(/(\s(?:href|src)=")\/?((?:css|js|vendor|assets)\/)/g, `$1/v/${version}/$2`);
 }
 
-function createStaticAssets({ root, version = null }) {
+const compressAsync = {
+  br: (buffer) => new Promise((resolve, reject) => zlib.brotliCompress(buffer, {
+    params: {
+      [zlib.constants.BROTLI_PARAM_QUALITY]: 11,
+      [zlib.constants.BROTLI_PARAM_SIZE_HINT]: buffer.length,
+    },
+  }, (error, out) => (error ? reject(error) : resolve(out)))),
+  gzip: (buffer) => new Promise((resolve, reject) => zlib.gzip(buffer, { level: 9 }, (error, out) => (error ? reject(error) : resolve(out)))),
+};
+
+function createStaticAssets({ root, version = null, warm = true }) {
   const knownFiles = new Set(listFiles(root));
   const cache = new Map();
+
+  // Max-quality compression of a 250 KB script takes ~250 ms of CPU (several times
+  // that on a small Render instance). Done synchronously on first request it froze
+  // every other request, after every restart. It now runs on libuv's thread pool;
+  // until it lands, a request gets a fast synchronous encode (a few ms).
+  function ensureBestEncoding(entry, encoding) {
+    if (entry.encoded[encoding] || entry.pending[encoding]) return;
+    entry.pending[encoding] = compressAsync[encoding](entry.raw)
+      .then((out) => { entry.encoded[encoding] = out; })
+      .catch(() => {})
+      .finally(() => { delete entry.pending[encoding]; });
+  }
+
+  function encodedBody(entry, encoding) {
+    if (entry.encoded[encoding]) return entry.encoded[encoding];
+    ensureBestEncoding(entry, encoding);
+    if (!entry.fast[encoding]) entry.fast[encoding] = compress(entry.raw, encoding, { fast: true });
+    return entry.fast[encoding];
+  }
+
+  async function warmCache() {
+    for (const relative of knownFiles) {
+      const extension = path.extname(relative).toLowerCase();
+      if (!COMPRESSIBLE.has(extension) || extension === '.html') continue;
+      let entry;
+      try {
+        entry = load(relative);
+      } catch (_error) {
+        continue;
+      }
+      if (entry.raw.length < MIN_COMPRESS_BYTES) continue;
+      for (const encoding of ['br', 'gzip']) {
+        ensureBestEncoding(entry, encoding);
+        // One file at a time keeps the thread pool free for crypto/DNS work.
+        await entry.pending[encoding];
+      }
+    }
+  }
 
   function load(relative) {
     const absolute = path.join(root, relative);
@@ -109,12 +157,14 @@ function createStaticAssets({ root, version = null }) {
       raw,
       hash: crypto.createHash('sha1').update(raw).digest('hex').slice(0, 20),
       encoded: {},
+      fast: {},
+      pending: {},
     };
     cache.set(relative, entry);
     return entry;
   }
 
-  return function staticAssets(req, res, next) {
+  function staticAssets(req, res, next) {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
 
     let pathname;
@@ -159,14 +209,17 @@ function createStaticAssets({ root, version = null }) {
 
     let body = entry.raw;
     if (encoding) {
-      if (!entry.encoded[encoding]) entry.encoded[encoding] = compress(entry.raw, encoding);
-      body = entry.encoded[encoding];
+      body = encodedBody(entry, encoding);
       res.setHeader('Content-Encoding', encoding);
     }
     res.setHeader('Content-Length', String(body.length));
     if (req.method === 'HEAD') return res.end();
     return res.end(body);
   };
+
+  if (warm) setImmediate(() => { warmCache().catch(() => {}); });
+  staticAssets.warmCache = warmCache;
+  return staticAssets;
 }
 
 module.exports = {

@@ -195,14 +195,17 @@ function configureSecondaryButton({ label, onClick }) {
   secondaryActionButton.onclick = typeof onClick === 'function' ? onClick : null;
 }
 
+// Runs every second but only writes when the minute or day changes, avoiding a
+// needless layout pass each second.
 function updateClock() {
-  const now = new Date();
-  clockLabel.textContent = now.toLocaleTimeString(getLocale(), {
+  const time = new Date().toLocaleTimeString(getLocale(), {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
   });
-  todayLabel.textContent = formatDate(todayIso());
+  const today = formatDate(todayIso());
+  if (clockLabel.textContent !== time) clockLabel.textContent = time;
+  if (todayLabel.textContent !== today) todayLabel.textContent = today;
 }
 
 async function apiRequest(path, session, options = {}) {

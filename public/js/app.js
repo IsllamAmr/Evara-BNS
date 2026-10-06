@@ -543,23 +543,31 @@ function showAppShell() {
 }
 
 function startClock() {
+  // Ticks every second so the minute flips on time, but only touches the DOM when the
+  // shown text changes; rewriting it each second forced a style/layout pass for nothing.
   const renderClock = () => {
     const now = new Date();
-    elements.topbarClock.textContent = now.toLocaleTimeString(getLocale(), {
+    setTextIfChanged(elements.topbarClock, now.toLocaleTimeString(getLocale(), {
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
-    });
-    elements.topbarDate.textContent = now.toLocaleDateString(getLocale(), {
+    }));
+    setTextIfChanged(elements.topbarDate, now.toLocaleDateString(getLocale(), {
       weekday: 'short',
       day: '2-digit',
       month: 'short',
       year: 'numeric',
-    });
+    }));
   };
 
   renderClock();
   window.setInterval(renderClock, 1000);
+}
+
+function setTextIfChanged(element, text) {
+  if (element && element.textContent !== text) {
+    element.textContent = text;
+  }
 }
 
 async function getAccessToken() {
