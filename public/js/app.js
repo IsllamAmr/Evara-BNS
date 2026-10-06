@@ -72,19 +72,10 @@ const supabase = isSupabaseReady() ? getSupabase() : null;
 const PROFILE_SELECT = 'id, full_name, email, role, is_active, employee_code, phone, department, position, status, created_at, updated_at';
 const ATTENDANCE_SELECT = 'id, user_id, attendance_date, check_in_time, check_out_time, attendance_status, ip_address, device_info, work_notes, work_place, training_minutes, created_at, updated_at';
 const DEPARTMENT_OPTIONS = [
-  'Administration',
-  'Business Development',
-  'Customer Support',
-  'Finance',
-  'Human Resources',
+  'Architectural Engineering',
+  'Civil Engineering',
+  'Software Engineering',
   'Information Technology',
-  'Legal',
-  'Marketing',
-  'Operations',
-  'Procurement',
-  'Quality Assurance',
-  'Sales',
-  'Warehouse',
 ];
 
 const EMPLOYEE_PAGE_SIZE = 10;
@@ -1021,13 +1012,11 @@ function employeeById(id) {
   return state.profileMap.get(id) || state.employees.find((item) => item.id === id) || null;
 }
 
+// Only the company's four departments are offered. An employee still on an old
+// department keeps it listed (so saving their form does not silently clear it)
+// until an admin moves them to one of the four.
 function departmentOptions(selected = '') {
-  return [...new Set([
-    ...DEPARTMENT_OPTIONS,
-    ...state.employees.map((employee) => employee.department).filter(Boolean),
-    state.profile?.department,
-    selected,
-  ].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  return [...new Set([...DEPARTMENT_OPTIONS, selected].filter(Boolean))];
 }
 function syncShell() {
   elements.sidebarName.textContent = state.profile?.full_name || 'EVARA User';
@@ -2937,7 +2926,7 @@ function employeeFormMarkup(mode, employee = null) {
         </div>
         <div class="form-group">
           <label for="employee_position">${escapeHtml(t('common.position'))}</label>
-          <input id="employee_position" name="position" value="${escapeHtml(employee?.position || '')}" />
+          <input id="employee_position" name="position" autocomplete="off" value="${escapeHtml(employee?.position || '')}" />
         </div>
         <div class="form-group">
           <label for="employee_role">${escapeHtml(t('common.role'))}</label>
