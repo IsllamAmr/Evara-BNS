@@ -1,7 +1,7 @@
 const { AppError } = require('../middlewares/errorMiddleware');
 const { getSupabaseAdmin } = require('../config/supabase');
 
-const REQUEST_TYPES = new Set(['late_2_hours', 'annual_leave']);
+const REQUEST_TYPES = new Set(['late_2_hours', 'annual_leave', 'work_from_home']);
 const REQUEST_STATUSES = new Set(['pending', 'approved', 'rejected', 'cancelled']);
 const REVIEWABLE_STATUSES = new Set(['approved', 'rejected', 'cancelled']);
 const QUOTA_ACTIVE_STATUSES = ['pending', 'approved'];
@@ -9,6 +9,61 @@ const QUOTA_ACTIVE_STATUSES = ['pending', 'approved'];
 const MONTHLY_LATE_2_HOURS_LIMIT = 2;
 const ANNUAL_LEAVE_DAYS_LIMIT = 21;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const BUSINESS_TIME_ZONE = 'Africa/Cairo';
+
+function businessToday(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: BUSINESS_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now);
+}
+
+function parseClockTime(value, fieldName) {
+  const normalized = normalizeText(value);
+  const match = normalized.match(/^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/);
+  if (!match) {
+    throw new AppError(`${fieldName} must be a time in HH:MM format`, 422);
+  }
+  return `${match[1]}:${match[2]}`;
+}
+
+// Work from home is a note: no quota and no approval step. It is stored as approved
+// so it reaches the timesheet Excel at once; an admin can reject it to remove it.
+async function createWorkFromHomeNote(payload, targetUserId, employee) {
+  const workDate = parseDateOnly(payload.work_date, 'work_date', { required: true });
+  if (workDate > businessToday()) {
+    throw new AppError('Work from home can only be noted for today or a past day', 422);
+  }
+  const workStart = parseClockTime(payload.work_start, 'work_start');
+  const workEnd = parseClockTime(payload.work_end, 'work_end');
+  if (workEnd <= workStart) {
+    throw new AppError('The end time must be after the start time', 422);
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from('employee_requests')
+    .insert({
+      user_id: targetUserId,
+      request_type: 'work_from_home',
+      status: 'approved',
+      work_date: workDate,
+      work_start: workStart,
+      work_end: workEnd,
+      reason: normalizeOptionalText(payload.reason),
+    })
+    .select('*')
+    .single();
+
+  if (error) {
+    const mapped = mapRequestMutationError(error, 'Unable to save the work from home note');
+    throw new AppError(mapped.message, mapped.statusCode);
+  }
+
+  return {
+    employee,
+    request: data,
+    allowance: await buildAllowanceSummaryForUser(targetUserId),
+  };
+}
 
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -280,6 +335,9 @@ async function createRequest(payload, actorProfile) {
 
   const targetUserId = resolveTargetUserId(actorProfile, payload.user_id);
   const employee = await assertEmployeeProfile(targetUserId);
+  if (requestType === 'work_from_home') {
+    return createWorkFromHomeNote(payload, targetUserId, employee);
+  }
   const reason = normalizeOptionalText(payload.reason);
   let lateDate = null;
   let leaveStartDate = null;

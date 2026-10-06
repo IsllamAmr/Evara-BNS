@@ -147,6 +147,7 @@ export default {
     "expiringSoon": "Your session will expire in {{minutes}} minute(s)."
   },
   "labels": {
+    "work_from_home": "Work From Home",
     "unassigned": "Unassigned",
     "unknown": "Unknown",
     "admin": "Admin",
@@ -455,6 +456,15 @@ export default {
     "ipAddress": "IP Address"
   },
   "requestPage": {
+    "workDate": "Date",
+    "workStart": "From",
+    "workEnd": "To",
+    "workReason": "What did you work on? (optional)",
+    "workTimesRequired": "Enter the date and the start and end times.",
+    "workTimesOrder": "The end time must be after the start time.",
+    "workDateFuture": "You can only note today or a past day.",
+    "recorded": "Recorded",
+    "removeNote": "Remove",
     "eyebrow": "Requests",
     "title": "Employee Requests",
     "intro": "Submit and track two-hour delay and annual leave requests.",
@@ -527,6 +537,7 @@ export default {
     "deleteConfirm": "Delete permanently"
   },
   "toasts": {
+    "workFromHomeSaved": "Work from home noted.",
     "payrollExported": "Payroll exported: {{file}}",
     "payrollExportFailed": "Could not export the payroll. Please try again.",
     "employeesExported": "Employees CSV exported successfully.",
@@ -779,7 +790,8 @@ export default {
       "emptyText": "Tap the + button to send your first request.",
       "sent": "Sent {{date}}",
       "typeHintDelay": "Arrive up to 2 hours late on a chosen day.",
-      "typeHintLeave": "Take one or more days of annual leave."
+      "typeHintLeave": "Take one or more days of annual leave.",
+      "typeHintHome": "Note the hours you worked from home."
     },
     "profile": {
       "account": "Account details",

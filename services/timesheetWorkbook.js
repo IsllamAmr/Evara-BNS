@@ -141,6 +141,19 @@ function requestCoversDate(request, iso) {
   return request.request_type === 'late_2_hours' && request.late_date === iso;
 }
 
+// "16:00:00" -> "4:00 pm"
+function clockLabel(value) {
+  const [hours, minutes] = String(value || '').split(':').map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return '';
+  const suffix = hours >= 12 ? 'pm' : 'am';
+  return `${hours % 12 || 12}:${String(minutes).padStart(2, '0')} ${suffix}`;
+}
+
+function workFromHomeNote(request) {
+  const span = `Worked from home ${clockLabel(request.work_start)} - ${clockLabel(request.work_end)}`;
+  return request.reason ? `${span}: ${String(request.reason).trim()}` : span;
+}
+
 function estimateRowHeight(text, columnWidth) {
   if (!text) return null;
   const charsPerLine = Math.max(Math.floor(columnWidth * 1.1), 10);
@@ -174,6 +187,10 @@ function buildDayRow({ iso, rowNumber, record, requests, today }) {
   if (record?.work_notes) notes.push(String(record.work_notes).trim());
   if (leave && !record?.check_in_time) notes.push('Annual leave (approved)');
   if (delay) notes.push('Approved 2-hour delay');
+  requests
+    .filter((request) => request.request_type === 'work_from_home' && request.work_date === iso)
+    .sort((left, right) => String(left.work_start).localeCompare(String(right.work_start)))
+    .forEach((request) => notes.push(workFromHomeNote(request)));
   if (record?.attendance_status === 'absent') notes.push('Absent');
   if (record?.check_in_time && !record?.check_out_time && iso < today) notes.push('No check-out recorded');
   if (record?.ip_address === 'manual-entry') notes.push('Manual entry by admin');

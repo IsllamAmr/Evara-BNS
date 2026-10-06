@@ -116,7 +116,7 @@ async function exportTimesheet(userId, { from, to }, actorProfile, now = new Dat
       .range(0, MAX_EXPORT_DAYS + 10),
     supabaseAdmin
       .from('employee_requests')
-      .select('request_type, status, late_date, leave_start_date, leave_end_date')
+      .select('request_type, status, reason, late_date, leave_start_date, leave_end_date, work_date, work_start, work_end')
       .eq('user_id', userId)
       .eq('status', 'approved'),
   ]);
@@ -127,11 +127,11 @@ async function exportTimesheet(userId, { from, to }, actorProfile, now = new Dat
   const { buffer, segments } = buildTimesheetWorkbook({
     employee,
     records: attendanceResult.data || [],
-    requests: (requestsResult.data || []).filter((request) => (
-      request.request_type === 'late_2_hours'
-        ? request.late_date >= from && request.late_date <= to
-        : request.leave_start_date <= to && request.leave_end_date >= from
-    )),
+    requests: (requestsResult.data || []).filter((request) => {
+      if (request.request_type === 'late_2_hours') return request.late_date >= from && request.late_date <= to;
+      if (request.request_type === 'work_from_home') return request.work_date >= from && request.work_date <= to;
+      return request.leave_start_date <= to && request.leave_end_date >= from;
+    }),
     from,
     to,
     now,

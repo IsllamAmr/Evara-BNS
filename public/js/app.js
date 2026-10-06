@@ -88,7 +88,13 @@ const EMPLOYEE_PAGE_SIZE = 10;
 const HISTORY_PAGE_SIZE = 12;
 const REQUEST_MONTHLY_DELAY_LIMIT = 2;
 const REQUEST_ANNUAL_LEAVE_LIMIT = 21;
-const REQUEST_TYPES = ['late_2_hours', 'annual_leave'];
+const REQUEST_TYPES = ['late_2_hours', 'annual_leave', 'work_from_home'];
+// Icon and one-line hint shown for each request type in the form.
+const REQUEST_TYPE_META = {
+  late_2_hours: { icon: 'hourglass', hint: 'mobile.requests.typeHintDelay' },
+  annual_leave: { icon: 'plane', hint: 'mobile.requests.typeHintLeave' },
+  work_from_home: { icon: 'home', hint: 'mobile.requests.typeHintHome' },
+};
 const REQUEST_STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
 const EMPLOYEE_CACHE_TTL_MS = 30 * 1000; // Reduced from 60s to improve cache freshness
 const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -1635,7 +1641,30 @@ function requestDateLabel(request) {
     return `${start} - ${end}`;
   }
 
+  if (request.request_type === 'work_from_home') {
+    return formatDate(request.work_date);
+  }
+
   return '-';
+}
+
+// "16:00:00" -> "4:00 pm" in the current language (12-hour, like the rest of the app).
+function clockTimeLabel(value) {
+  const [hours, minutes] = String(value || '').split(':').map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return '';
+  return new Date(2000, 0, 1, hours, minutes).toLocaleTimeString(getLocale(), { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function clockMinutes(value) {
+  const [hours, minutes] = String(value || '').split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+// Work from home needs no approval, so "approved" reads as "Recorded" for it.
+function requestStatusText(request) {
+  return request.request_type === 'work_from_home' && request.status === 'approved'
+    ? t('requestPage.recorded')
+    : statusLabel(request.status);
 }
 
 function requestDurationLabel(request) {
@@ -1649,6 +1678,11 @@ function requestDurationLabel(request) {
 
   if (request.request_type === 'annual_leave') {
     return t('requestPage.leaveDaysCount', { days: String(request.leave_days || 0) });
+  }
+
+  if (request.request_type === 'work_from_home') {
+    const span = clockMinutes(request.work_end) - clockMinutes(request.work_start);
+    return `${clockTimeLabel(request.work_start)} - ${clockTimeLabel(request.work_end)} (${formatDuration(span)})`;
   }
 
   return '-';
@@ -3892,10 +3926,10 @@ function requestFormMarkup(defaultType = 'late_2_hours', defaultUserId = '') {
           ${REQUEST_TYPES.map((type) => `
             <label class="type-option">
               <input type="radio" name="request_type" value="${type}" ${defaultType === type ? 'checked' : ''} required />
-              <span class="type-option-icon">${icon(type === 'annual_leave' ? 'plane' : 'hourglass')}</span>
+              <span class="type-option-icon">${icon(REQUEST_TYPE_META[type].icon)}</span>
               <span class="type-option-copy">
                 <strong>${escapeHtml(requestTypeLabel(type))}</strong>
-                <span>${escapeHtml(t(type === 'annual_leave' ? 'mobile.requests.typeHintLeave' : 'mobile.requests.typeHintDelay'))}</span>
+                <span>${escapeHtml(t(REQUEST_TYPE_META[type].hint))}</span>
               </span>
             </label>
           `).join('')}
@@ -3912,10 +3946,22 @@ function requestFormMarkup(defaultType = 'late_2_hours', defaultUserId = '') {
           <label for="request_leave_end_date">${escapeHtml(t('requestPage.leaveEndDate'))}</label>
           <input id="request_leave_end_date" name="leave_end_date" type="date" value="${escapeHtml(todayIso())}" />
         </div>
+        <div class="form-group full hidden" id="requestWorkDateGroup">
+          <label for="request_work_date">${escapeHtml(t('requestPage.workDate'))}</label>
+          <input id="request_work_date" name="work_date" type="date" value="${escapeHtml(todayIso())}" max="${escapeHtml(todayIso())}" />
+        </div>
+        <div class="form-group hidden" id="requestWorkStartGroup">
+          <label for="request_work_start">${escapeHtml(t('requestPage.workStart'))}</label>
+          <input id="request_work_start" name="work_start" type="time" step="300" />
+        </div>
+        <div class="form-group hidden" id="requestWorkEndGroup">
+          <label for="request_work_end">${escapeHtml(t('requestPage.workEnd'))}</label>
+          <input id="request_work_end" name="work_end" type="time" step="300" />
+        </div>
       </div>
 
       <div class="form-group">
-        <label for="request_reason">${escapeHtml(t('requestPage.reason'))}</label>
+        <label for="request_reason" id="requestReasonLabel">${escapeHtml(t('requestPage.reason'))}</label>
         <textarea id="request_reason" name="reason" rows="4" placeholder="${escapeHtml(t('requestPage.reasonPlaceholder'))}"></textarea>
       </div>
 
@@ -3934,24 +3980,26 @@ function requestFormMarkup(defaultType = 'late_2_hours', defaultUserId = '') {
 function syncRequestFormFields(form) {
   const requestType = form.request_type.value;
   const isDelayRequest = requestType === 'late_2_hours';
+  const isLeaveRequest = requestType === 'annual_leave';
+  const isHomeRequest = requestType === 'work_from_home';
 
-  const lateGroup = document.getElementById('requestLateDateGroup');
-  const leaveStartGroup = document.getElementById('requestLeaveStartGroup');
-  const leaveEndGroup = document.getElementById('requestLeaveEndGroup');
+  const show = (id, visible) => document.getElementById(id)?.classList.toggle('hidden', !visible);
+  show('requestLateDateGroup', isDelayRequest);
+  show('requestLeaveStartGroup', isLeaveRequest);
+  show('requestLeaveEndGroup', isLeaveRequest);
+  show('requestWorkDateGroup', isHomeRequest);
+  show('requestWorkStartGroup', isHomeRequest);
+  show('requestWorkEndGroup', isHomeRequest);
 
-  lateGroup?.classList.toggle('hidden', !isDelayRequest);
-  leaveStartGroup?.classList.toggle('hidden', isDelayRequest);
-  leaveEndGroup?.classList.toggle('hidden', isDelayRequest);
+  if (form.late_date) form.late_date.required = isDelayRequest;
+  if (form.leave_start_date) form.leave_start_date.required = isLeaveRequest;
+  if (form.leave_end_date) form.leave_end_date.required = isLeaveRequest;
+  if (form.work_date) form.work_date.required = isHomeRequest;
+  if (form.work_start) form.work_start.required = isHomeRequest;
+  if (form.work_end) form.work_end.required = isHomeRequest;
 
-  if (form.late_date) {
-    form.late_date.required = isDelayRequest;
-  }
-  if (form.leave_start_date) {
-    form.leave_start_date.required = !isDelayRequest;
-  }
-  if (form.leave_end_date) {
-    form.leave_end_date.required = !isDelayRequest;
-  }
+  const reasonLabel = document.getElementById('requestReasonLabel');
+  if (reasonLabel) reasonLabel.textContent = t(isHomeRequest ? 'requestPage.workReason' : 'requestPage.reason');
 }
 
 function collectRequestForm(form) {
@@ -3966,6 +4014,10 @@ function collectRequestForm(form) {
 
   if (payload.request_type === 'late_2_hours') {
     payload.late_date = form.late_date.value;
+  } else if (payload.request_type === 'work_from_home') {
+    payload.work_date = form.work_date.value;
+    payload.work_start = form.work_start.value;
+    payload.work_end = form.work_end.value;
   } else {
     payload.leave_start_date = form.leave_start_date.value;
     payload.leave_end_date = form.leave_end_date.value;
@@ -4008,6 +4060,21 @@ function openRequestForm({ onSaved = null, defaultType = 'late_2_hours', default
       return;
     }
 
+    if (payload.request_type === 'work_from_home') {
+      if (!payload.work_date || !payload.work_start || !payload.work_end) {
+        showFormError('requestFormError', t('requestPage.workTimesRequired'));
+        return;
+      }
+      if (payload.work_date > todayIso()) {
+        showFormError('requestFormError', t('requestPage.workDateFuture'));
+        return;
+      }
+      if (payload.work_end <= payload.work_start) {
+        showFormError('requestFormError', t('requestPage.workTimesOrder'));
+        return;
+      }
+    }
+
     if (payload.request_type === 'annual_leave') {
       if (!payload.leave_start_date || !payload.leave_end_date) {
         showFormError('requestFormError', t('requestPage.leaveDatesRequired'));
@@ -4029,7 +4096,7 @@ function openRequestForm({ onSaved = null, defaultType = 'late_2_hours', default
         body: payload,
       });
       invalidateRequestsCache();
-      showToast(t('toasts.requestSubmitted'), 'success');
+      showToast(t(payload.request_type === 'work_from_home' ? 'toasts.workFromHomeSaved' : 'toasts.requestSubmitted'), 'success');
       closeModal(true);
       if (typeof onSaved === 'function') {
         await onSaved();
@@ -4117,6 +4184,7 @@ async function renderRequestsPage() {
       typeLabel: requestTypeLabel(item.request_type),
       dateLabel: requestDateLabel(item),
       durationLabel: requestDurationLabel(item),
+      statusText: requestStatusText(item),
     })).join('')}</div>`
     : `<div class="emp-empty">${icon('requests')}<strong>${escapeHtml(t('mobile.requests.emptyTitle'))}</strong><p>${escapeHtml(t('mobile.requests.emptyText'))}</p></div>`}
           <button id="openRequestFormBtn" type="button" class="fab">${icon('plus')}<span>${escapeHtml(t('requestPage.newRequest'))}</span></button>
@@ -4208,11 +4276,13 @@ async function renderRequestsPage() {
                       <td>${escapeHtml(requestDateLabel(item))}</td>
                       <td>${escapeHtml(requestDurationLabel(item))}</td>
                       <td>${escapeHtml(item.reason || '-')}</td>
-                      <td>${badgeMarkup(item.status, item.status)}</td>
+                      <td>${badgeMarkup(item.status, item.status, requestStatusText(item))}</td>
                       <td>${escapeHtml(formatDateTime(item.created_at))}</td>
                       ${isAdmin() ? `
                         <td>
-                          ${item.status === 'pending'
+                          ${item.request_type === 'work_from_home' && item.status === 'approved'
+    ? `<button type="button" class="btn btn-secondary" data-request-action="rejected" data-request-id="${item.id}">${escapeHtml(t('requestPage.removeNote'))}</button>`
+    : item.status === 'pending'
     ? `<div class="inline-actions">
                                  <button type="button" class="btn btn-secondary" data-request-action="approved" data-request-id="${item.id}">${escapeHtml(t('requestPage.approve'))}</button>
                                  <button type="button" class="btn btn-danger" data-request-action="rejected" data-request-id="${item.id}">${escapeHtml(t('requestPage.reject'))}</button>

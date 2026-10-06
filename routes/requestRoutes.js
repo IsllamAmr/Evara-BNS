@@ -18,7 +18,7 @@ router.use(protect);
 router.get(
   '/',
   [
-    query('type').optional().isIn(['all', 'late_2_hours', 'annual_leave']).withMessage('type filter is invalid'),
+    query('type').optional().isIn(['all', 'late_2_hours', 'annual_leave', 'work_from_home']).withMessage('type filter is invalid'),
     query('status').optional().isIn(['all', 'pending', 'approved', 'rejected', 'cancelled']).withMessage('status filter is invalid'),
     query('user_id').optional().isUUID().withMessage('user_id must be a valid UUID'),
   ],
@@ -40,7 +40,10 @@ router.post(
   '/',
   attendanceActionLimiter,
   [
-    body('request_type').isIn(['late_2_hours', 'annual_leave']).withMessage('request_type is invalid'),
+    body('request_type').isIn(['late_2_hours', 'annual_leave', 'work_from_home']).withMessage('request_type is invalid'),
+    body('work_date').optional({ nullable: true, values: 'falsy' }).isISO8601({ strict: true, strictSeparator: true }).withMessage('work_date must be a valid date'),
+    body('work_start').optional({ nullable: true, values: 'falsy' }).matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('work_start must be a time in HH:MM format'),
+    body('work_end').optional({ nullable: true, values: 'falsy' }).matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('work_end must be a time in HH:MM format'),
     body('late_date').optional({ nullable: true, values: 'falsy' }).isISO8601({ strict: true, strictSeparator: true }).withMessage('late_date must be a valid date'),
     body('leave_start_date').optional({ nullable: true, values: 'falsy' }).isISO8601({ strict: true, strictSeparator: true }).withMessage('leave_start_date must be a valid date'),
     body('leave_end_date').optional({ nullable: true, values: 'falsy' }).isISO8601({ strict: true, strictSeparator: true }).withMessage('leave_end_date must be a valid date'),

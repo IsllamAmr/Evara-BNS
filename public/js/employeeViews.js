@@ -398,15 +398,21 @@ export function quotaCardMarkup({ iconName, title, used, limit, period, tone }) 
   `;
 }
 
-export function requestCardMarkup(item, { typeLabel, dateLabel, durationLabel }) {
-  const isLeave = item.request_type === 'annual_leave';
+const REQUEST_CARD_ICONS = {
+  late_2_hours: ['delay', 'hourglass'],
+  annual_leave: ['leave', 'plane'],
+  work_from_home: ['home', 'home'],
+};
+
+export function requestCardMarkup(item, { typeLabel, dateLabel, durationLabel, statusText = '' }) {
+  const [tone, iconName] = REQUEST_CARD_ICONS[item.request_type] || REQUEST_CARD_ICONS.late_2_hours;
   return `
     <article class="request-card status-${escapeHtml(item.status)}">
-      <span class="request-icon ${isLeave ? 'leave' : 'delay'}">${icon(isLeave ? 'plane' : 'hourglass')}</span>
+      <span class="request-icon ${tone}">${icon(iconName)}</span>
       <div class="request-body">
         <div class="request-top">
           <strong>${escapeHtml(typeLabel)}</strong>
-          <span class="badge ${escapeHtml(item.status)}">${escapeHtml(statusLabel(item.status))}</span>
+          <span class="badge ${escapeHtml(item.status)}">${escapeHtml(statusText || statusLabel(item.status))}</span>
         </div>
         <span class="request-dates">${icon('calendar')}${escapeHtml(dateLabel)} · ${escapeHtml(durationLabel)}</span>
         ${item.reason ? `<p class="request-reason">${escapeHtml(item.reason)}</p>` : ''}
