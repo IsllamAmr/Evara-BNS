@@ -32,6 +32,15 @@ EVARA BNS is a Supabase-powered employee attendance system with role-based acces
 - After a page renders, the app only preloads the most likely next screen instead of issuing requests for every section. Data cache entries are invalidated when related data changes.
 - Run `npm run test:data` to verify batched reads and cache invalidation.
 
+## Speed
+
+- **Compression:** `middlewares/staticAssets.js` serves scripts, styles and the HTML pages with Brotli (or gzip), cached in memory after the first request. No extra npm package is needed.
+- **Long-term caching:** in production every asset link in the HTML points to `/v/<version>/...`, where the version is a hash of `public/`. Those files are cached for a year; any deploy that changes a file changes the version, so browsers fetch the new copy by themselves. Locally URLs stay unversioned and are revalidated. `/api/health` reports `asset_version`.
+- **Translations:** `public/js/locales/en.js` ships with the page; `ar.js` is fetched only when an admin uses Arabic. Edit strings in these two files.
+- **Lazy modules:** the CSV exporters and the camera QR reader load only when used.
+- **Live updates:** a change made by someone else drops the cached data and shows admins a small "new updates" button instead of rebuilding the page; an employee's own screen refreshes only when no dialog or form field is in use.
+- Run `npm run test:speed` to check compression, caching and translation loading.
+
 ## Local Development
 
 ### Password recovery

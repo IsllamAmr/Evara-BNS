@@ -406,3 +406,9 @@ html[dir='rtl'] .sidebar-user .ghost-inline { text-align: center; }
   .login-story h1.rotating-quote { font-size: clamp(1.35rem, 6vw, 1.75rem); }
   .login-card { padding-top: 1.5rem; }
 }
+
+/* Live updates for admins: a quiet refresh button instead of rebuilding the page. */
+.live-update-pill { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 60; display: inline-flex; align-items: center; gap: .4rem; min-height: 40px; padding: .5rem 1.1rem; border: 0; border-radius: 999px; background: #315bdf; color: #fff; font: 600 .85rem/1.2 inherit; box-shadow: 0 10px 28px #172b4340; cursor: pointer; }
+.live-update-pill:hover { background: #244bc5; }
+.live-update-pill:focus-visible { outline: 3px solid #91cdff; outline-offset: 3px; }
+.live-update-pill.hidden { display: none; }

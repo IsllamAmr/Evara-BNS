@@ -23,6 +23,12 @@ const { attendanceRestrictionSummary } = require('./services/attendanceGuardServ
 const { sanitizeRequest } = require('./middlewares/sanitizeMiddleware');
 const { apiLimiter, rateLimitBackend } = require('./middlewares/rateLimiters');
 const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
+const {
+  computeAssetVersion,
+  createStaticAssets,
+  sendCompressed,
+  versionAssetLinks,
+} = require('./middlewares/staticAssets');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
@@ -40,6 +46,9 @@ const HTML_TEMPLATE_FILES = {
 };
 const readHtmlTemplate = (name) => fs.readFileSync(path.join(publicDirectory, HTML_TEMPLATE_FILES[name]), 'utf8');
 const HTML_TEMPLATES = Object.fromEntries(Object.keys(HTML_TEMPLATE_FILES).map((name) => [name, readHtmlTemplate(name)]));
+// Production assets are served from /v/<hash of public/>/..., cached for a year.
+// Locally files change all the time, so they stay unversioned and revalidated.
+const ASSET_VERSION = IS_PRODUCTION ? computeAssetVersion(publicDirectory) : null;
 const PAGE_METADATA = {
   passwordReset: {
     title: 'EVARA BNS | Password Recovery',
@@ -228,18 +237,18 @@ function renderHtmlTemplate(templateName, req) {
     '%OG_IMAGE_ALT%': SOCIAL_IMAGE_ALT,
   };
 
-  return Object.entries(replacements).reduce((html, [token, value]) => (
-    html.replaceAll(token, escapeHtmlAttribute(value))
+  const html = Object.entries(replacements).reduce((page, [token, value]) => (
+    page.replaceAll(token, escapeHtmlAttribute(value))
   ), template);
+  return versionAssetLinks(html, ASSET_VERSION);
 }
 
 function sendRenderedHtml(res, templateName, req) {
-  res.type('html');
   // Phones otherwise keep showing a cached copy of the page after a deploy.
   if (!res.get('Cache-Control')) {
     res.set('Cache-Control', 'no-cache');
   }
-  res.send(renderHtmlTemplate(templateName, req));
+  sendCompressed(req, res, renderHtmlTemplate(templateName, req), 'text/html; charset=utf-8');
 }
 
 function buildContentSecurityPolicy() {
@@ -352,6 +361,7 @@ app.get(SOCIAL_IMAGE_PATH, (req, res) => {
 
 // Revalidate scripts and styles on every load (cheap with ETags) so phones never
 // keep running an old copy of the attendance page after a deploy.
+app.use(createStaticAssets({ root: publicDirectory, version: ASSET_VERSION }));
 app.use(express.static(publicDirectory, {
   index: false,
   setHeaders(res, filePath) {
@@ -367,6 +377,7 @@ app.get('/api/health', (req, res) => {
     message: 'EVARA BNS Supabase backend is running',
     supabase_configured: isSupabaseConfigured(),
     supabase_host: supabaseUrl || null,
+    asset_version: ASSET_VERSION,
     rate_limit_backend: rateLimitBackend(),
     attendance_restrictions: attendanceRestrictionSummary(),
     timestamp: new Date().toISOString(),

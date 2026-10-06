@@ -3,7 +3,6 @@ import { apiRequestWithFallback } from './apiClient.js';
 import { createQueryCache, fetchAllRows } from './dataStore.js';
 import { renderTimesheet } from './timesheet.js';
 import { initRotatingQuotes } from './rotatingQuotes.js';
-import { scanOfficeQr } from './qrScanner.js';
 import {
   bindMonthStrip,
   detailRowMarkup,
@@ -20,11 +19,6 @@ import {
   startLiveShift,
   statTileMarkup,
 } from './employeeViews.js';
-import {
-  exportAttendanceCsv,
-  exportEmployeesCsv,
-  exportReportsCsv,
-} from './exporters.js';
 import {
   average,
   attendanceOutcome,
@@ -52,6 +46,8 @@ import {
   getLocale,
   onLanguageChange,
   setLanguageLock,
+  ensureLanguageLoaded,
+  getCurrentLanguage,
   t,
   toggleLanguage,
 } from './i18n.js';
@@ -456,6 +452,7 @@ function setLoginError(message = '') {
 }
 
 function clearRealtimeSubscriptions() {
+  hideLiveUpdatePill();
   realtimeChannels.forEach((channel) => {
     supabase?.removeChannel(channel);
   });
@@ -585,6 +582,9 @@ async function getAccessToken() {
 }
 
 async function apiRequest(path, options = {}) {
+  if (options.method && options.method !== 'GET') {
+    lastLocalWriteAt = Date.now();
+  }
   const token = await getAccessToken();
   const headers = {
     ...(options.body ? { 'Content-Type': 'application/json' } : {}),
@@ -1081,6 +1081,24 @@ function refreshTopbarMessage() {
   }
 }
 
+// Rarely used modules are fetched only when needed, keeping the first load small.
+function exportAttendanceCsv(...args) {
+  return import('./exporters.js').then((module) => module.exportAttendanceCsv(...args)).catch((error) => showToast(error.message, 'error'));
+}
+
+function exportEmployeesCsv(...args) {
+  return import('./exporters.js').then((module) => module.exportEmployeesCsv(...args)).catch((error) => showToast(error.message, 'error'));
+}
+
+function exportReportsCsv(...args) {
+  return import('./exporters.js').then((module) => module.exportReportsCsv(...args)).catch((error) => showToast(error.message, 'error'));
+}
+
+async function scanOfficeQr() {
+  const module = await import('./qrScanner.js');
+  return module.scanOfficeQr();
+}
+
 function bindStaticEvents() {
   document.addEventListener('click', async (event) => {
     if (!event.target.closest('[data-open-qr-scanner]')) return;
@@ -1143,16 +1161,93 @@ function setMobileMenuOpen(open) {
   elements.menuToggle.setAttribute('aria-expanded', String(open));
 }
 
-function scheduleLiveRefresh() {
+// Live updates. A change from someone else no longer rebuilds the whole page:
+// the cached data is dropped, admins get a small "new updates" button, and an
+// employee's own screen refreshes only when it is safe (not typing, no dialog open).
+let liveUpdateCount = 0;
+let liveRefreshPending = false;
+let lastLocalWriteAt = 0;
+let liveUpdatePill = null;
+
+function invalidateCacheForTable(table) {
+  if (table === 'attendance') invalidateAttendanceCache();
+  else if (table === 'profiles') invalidateEmployeeCache();
+  else if (table === 'employee_requests') invalidateRequestsCache();
+  else invalidateQueryCache();
+}
+
+function isUserBusy() {
+  const active = document.activeElement;
+  const typing = active && (active.matches?.('input, textarea, select') || active.isContentEditable);
+  return Boolean(typing || !elements.modal.classList.contains('hidden') || document.querySelector('dialog[open]'));
+}
+
+function hideLiveUpdatePill() {
+  liveUpdateCount = 0;
+  liveUpdatePill?.classList.add('hidden');
+}
+
+function showLiveUpdatePill() {
+  if (!liveUpdatePill) {
+    liveUpdatePill = document.createElement('button');
+    liveUpdatePill.type = 'button';
+    liveUpdatePill.className = 'live-update-pill hidden';
+    liveUpdatePill.setAttribute('aria-live', 'polite');
+    liveUpdatePill.addEventListener('click', () => {
+      hideLiveUpdatePill();
+      refreshCurrentPageKeepingScroll();
+    });
+    document.body.append(liveUpdatePill);
+  }
+  liveUpdatePill.textContent = t('liveUpdates.available', { count: String(liveUpdateCount) });
+  liveUpdatePill.classList.remove('hidden');
+}
+
+function refreshCurrentPageKeepingScroll() {
+  const scrollTop = window.scrollY;
+  const main = document.querySelector('.app-main');
+  const mainScrollTop = main?.scrollTop || 0;
+  liveRefreshPending = false;
+  return renderRoute()
+    .then(() => {
+      window.scrollTo({ top: scrollTop });
+      if (main) main.scrollTop = mainScrollTop;
+    })
+    .catch((error) => showToast(error.message, 'error'));
+}
+
+function scheduleLiveRefresh(payload = {}) {
   if (!state.profile) {
     return;
   }
 
+  invalidateCacheForTable(payload.table);
+
+  // The admin's own action already refreshed the screen; ignore its echo.
+  if (Date.now() - lastLocalWriteAt < 4000) {
+    return;
+  }
+
+  if (isAdmin()) {
+    liveUpdateCount += 1;
+    showLiveUpdatePill();
+    return;
+  }
+
+  liveRefreshPending = true;
   window.clearTimeout(state.liveRefreshTimer);
   state.liveRefreshTimer = window.setTimeout(() => {
-    renderRoute().catch((error) => showToast(error.message, 'error'));
-  }, 450);
+    if (!document.hidden && !isUserBusy()) {
+      refreshCurrentPageKeepingScroll();
+    }
+  }, 600);
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && liveRefreshPending && state.profile && !isAdmin() && !isUserBusy()) {
+    refreshCurrentPageKeepingScroll();
+  }
+});
 
 function setupRealtimeSubscriptions() {
   clearRealtimeSubscriptions();
@@ -1295,6 +1390,8 @@ async function loadAuthenticatedSession(session) {
   state.profile = profile;
   // Only admins may switch to Arabic; employees always see English.
   setLanguageLock(profile.role === 'admin' ? null : 'en');
+  // Arabic strings are downloaded only now, and only for an admin who uses Arabic.
+  await ensureLanguageLoaded(getCurrentLanguage()).catch(() => {});
   applyDocumentLanguage();
   updateSessionActivity();
   state.profileMap.set(profile.id, profile);
@@ -1382,6 +1479,7 @@ async function renderRoute() {
       stopLiveShift = () => {};
       syncPageFrame(page);
       setMobileMenuOpen(false);
+      hideLiveUpdatePill();
       if (pageChanged && !isAdmin()) {
         window.scrollTo({ top: 0 });
       }
