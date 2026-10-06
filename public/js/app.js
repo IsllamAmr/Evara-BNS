@@ -4,6 +4,12 @@ import { createQueryCache, fetchAllRows } from './dataStore.js';
 import { renderTimesheet } from './timesheet.js';
 import { initRotatingQuotes } from './rotatingQuotes.js';
 import {
+  disableReminders,
+  enableReminders,
+  getReminderState,
+  syncReminderSubscription,
+} from './pushReminders.js';
+import {
   bindMonthStrip,
   detailRowMarkup,
   firstName,
@@ -342,6 +348,14 @@ function currentMonthInput() {
 
 function offsetDate(days) {
   return offsetBusinessDate(days);
+}
+
+// ISO timestamp -> the browser-local "YYYY-MM-DDTHH:mm" a datetime-local input takes.
+function toDateTimeLocalValue(value) {
+  const parsed = value ? new Date(value) : null;
+  if (!parsed || Number.isNaN(parsed.getTime())) return '';
+  const pad = (number) => String(number).padStart(2, '0');
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
 }
 
 function toIsoFromDateTimeLocal(value) {
@@ -1391,6 +1405,9 @@ async function loadAuthenticatedSession(session) {
   syncShell();
   showAppShell();
   setupRealtimeSubscriptions();
+  if (profile.role !== 'admin') {
+    syncReminderSubscription(apiRequest);
+  }
 
   const nextTarget = new URLSearchParams(window.location.search).get('next');
   if (nextTarget === 'checkin') {
@@ -1426,7 +1443,47 @@ async function handleLogin(event) {
   }
 }
 
+// "Check-out reminder" row on the employee's Me page: shows On/Off and toggles it.
+function bindRemindersRow(row) {
+  if (!row) return;
+  const valueEl = row.querySelector('.settings-value');
+  const messages = {
+    'install-first': 'mobile.profile.remindersInstallFirst',
+    denied: 'mobile.profile.remindersDenied',
+    unsupported: 'mobile.profile.remindersUnsupported',
+    unconfigured: 'mobile.profile.remindersUnconfigured',
+  };
+  const show = (state) => {
+    if (valueEl) valueEl.textContent = t(state === 'on' ? 'mobile.profile.remindersOn' : 'mobile.profile.remindersOff');
+    row.dataset.state = state;
+  };
+  getReminderState().then(show);
+
+  row.addEventListener('click', async () => {
+    const state = row.dataset.state || await getReminderState();
+    if (messages[state]) {
+      showToast(t(messages[state]), 'warning');
+      return;
+    }
+    row.disabled = true;
+    try {
+      const next = state === 'on' ? await disableReminders(apiRequest) : await enableReminders(apiRequest);
+      show(next);
+      if (messages[next]) showToast(t(messages[next]), 'warning');
+      else showToast(t(next === 'on' ? 'mobile.profile.remindersEnabled' : 'mobile.profile.remindersDisabled'), next === 'on' ? 'success' : 'info');
+    } catch (error) {
+      showToast(error.message || t('mobile.profile.remindersFailed'), 'error');
+    } finally {
+      row.disabled = false;
+    }
+  });
+}
+
 async function handleLogout() {
+  // Stop this device's reminders for the account that is signing out.
+  if (state.profile && !isAdmin()) {
+    await disableReminders(apiRequest).catch(() => {});
+  }
   clearRealtimeSubscriptions();
   await supabase.auth.signOut();
   resetSessionState();
@@ -1499,6 +1556,33 @@ async function renderRoute() {
   } finally {
     routeRenderInFlight = false;
   }
+}
+
+// Shifts left open on past days, listed so the admin can add the real check-out
+// before payroll (until then their hours are an end-of-shift estimate).
+function missingCheckoutMarkup(report) {
+  const items = report.byEmployee.filter((item) => item.missingCheckoutRows.length);
+  if (!items.length) return '';
+  const count = items.reduce((sum, item) => sum + item.missingCheckoutRows.length, 0);
+  return `
+    <section class="card-block missing-checkout" role="status">
+      <div class="missing-checkout-head">
+        <span class="missing-checkout-icon" aria-hidden="true">!</span>
+        <div>
+          <h3>${escapeHtml(t('reportsPage.missingCheckoutTitle', { count: String(count) }))}</h3>
+          <p>${escapeHtml(t('reportsPage.missingCheckoutText'))}</p>
+        </div>
+      </div>
+      <ul class="missing-checkout-list">
+        ${items.flatMap((item) => item.missingCheckoutRows.map((row) => `
+          <li>
+            <span class="missing-checkout-name">${escapeHtml(item.employee.full_name)}</span>
+            <span class="missing-checkout-date">${escapeHtml(formatDate(row.attendance_date))} · ${escapeHtml(t('common.checkIn'))} ${escapeHtml(formatTime(row.check_in_time))}</span>
+            <button type="button" class="btn btn-secondary btn-small" data-fix-checkout data-user-id="${escapeHtml(row.user_id)}" data-date="${escapeHtml(row.attendance_date)}">${escapeHtml(t('reportsPage.missingCheckoutFix'))}</button>
+          </li>`)).join('')}
+      </ul>
+    </section>
+  `;
 }
 
 function buildSummaryCard(label, value, meta = '') {
@@ -2337,11 +2421,13 @@ async function renderProfilePage() {
           </section>
           <section class="emp-card settings-list">
             <h3>${escapeHtml(t('mobile.profile.settings'))}</h3>
+            ${settingsRow('profileRemindersBtn', 'bell', t('mobile.profile.reminders'), ' ')}
             ${settingsRow('openChangePasswordFromProfileBtn', 'lock', t('profilePage.changePassword'))}
             ${settingsRow('profileLogoutBtn', 'logout', t('nav.logout'), '', 'danger')}
           </section>
         </div>
       `;
+      bindRemindersRow(container.querySelector('#profileRemindersBtn'));
       container.querySelector('#openChangePasswordFromProfileBtn')?.addEventListener('click', () => openChangeOwnPasswordModal());
       container.querySelector('#profileLogoutBtn')?.addEventListener('click', () => handleLogout());
       return;
@@ -2508,6 +2594,7 @@ async function renderReportsPage() {
           </div>
           <p class="inline-note">${escapeHtml(t('reportsPage.period'))}: ${escapeHtml(report.range.label)} · ${escapeHtml(t('reportsPage.employeesInScope'))}: ${escapeHtml(String(report.filteredEmployees.length))}</p>
         </section>
+        ${missingCheckoutMarkup(report)}
         <div class="summary-grid">
           ${buildSummaryCard(t('reportsPage.totalHoursWorked'), formatDuration(report.totals.totalHoursWorkedMinutes), t('reportsPage.totalHoursWorkedMeta'))}
           ${buildSummaryCard(t('reportsPage.totalOvertime'), formatDuration(report.totals.totalOvertimeMinutes), t('reportsPage.totalOvertimeMeta'))}
@@ -2698,6 +2785,20 @@ async function renderReportsPage() {
     });
     container.querySelector('#reportsRefreshBtn')?.addEventListener('click', () => {
       renderReportsPage().catch((error) => setPageError(container, error.message));
+    });
+    container.querySelectorAll('[data-fix-checkout]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const item = report.byEmployee.find((entry) => entry.employee.id === button.dataset.userId);
+        const row = item?.missingCheckoutRows.find((entry) => entry.attendance_date === button.dataset.date);
+        if (!row) return;
+        openManualAttendanceForm({
+          userId: row.user_id,
+          attendanceDate: row.attendance_date,
+          checkInTime: row.check_in_time,
+          status: row.attendance_status === 'late' ? 'late' : 'checked_out',
+          onSaved: () => renderReportsPage(),
+        });
+      });
     });
     container.querySelector('#reportsExportBtn')?.addEventListener('click', async (event) => {
       const button = event.currentTarget;
@@ -3170,6 +3271,7 @@ function downloadPayrollExcel(report, filters) {
         `Present ${item.presentDays}/${elapsedWorkdays} days`,
         item.lateArrivals ? `Late ${item.lateArrivals}` : '',
         elapsedWorkdays > item.presentDays ? `Not present ${elapsedWorkdays - item.presentDays}` : '',
+        item.missingCheckoutRows.length ? `No check-out ${item.missingCheckoutRows.length} day(s), hours estimated` : '',
       ].filter(Boolean).join(' · '),
     }));
 
@@ -3420,6 +3522,8 @@ function openManualAttendanceForm(options = {}) {
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
   const defaultUserId = options.userId || '';
   const defaultAttendanceDate = options.attendanceDate || todayIso();
+  const defaultCheckIn = toDateTimeLocalValue(options.checkInTime);
+  const defaultStatus = options.status || 'present';
   const onSaved = typeof options.onSaved === 'function' ? options.onSaved : async () => {
     await renderAttendancePage();
   };
@@ -3448,12 +3552,12 @@ function openManualAttendanceForm(options = {}) {
         <div class="form-group">
           <label for="manual_attendance_status">${escapeHtml(t('common.status'))}</label>
           <select id="manual_attendance_status" name="attendance_status">
-            ${['present', 'late', 'checked_out', 'absent'].map((status) => `<option value="${status}">${escapeHtml(statusLabel(status))}</option>`).join('')}
+            ${['present', 'late', 'checked_out', 'absent'].map((status) => `<option value="${status}" ${status === defaultStatus ? 'selected' : ''}>${escapeHtml(statusLabel(status))}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
           <label for="manual_check_in_time">${escapeHtml(t('common.checkIn'))}</label>
-          <input id="manual_check_in_time" name="check_in_time" type="datetime-local" />
+          <input id="manual_check_in_time" name="check_in_time" type="datetime-local" value="${escapeHtml(defaultCheckIn)}" />
         </div>
         <div class="form-group">
           <label for="manual_check_out_time">${escapeHtml(t('common.checkOut'))}</label>

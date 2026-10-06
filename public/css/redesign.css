@@ -99,6 +99,18 @@ body { background: var(--bg-canvas); }
 .language-toggle { display: inline-flex !important; align-items: center; justify-content: center; background: #fff; color: var(--brand); }
 /* Hidden outside the admin dashboard (sign-in, check-in and employee screens are English only). */
 .language-toggle[hidden] { display: none !important; }
+
+/* Reports: shifts left open on past days */
+.missing-checkout { border-color: #f3d19c; background: #fffaf0; }
+.missing-checkout-head { display: flex; gap: .8rem; align-items: flex-start; }
+.missing-checkout-head h3 { margin: 0 0 .2rem; font-size: 1rem; color: #7a4b00; }
+.missing-checkout-head p { margin: 0; color: #8a6420; font-size: .88rem; line-height: 1.5; }
+.missing-checkout-icon { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #f5a524; color: #fff; font-weight: 800; }
+.missing-checkout-list { list-style: none; margin: .9rem 0 0; padding: 0; display: grid; gap: .45rem; max-height: 320px; overflow-y: auto; }
+.missing-checkout-list li { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; padding: .55rem .8rem; border-radius: 10px; background: #fff; border: 1px solid #f1e2c4; }
+.missing-checkout-name { font-weight: 700; min-width: 10rem; }
+.missing-checkout-date { color: var(--muted); font-size: .88rem; flex: 1; }
+.btn.btn-small { min-height: 34px; padding: .35rem .8rem; font-size: .82rem; }
 .language-toggle:hover { background: var(--overlay-brand); color: var(--brand-hover); }
 .eyebrow, .story-label, .status-label { letter-spacing: .075em; }
 .btn, .ghost-inline, input, select, textarea { border-radius: 11px; }

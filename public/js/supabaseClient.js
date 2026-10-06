@@ -38,6 +38,7 @@ const runtimeConfig = {
   SUPABASE_URL: resolveConfigValue(injectedConfig.SUPABASE_URL, PUBLIC_RUNTIME_DEFAULTS.SUPABASE_URL),
   SUPABASE_ANON_KEY: resolveConfigValue(injectedConfig.SUPABASE_ANON_KEY, PUBLIC_RUNTIME_DEFAULTS.SUPABASE_ANON_KEY),
   APP_URL: resolveConfigValue(injectedConfig.APP_URL, PUBLIC_RUNTIME_DEFAULTS.APP_URL || window.location.origin),
+  VAPID_PUBLIC_KEY: resolveConfigValue(injectedConfig.VAPID_PUBLIC_KEY, PUBLIC_RUNTIME_DEFAULTS.VAPID_PUBLIC_KEY),
 };
 
 // Recovery links use a temporary session and must not replace a saved work session.
@@ -58,6 +59,7 @@ export function getAppConfig() {
     supabaseUrl: runtimeConfig.SUPABASE_URL || '',
     supabaseAnonKey: runtimeConfig.SUPABASE_ANON_KEY || '',
     appUrl: runtimeConfig.APP_URL.replace(/\/$/, ''),
+    vapidPublicKey: runtimeConfig.VAPID_PUBLIC_KEY || '',
   };
 }
 

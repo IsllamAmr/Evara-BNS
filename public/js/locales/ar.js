@@ -356,6 +356,9 @@ export default {
     "peakAbsenceDay": "أكثر يوم غياب",
     "peakAbsenceDayMeta": "{{count}} حالة غياب",
     "peakAbsenceDayEmpty": "لا يوجد اتجاه غياب بعد",
+    "missingCheckoutTitle": "{{count}} وردية بدون تسجيل انصراف",
+    "missingCheckoutText": "ساعات هذه الأيام تقديرية (حتى نهاية الوردية). أضف وقت الانصراف الفعلي قبل تصدير كشف المرتبات.",
+    "missingCheckoutFix": "إضافة الانصراف",
     "workingHoursTrendTitle": "اتجاه ساعات العمل",
     "workingHoursTrendText": "ساعات العمل والإضافي خلال الشهر.",
     "workingHoursTrendAria": "مخطط ساعات العمل",
@@ -784,7 +787,17 @@ export default {
       "joined": "تاريخ الانضمام",
       "monthRate": "هذا الشهر",
       "avgCheckIn": "متوسط الحضور",
-      "lateDays": "تأخير (30 يوم)"
+      "lateDays": "تأخير (30 يوم)",
+      "reminders": "تذكير الانصراف",
+      "remindersOn": "مفعّل",
+      "remindersOff": "متوقف",
+      "remindersEnabled": "تم تفعيل التذكير. سيصلك إشعار إذا بقيت مسجّلًا بعد 8 ساعات من الحضور.",
+      "remindersDisabled": "تم إيقاف تذكير الانصراف على هذا الجهاز.",
+      "remindersInstallFirst": "على iPhone أضف EVARA إلى الشاشة الرئيسية أولًا (مشاركة ← إضافة إلى الشاشة الرئيسية)، ثم افتحه منها وفعّل التذكير.",
+      "remindersDenied": "الإشعارات محظورة لهذا الموقع. اسمح بها من إعدادات المتصفح أو الهاتف ثم حاول مرة أخرى.",
+      "remindersUnsupported": "هذا المتصفح لا يدعم التذكيرات. جرّب Chrome على أندرويد أو التطبيق المثبّت على iPhone.",
+      "remindersUnconfigured": "التذكيرات غير مُعدّة بعد. تواصل مع المدير.",
+      "remindersFailed": "تعذّر تغيير التذكير. حاول مرة أخرى."
     },
     "success": {
       "checkin": "تم تسجيل حضورك!",
