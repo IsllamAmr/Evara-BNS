@@ -120,6 +120,8 @@ function createStyleRegistry() {
   const numFmts = [];
   const xfs = ['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'];
   const xfIndex = new Map([['{}', 0]]);
+  // Differential formats, used by conditional formatting rules.
+  const dxfs = [];
 
   function indexOf(list, xml) {
     const found = list.indexOf(xml);
@@ -165,6 +167,12 @@ function createStyleRegistry() {
     return index;
   }
 
+  function registerDxf(style = {}) {
+    const xml = `<dxf><font>${style.bold ? '<b/>' : ''}${style.color ? `<color rgb="${style.color}"/>` : ''}</font>`
+      + `${style.fill ? `<fill><patternFill patternType="solid"><bgColor rgb="${style.fill}"/></patternFill></fill>` : ''}</dxf>`;
+    return indexOf(dxfs, xml);
+  }
+
   function toXml() {
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
       + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
@@ -175,10 +183,11 @@ function createStyleRegistry() {
       + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
       + `<cellXfs count="${xfs.length}">${xfs.join('')}</cellXfs>`
       + '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
+      + (dxfs.length ? `<dxfs count="${dxfs.length}">${dxfs.join('')}</dxfs>` : '')
       + '</styleSheet>';
   }
 
-  return { register, toXml };
+  return { register, registerDxf, toXml };
 }
 
 // ------------------------------------------------------------- Sheets ----
@@ -246,6 +255,19 @@ function sheetXml(sheet, styles) {
   }).join('');
   const merges = sheet.merges || [];
   const mergesXml = merges.length ? `<mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join('')}</mergeCells>` : '';
+  // conditionalFormats: [{ ref: 'E8:E28', rules: [{ operator: 'lessThan', formula: '0.75', style: { color } }] }]
+  let priority = 0;
+  const conditionalXml = (sheet.conditionalFormats || []).map((block) => `<conditionalFormatting sqref="${block.ref}">${
+    block.rules.map((rule) => {
+      priority += 1;
+      return `<cfRule type="cellIs" dxfId="${styles.registerDxf(rule.style)}" priority="${priority}" operator="${rule.operator}"><formula>${escapeXml(rule.formula)}</formula></cfRule>`;
+    }).join('')
+  }</conditionalFormatting>`).join('');
+  // dataValidations: [{ ref, type: 'decimal', operator: 'between', formula1, formula2, error }]
+  const validations = sheet.dataValidations || [];
+  const validationsXml = validations.length
+    ? `<dataValidations count="${validations.length}">${validations.map((item) => `<dataValidation type="${item.type || 'decimal'}" operator="${item.operator || 'between'}" allowBlank="1" showErrorMessage="1"${item.error ? ` error="${escapeXml(item.error)}"` : ''} sqref="${item.ref}"><formula1>${escapeXml(item.formula1)}</formula1>${item.formula2 !== undefined ? `<formula2>${escapeXml(item.formula2)}</formula2>` : ''}</dataValidation>`).join('')}</dataValidations>`
+    : '';
   const view = sheet.freeze
     ? `<sheetView workbookViewId="0"${sheet.rightToLeft ? ' rightToLeft="1"' : ''}><pane ySplit="${sheet.freeze.rows}" topLeftCell="A${sheet.freeze.rows + 1}" activePane="bottomLeft" state="frozen"/></sheetView>`
     : `<sheetView workbookViewId="0"${sheet.rightToLeft ? ' rightToLeft="1"' : ''}/>`;
@@ -261,6 +283,8 @@ function sheetXml(sheet, styles) {
     + colsXml
     + `<sheetData>${rowsXml}</sheetData>`
     + mergesXml
+    + conditionalXml
+    + validationsXml
     + printSetup
     + '</worksheet>';
 }

@@ -1,5 +1,4 @@
 import {
-  currentMonthInput as currentBusinessMonthInput,
   departmentLabel,
   formatDate,
   formatTime,
@@ -7,7 +6,6 @@ import {
   statusLabel,
   todayIso as todayBusinessIso,
 } from './shared.js';
-import { formatDurationPlain as formatDuration } from './reporting.js';
 import { hoursValue } from './timesheet.js';
 
 function csvValue(value) {
@@ -32,11 +30,6 @@ function downloadCsvFile(filename, headers, rows) {
 
 function todayIso() {
   return todayBusinessIso();
-}
-
-function monthToken(filters) {
-  const rawValue = filters?.month || currentBusinessMonthInput();
-  return rawValue.replace('-', '_');
 }
 
 export function exportEmployeesCsv(list) {
@@ -77,43 +70,6 @@ export function exportAttendanceCsv(records, { resolveProfile, fallbackProfile }
         row.work_notes || '',
       ];
     })
-  );
-}
-
-export function exportReportsCsv(report, filters) {
-  const departmentToken = filters.department && filters.department !== 'all'
-    ? filters.department.toLowerCase().replace(/\s+/g, '-')
-    : 'all-departments';
-  const employeeToken = filters.employeeId && filters.employeeId !== 'all'
-    ? 'single-employee'
-    : 'all-employees';
-
-  downloadCsvFile(
-    `reports-${monthToken(filters)}-${departmentToken}-${employeeToken}.csv`,
-    [
-      'Name',
-      'Email',
-      'Department',
-      'Days Present',
-      'Days Absent',
-      'Late Arrivals',
-      'Total Hours',
-      'Expected Hours',
-      'Overtime',
-      'Shortfall',
-    ],
-    report.byEmployee.map((item) => [
-      item.employee.full_name,
-      item.employee.email || '',
-      item.employee.department || departmentLabel(item.employee.department),
-      item.presentDays,
-      item.absentDays,
-      item.lateArrivals,
-      formatDuration(item.workedMinutes),
-      formatDuration(item.expectedMinutes),
-      formatDuration(item.overtimeMinutes),
-      formatDuration(item.shortfallMinutes),
-    ])
   );
 }
 

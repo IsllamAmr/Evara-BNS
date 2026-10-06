@@ -1087,10 +1087,6 @@ function exportEmployeesCsv(...args) {
   return import('./exporters.js').then((module) => module.exportEmployeesCsv(...args)).catch((error) => showToast(error.message, 'error'));
 }
 
-function exportReportsCsv(...args) {
-  return import('./exporters.js').then((module) => module.exportReportsCsv(...args)).catch((error) => showToast(error.message, 'error'));
-}
-
 async function scanOfficeQr() {
   const module = await import('./qrScanner.js');
   return module.scanOfficeQr();
@@ -2493,7 +2489,7 @@ async function renderReportsPage() {
             <p>${escapeHtml(t('reportsPage.intro', { schedule: businessScheduleLabel() }))}</p>
           </div>
           <div class="inline-actions">
-            <button id="reportsExportBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.exportReportCsv'))}</button>
+            <button id="reportsExportBtn" type="button" class="btn btn-secondary">${escapeHtml(t('common.exportPayrollExcel'))}</button>
             ${selectedEmployee ? `<button id="reportsTimesheetExportBtn" type="button" class="btn btn-primary">${escapeHtml(t('timesheetExport.button'))}</button>` : ''}
           </div>
         </div>
@@ -2703,9 +2699,17 @@ async function renderReportsPage() {
     container.querySelector('#reportsRefreshBtn')?.addEventListener('click', () => {
       renderReportsPage().catch((error) => setPageError(container, error.message));
     });
-    container.querySelector('#reportsExportBtn')?.addEventListener('click', () => {
-      exportReportsCsv(report, state.reportsFilters);
-      showToast(t('toasts.reportsExported'), 'success');
+    container.querySelector('#reportsExportBtn')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const fileName = await downloadPayrollExcel(report, state.reportsFilters);
+        showToast(t('toasts.payrollExported', { file: fileName }), 'success');
+      } catch (error) {
+        showToast(error.message, 'error');
+      } finally {
+        button.disabled = false;
+      }
     });
     container.querySelector('#reportsTimesheetExportBtn')?.addEventListener('click', () => {
       if (!selectedEmployee) {
@@ -3110,25 +3114,26 @@ function fileNameFromDisposition(header, fallback) {
   return plain ? plain[1] : fallback;
 }
 
-async function downloadTimesheetExcel(employee, from, to) {
+// POSTs to an admin export endpoint and saves the returned .xlsx; resolves to its name.
+async function downloadXlsxFromApi(path, body, fallbackName, failMessage) {
   const token = await getAccessToken();
-  const response = await fetch(`${config.apiBaseUrl}/admin/employees/${encodeURIComponent(employee.id)}/timesheet-export`, {
+  const response = await fetch(`${config.apiBaseUrl}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ from, to }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     const detail = payload?.details?.errors?.map((item) => item.message).join(' ');
-    throw new Error(detail || payload?.message || t('timesheetExport.failed'));
+    throw new Error(detail || payload?.message || failMessage);
   }
 
   const blob = await response.blob();
-  const fileName = fileNameFromDisposition(response.headers.get('Content-Disposition'), `${employee.full_name} - Timesheet.xlsx`);
+  const fileName = fileNameFromDisposition(response.headers.get('Content-Disposition'), fallbackName);
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
@@ -3138,6 +3143,42 @@ async function downloadTimesheetExcel(employee, from, to) {
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 30000);
   return fileName;
+}
+
+function downloadTimesheetExcel(employee, from, to) {
+  return downloadXlsxFromApi(
+    `/admin/employees/${encodeURIComponent(employee.id)}/timesheet-export`,
+    { from, to },
+    `${employee.full_name} - Timesheet.xlsx`,
+    t('timesheetExport.failed'),
+  );
+}
+
+// Payroll workbook for the month and filters on the reports page. Hours are the same
+// numbers the page shows; days still to come are not counted as absences in the notes.
+function downloadPayrollExcel(report, filters) {
+  const today = todayIso();
+  const elapsedWorkdays = report.workdays.filter((date) => formatDateInput(date) <= today).length;
+  const requiredHours = Math.round((report.workdays.length * FULL_SHIFT_MINUTES) / 60);
+  const employees = [...report.byEmployee]
+    .sort((left, right) => String(left.employee.employee_code || '').localeCompare(String(right.employee.employee_code || ''), undefined, { numeric: true })
+      || String(left.employee.full_name || '').localeCompare(String(right.employee.full_name || '')))
+    .map((item) => ({
+      name: item.employee.full_name || item.employee.email || '-',
+      hoursWorked: Math.round((item.workedMinutes / 60) * 100) / 100,
+      notes: [
+        `Present ${item.presentDays}/${elapsedWorkdays} days`,
+        item.lateArrivals ? `Late ${item.lateArrivals}` : '',
+        elapsedWorkdays > item.presentDays ? `Not present ${elapsedWorkdays - item.presentDays}` : '',
+      ].filter(Boolean).join(' · '),
+    }));
+
+  return downloadXlsxFromApi(
+    '/admin/reports/payroll-export',
+    { month: filters.month, requiredHours, employees },
+    `Evara Payroll - ${filters.month}.xlsx`,
+    t('toasts.payrollExportFailed'),
+  );
 }
 
 async function openTimesheetExportModal(employee) {

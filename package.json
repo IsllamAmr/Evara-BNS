@@ -11,7 +11,7 @@
     "dev": "nodemon server.js",
     "smoke": "node scripts/smoke-test.js",
     "test:attendance": "node scripts/test-timesheet.mjs && node scripts/test-attendance-notes.cjs && node scripts/test-qr-attendance.cjs",
-    "test:excel": "node scripts/test-timesheet-excel.cjs",
+    "test:excel": "node scripts/test-timesheet-excel.cjs && node scripts/test-payroll-export.cjs",
     "test:qr-scanner": "node scripts/test-qr-scanner.mjs",
     "test:speed": "node scripts/test-static-assets.cjs && node scripts/test-i18n-loading.mjs"
   },

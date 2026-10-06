@@ -22,7 +22,7 @@ export default {
     "refresh": "Refresh",
     "apply": "Apply",
     "exportCsv": "Export CSV",
-    "exportReportCsv": "Export Report CSV",
+    "exportPayrollExcel": "Export Payroll (Excel)",
     "openAttendance": "Open Attendance",
     "openHistory": "Open History",
     "addEmployee": "Add Employee",
@@ -524,7 +524,8 @@ export default {
     "deleteConfirm": "Delete permanently"
   },
   "toasts": {
-    "reportsExported": "Reports CSV exported successfully.",
+    "payrollExported": "Payroll exported: {{file}}",
+    "payrollExportFailed": "Could not export the payroll. Please try again.",
     "employeesExported": "Employees CSV exported successfully.",
     "passwordReset": "Password reset successfully.",
     "manualAttendanceSaved": "Manual attendance saved successfully.",

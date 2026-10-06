@@ -8,7 +8,7 @@ const {
   updateEmployee,
 } = require('../controllers/adminController');
 const { getSettings, rotateQr, updateSettings } = require('../controllers/attendanceSettingsController');
-const { exportTimesheet, getExportSummary } = require('../controllers/timesheetExportController');
+const { exportPayroll, exportTimesheet, getExportSummary } = require('../controllers/timesheetExportController');
 const { protect } = require('../middlewares/authMiddleware');
 const { requireAdmin } = require('../middlewares/roleMiddleware');
 const { adminWriteLimiter, employeeCreationLimiter } = require('../middlewares/rateLimiters');
@@ -145,6 +145,20 @@ router.post(
   ],
   handleValidation,
   exportTimesheet
+);
+
+router.post(
+  '/reports/payroll-export',
+  [
+    body('month').matches(/^\d{4}-(0[1-9]|1[0-2])$/).withMessage('month must be YYYY-MM'),
+    body('requiredHours').isFloat({ min: 0, max: 744 }).withMessage('requiredHours must be between 0 and 744'),
+    body('employees').isArray({ min: 1, max: 300 }).withMessage('employees must be a list of 1 to 300 rows'),
+    body('employees.*.name').isString().isLength({ min: 1, max: 120 }).withMessage('Each employee needs a name'),
+    body('employees.*.hoursWorked').isFloat({ min: 0, max: 744 }).withMessage('hoursWorked must be between 0 and 744'),
+    body('employees.*.notes').optional().isString().isLength({ max: 160 }),
+  ],
+  handleValidation,
+  exportPayroll
 );
 
 module.exports = router;
