@@ -1,6 +1,7 @@
 ﻿const asyncHandler = require('../utils/asyncHandler');
 const adminService = require('../services/adminService');
 const { sendSuccess } = require('../utils/responseHelper');
+const { clearAuthCache } = require('../middlewares/authMiddleware');
 
 const createEmployee = asyncHandler(async (req, res) => {
   const employee = await adminService.createEmployee(req.body, req.user);
@@ -17,6 +18,8 @@ const createEmployee = asyncHandler(async (req, res) => {
 
 const updateEmployee = asyncHandler(async (req, res) => {
   const employee = await adminService.updateEmployee(req.params.id, req.body, req.user);
+  // Role or active-state changes must apply now, not after the auth cache window.
+  clearAuthCache();
 
   return sendSuccess(res, {
     message: 'Employee updated successfully',
@@ -26,6 +29,7 @@ const updateEmployee = asyncHandler(async (req, res) => {
 
 const deleteEmployee = asyncHandler(async (req, res) => {
   await adminService.deleteEmployee(req.params.id, req.user);
+  clearAuthCache();
 
   return sendSuccess(res, {
     message: 'Employee deleted successfully',
@@ -38,6 +42,7 @@ const resetEmployeePassword = asyncHandler(async (req, res) => {
     req.body.new_password || req.body.password,
     req.user
   );
+  clearAuthCache();
 
   return sendSuccess(res, {
     message: 'Employee password reset successfully',
@@ -47,6 +52,7 @@ const resetEmployeePassword = asyncHandler(async (req, res) => {
 
 const toggleEmployeeStatus = asyncHandler(async (req, res) => {
   const employee = await adminService.toggleEmployeeStatus(req.params.id, req.user);
+  clearAuthCache();
 
   return sendSuccess(res, {
     message: 'Employee status updated successfully',

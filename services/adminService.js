@@ -8,9 +8,10 @@ function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+// A literal "null"/"undefined" (e.g. from browser autofill) means empty, not that word.
 function normalizeOptionalText(value) {
   const normalized = normalizeText(value);
-  return normalized || null;
+  return normalized && !/^(null|undefined)$/i.test(normalized) ? normalized : null;
 }
 
 function normalizeEmail(value) {
