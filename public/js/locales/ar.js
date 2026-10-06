@@ -147,6 +147,7 @@ export default {
     "expiringSoon": "ستنتهي جلستك خلال {{minutes}} دقيقة."
   },
   "labels": {
+    "work_from_home": "عمل من المنزل",
     "unassigned": "غير محدد",
     "unknown": "غير معروف",
     "admin": "مدير",
@@ -455,6 +456,15 @@ export default {
     "ipAddress": "عنوان IP"
   },
   "requestPage": {
+    "workDate": "التاريخ",
+    "workStart": "من",
+    "workEnd": "إلى",
+    "workReason": "ماذا أنجزت؟ (اختياري)",
+    "workTimesRequired": "أدخل التاريخ ووقت البداية والنهاية.",
+    "workTimesOrder": "وقت النهاية يجب أن يكون بعد وقت البداية.",
+    "workDateFuture": "يمكن التسجيل لليوم أو يوم سابق فقط.",
+    "recorded": "مسجّل",
+    "removeNote": "إزالة",
     "eyebrow": "الطلبات",
     "title": "طلبات الموظفين",
     "intro": "أرسل وتابع طلبات التأخير ساعتين والإجازة السنوية.",
@@ -527,6 +537,7 @@ export default {
     "deleteConfirm": "حذف نهائي"
   },
   "toasts": {
+    "workFromHomeSaved": "تم تسجيل العمل من المنزل.",
     "payrollExported": "تم تصدير كشف المرتبات: {{file}}",
     "payrollExportFailed": "تعذّر تصدير كشف المرتبات. حاول مرة أخرى.",
     "employeesExported": "تم تصدير ملف الموظفين بنجاح.",
@@ -779,7 +790,8 @@ export default {
       "emptyText": "اضغط زر + لإرسال أول طلب.",
       "sent": "أُرسل {{date}}",
       "typeHintDelay": "الحضور متأخرًا حتى ساعتين في يوم تختاره.",
-      "typeHintLeave": "إجازة يوم أو أكثر من رصيدك السنوي."
+      "typeHintLeave": "إجازة يوم أو أكثر من رصيدك السنوي.",
+      "typeHintHome": "سجّل الساعات التي عملت فيها من المنزل."
     },
     "profile": {
       "account": "بيانات الحساب",

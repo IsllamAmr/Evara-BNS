@@ -6,7 +6,10 @@ html[dir='rtl'] .ico.chevron { transform: scaleX(-1); }
 
 .tabbar, .topbar-avatar { display: none; }
 
-.role-employee .emp-page { display: grid; gap: 1rem; max-width: 720px; margin-inline: auto; animation: emp-in .35s ease both; }
+.role-employee .emp-page { display: grid; gap: 1rem; max-width: 720px; margin-inline: auto; animation: emp-in .35s ease backwards; }
+/* "backwards", not "both": a transform kept after the animation turns the page into the
+   containing block for position: fixed, which pinned the "New request" button to the
+   bottom of the page (over the last card) instead of the bottom of the screen. */
 @keyframes emp-in { from { opacity: 0; transform: translateY(8px); } }
 
 /* Hero shift card */
@@ -230,6 +233,8 @@ html[dir='rtl'] .shift-ring svg { transform: rotate(-90deg) scaleY(-1); }
 
 /* Record cards */
 .record-list, .request-list { display: grid; gap: .6rem; }
+/* Room below the last request so the floating "New request" button never covers it. */
+.emp-requests .request-list, .emp-requests .emp-empty { margin-bottom: 84px; }
 .record-card { background: #fff; border: 1px solid #e5ebf3; border-radius: 18px; overflow: hidden; border-inline-start: 4px solid #10a989; }
 .record-card.tone-late { border-inline-start-color: #ecad48; }
 .record-card.tone-absent { border-inline-start-color: #e0525c; }
@@ -274,6 +279,7 @@ html[dir='rtl'] .shift-ring svg { transform: rotate(-90deg) scaleY(-1); }
 .request-icon { flex: 0 0 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; }
 .request-icon.leave { background: #eaf0ff; color: #315ee7; }
 .request-icon.delay { background: #fdf1dc; color: #a86913; }
+.request-icon.home { background: #e3f6ef; color: #0f8a62; }
 .request-body { flex: 1; min-width: 0; display: grid; gap: .3rem; }
 .request-top { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
 .request-top .badge { font-size: .68rem; padding: .25rem .6rem; }

@@ -62,6 +62,9 @@ const { buffer, segments } = buildTimesheetWorkbook({
   requests: [
     { request_type: 'annual_leave', status: 'approved', leave_start_date: '2026-09-06', leave_end_date: '2026-09-07' },
     { request_type: 'annual_leave', status: 'pending', leave_start_date: '2026-09-08', leave_end_date: '2026-09-08' },
+    { request_type: 'work_from_home', status: 'approved', work_date: '2026-09-01', work_start: '18:30:00', work_end: '21:00:00', reason: 'Client calls' },
+    { request_type: 'work_from_home', status: 'approved', work_date: '2026-09-01', work_start: '07:00:00', work_end: '08:15:00', reason: null },
+    { request_type: 'work_from_home', status: 'rejected', work_date: '2026-09-02', work_start: '20:00:00', work_end: '22:00:00', reason: 'Removed by admin' },
   ],
   from: '2026-09-01',
   to: '2026-10-05',
@@ -84,5 +87,8 @@ assert.ok(sheet1.includes('Annual leave (approved)'));
 assert.equal((sheet1.match(/Annual leave \(approved\)/g) || []).length, 2, 'Only approved leave days are annotated');
 assert.ok(sheet1.includes('<f>SUM(F4:F33)</f><v>15</v>'), 'Total work hours for September');
 assert.ok(sheet1.includes('<mergeCell ref="A1:H1"/>'));
+// Work from home: a note on that day (after the daily notes, earliest first); hours unchanged.
+assert.ok(sheet1.includes('Worked from home 7:00 am - 8:15 am\nWorked from home 6:30 pm - 9:00 pm: Client calls'), 'Work from home notes, in time order');
+assert.ok(!sheet1.includes('Removed by admin'), 'A removed (rejected) work from home note is left out');
 assert.ok(/<c r="A7" s="\d+" t="inlineStr"><is><t>Friday<\/t>/.test(sheet1));
-console.log('Excel timesheet: ZIP integrity, month split, Cairo times, overnight, training, leave notes and escaping passed.');
+console.log('Excel timesheet: ZIP integrity, month split, Cairo times, overnight, training, leave and work-from-home notes and escaping passed.');
