@@ -19,6 +19,8 @@ const adminRoutes = require('./routes/adminRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const accountRoutes = require('./routes/accountRoutes');
 const requestRoutes = require('./routes/requestRoutes');
+const { cronRouter, notificationRouter } = require('./routes/notificationRoutes');
+const { getPublicKey: getPushPublicKey } = require('./services/pushService');
 const { attendanceRestrictionSummary } = require('./services/attendanceGuardService');
 const { sanitizeRequest } = require('./middlewares/sanitizeMiddleware');
 const { apiLimiter, rateLimitBackend } = require('./middlewares/rateLimiters');
@@ -327,6 +329,7 @@ app.get('/env.js', (req, res) => {
     SUPABASE_URL: supabaseUrl || '',
     SUPABASE_ANON_KEY: supabaseAnonKey || '',
     APP_URL: buildAppUrl(req),
+    VAPID_PUBLIC_KEY: getPushPublicKey(),
   };
 
   res.type('application/javascript');
@@ -388,6 +391,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/account', accountRoutes);
 app.use('/api/requests', requestRoutes);
+app.use('/api/notifications', notificationRouter);
+app.use('/api/cron', cronRouter);
 
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) {

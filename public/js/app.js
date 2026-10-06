@@ -4,6 +4,12 @@ import { createQueryCache, fetchAllRows } from './dataStore.js';
 import { renderTimesheet } from './timesheet.js';
 import { initRotatingQuotes } from './rotatingQuotes.js';
 import {
+  disableReminders,
+  enableReminders,
+  getReminderState,
+  syncReminderSubscription,
+} from './pushReminders.js';
+import {
   bindMonthStrip,
   detailRowMarkup,
   firstName,
@@ -1399,6 +1405,9 @@ async function loadAuthenticatedSession(session) {
   syncShell();
   showAppShell();
   setupRealtimeSubscriptions();
+  if (profile.role !== 'admin') {
+    syncReminderSubscription(apiRequest);
+  }
 
   const nextTarget = new URLSearchParams(window.location.search).get('next');
   if (nextTarget === 'checkin') {
@@ -1434,7 +1443,47 @@ async function handleLogin(event) {
   }
 }
 
+// "Check-out reminder" row on the employee's Me page: shows On/Off and toggles it.
+function bindRemindersRow(row) {
+  if (!row) return;
+  const valueEl = row.querySelector('.settings-value');
+  const messages = {
+    'install-first': 'mobile.profile.remindersInstallFirst',
+    denied: 'mobile.profile.remindersDenied',
+    unsupported: 'mobile.profile.remindersUnsupported',
+    unconfigured: 'mobile.profile.remindersUnconfigured',
+  };
+  const show = (state) => {
+    if (valueEl) valueEl.textContent = t(state === 'on' ? 'mobile.profile.remindersOn' : 'mobile.profile.remindersOff');
+    row.dataset.state = state;
+  };
+  getReminderState().then(show);
+
+  row.addEventListener('click', async () => {
+    const state = row.dataset.state || await getReminderState();
+    if (messages[state]) {
+      showToast(t(messages[state]), 'warning');
+      return;
+    }
+    row.disabled = true;
+    try {
+      const next = state === 'on' ? await disableReminders(apiRequest) : await enableReminders(apiRequest);
+      show(next);
+      if (messages[next]) showToast(t(messages[next]), 'warning');
+      else showToast(t(next === 'on' ? 'mobile.profile.remindersEnabled' : 'mobile.profile.remindersDisabled'), next === 'on' ? 'success' : 'info');
+    } catch (error) {
+      showToast(error.message || t('mobile.profile.remindersFailed'), 'error');
+    } finally {
+      row.disabled = false;
+    }
+  });
+}
+
 async function handleLogout() {
+  // Stop this device's reminders for the account that is signing out.
+  if (state.profile && !isAdmin()) {
+    await disableReminders(apiRequest).catch(() => {});
+  }
   clearRealtimeSubscriptions();
   await supabase.auth.signOut();
   resetSessionState();
@@ -2372,11 +2421,13 @@ async function renderProfilePage() {
           </section>
           <section class="emp-card settings-list">
             <h3>${escapeHtml(t('mobile.profile.settings'))}</h3>
+            ${settingsRow('profileRemindersBtn', 'bell', t('mobile.profile.reminders'), ' ')}
             ${settingsRow('openChangePasswordFromProfileBtn', 'lock', t('profilePage.changePassword'))}
             ${settingsRow('profileLogoutBtn', 'logout', t('nav.logout'), '', 'danger')}
           </section>
         </div>
       `;
+      bindRemindersRow(container.querySelector('#profileRemindersBtn'));
       container.querySelector('#openChangePasswordFromProfileBtn')?.addEventListener('click', () => openChangeOwnPasswordModal());
       container.querySelector('#profileLogoutBtn')?.addEventListener('click', () => handleLogout());
       return;

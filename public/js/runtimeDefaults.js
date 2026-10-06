@@ -3,4 +3,5 @@
   SUPABASE_URL: '',
   SUPABASE_ANON_KEY: '',
   APP_URL: '',
+  VAPID_PUBLIC_KEY: '',
 });

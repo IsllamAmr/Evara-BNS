@@ -50,3 +50,11 @@ services:
         value: "1"
       - key: REQUEST_LOG_FORMAT
         value: ""
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        value: mailto:admin@evara.local
+      - key: CRON_SECRET
+        sync: false

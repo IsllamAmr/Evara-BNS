@@ -1,0 +1,41 @@
+# Asks the server to push check-out reminders. Runs every 30 minutes on working days
+# (Sunday-Thursday) from 11:00 to 21:30 UTC, i.e. early afternoon to around midnight
+# in Cairo in both summer and winter time. The request also wakes a sleeping Render
+# instance, which is why this is not a timer inside the server.
+#
+# Repository secrets (Settings -> Secrets and variables -> Actions):
+#   APP_URL      e.g. https://evara-bns.onrender.com   (no trailing slash)
+#   CRON_SECRET  same value as the CRON_SECRET env var on Render (16+ characters)
+name: Check-out reminders
+
+on:
+  schedule:
+    - cron: '*/30 11-21 * * 0-4'
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: checkout-reminders
+  cancel-in-progress: false
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger reminders
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "APP_URL or CRON_SECRET secret is missing; skipping."
+            exit 0
+          fi
+          # A free Render instance can take up to a minute to wake, so allow retries.
+          curl --fail-with-body --silent --show-error \
+            --retry 3 --retry-delay 20 --retry-all-errors --max-time 90 \
+            -X POST -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_URL/api/cron/checkout-reminders"
+          echo

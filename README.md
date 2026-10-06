@@ -41,6 +41,21 @@ EVARA BNS is a Supabase-powered employee attendance system with role-based acces
 - **Live updates:** a change made by someone else drops the cached data and shows admins a small "new updates" button instead of rebuilding the page; an employee's own screen refreshes only when no dialog or form field is in use.
 - Run `npm run test:speed` to check compression, caching and translation loading.
 
+## Check-out reminders
+
+Employees can turn on a push notification that reminds them to check out (Me -> Check-out reminder). A shift is reminded once, 8 h 15 min after check-in, or at 21:00 Cairo time if still open.
+
+- On iPhone, notifications only work from the Home Screen app (iOS 16.4+): add the site to the Home Screen, open it from there, then enable reminders.
+- The server never runs its own timer (Render's free plan sleeps). The `Check-out reminders` GitHub Action calls `POST /api/cron/checkout-reminders` every 30 minutes on working days, which also wakes the server.
+
+Setup, once:
+1. Run migration `supabase/migrations/012_checkout_reminders.sql` in the Supabase SQL editor.
+2. Generate keys: `npx web-push generate-vapid-keys`. On Render set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (`mailto:` your email) and `CRON_SECRET` (16+ random characters).
+3. In GitHub -> Settings -> Secrets and variables -> Actions add `APP_URL` (the site URL, no trailing slash) and `CRON_SECRET` (same value).
+4. Optional check: Actions -> Check-out reminders -> Run workflow; the log shows how many shifts were open, due and reminded.
+
+GitHub pauses scheduled workflows after 60 days without repository activity; re-enable it from the Actions tab if that happens.
+
 ## Local Development
 
 ### Password recovery

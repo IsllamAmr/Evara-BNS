@@ -787,7 +787,17 @@ export default {
       "joined": "Joined",
       "monthRate": "This month",
       "avgCheckIn": "Avg. check-in",
-      "lateDays": "Late (30d)"
+      "lateDays": "Late (30d)",
+      "reminders": "Check-out reminder",
+      "remindersOn": "On",
+      "remindersOff": "Off",
+      "remindersEnabled": "Reminders are on. You'll get a notification if you're still checked in 8 hours after check-in.",
+      "remindersDisabled": "Check-out reminders are off on this device.",
+      "remindersInstallFirst": "On iPhone, add EVARA to your Home Screen first (Share → Add to Home Screen), then open it from there and turn reminders on.",
+      "remindersDenied": "Notifications are blocked for this site. Allow them in your browser or phone settings, then try again.",
+      "remindersUnsupported": "This browser can't show reminders. Try Chrome on Android or the Home Screen app on iPhone.",
+      "remindersUnconfigured": "Reminders aren't set up yet. Ask your admin.",
+      "remindersFailed": "Couldn't change reminders. Please try again."
     },
     "success": {
       "checkin": "You are checked in!",
