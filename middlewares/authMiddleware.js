@@ -1,6 +1,7 @@
 ﻿const { createScopedClient, getSupabaseAdmin } = require('../config/supabase');
 const crypto = require('crypto');
 const { sendError } = require('../utils/responseHelper');
+const { userApiLimiter } = require('./rateLimiters');
 
 // Every API call used to make two sequential Supabase round trips (verify token, load
 // profile) before any real work. The result is reused for a short window per token.
@@ -132,8 +133,9 @@ async function attachUserFromToken(req, res, next, required) {
   }
 }
 
+// Signed-in requests also count against the person's own rate limit.
 function protect(req, res, next) {
-  return attachUserFromToken(req, res, next, true);
+  return attachUserFromToken(req, res, (error) => (error ? next(error) : userApiLimiter(req, res, next)), true);
 }
 
 function optionalAuth(req, res, next) {

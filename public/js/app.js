@@ -268,6 +268,39 @@ function syncSessionActivityFromStorage() {
   }
 }
 
+// On load the idle clock continues from the last saved activity instead of restarting,
+// so a reload cannot extend a session that already expired. Only a password sign-in
+// starts a new clock (markFreshSignIn); a restored session with no recorded activity
+// is treated as expired, because sign-out clears that record. Returns false if expired.
+function restoreSessionActivity() {
+  let stored = Number.NaN;
+  try {
+    const raw = window.localStorage.getItem(SESSION_ACTIVITY_STORAGE_KEY);
+    stored = raw === null ? Number.NaN : Number(raw);
+  } catch (_error) {
+    // Storage blocked (e.g. private mode): the limit cannot be tracked across reloads.
+    lastActivityWriteAt = 0;
+    updateSessionActivity();
+    return true;
+  }
+
+  const now = Date.now();
+  if (!Number.isFinite(stored) || stored <= 0) {
+    return false;
+  }
+  if (stored > now || now - stored < currentSessionTimeoutMs()) {
+    state.sessionLastActivity = Math.min(stored, now);
+    state.sessionWarningShown = false;
+    return true;
+  }
+  return false;
+}
+
+function markFreshSignIn() {
+  lastActivityWriteAt = 0;
+  updateSessionActivity();
+}
+
 function clearSessionActivityStorage() {
   try {
     window.localStorage.removeItem(SESSION_ACTIVITY_STORAGE_KEY);
@@ -326,10 +359,11 @@ document.addEventListener('keydown', updateSessionActivity);
 document.addEventListener('touchstart', updateSessionActivity, { passive: true });
 document.addEventListener('scroll', updateSessionActivityThrottled, { passive: true });
 document.addEventListener('mousemove', updateSessionActivityThrottled, { passive: true });
+// Coming back to the tab (or waking the laptop) only checks the idle limit; it is
+// not activity, otherwise an expired session would be renewed before the check.
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
-    syncSessionActivityFromStorage();
-    updateSessionActivity();
+    checkSessionTimeout();
   }
 });
 window.addEventListener('storage', (event) => {
@@ -1401,12 +1435,15 @@ async function loadAuthenticatedSession(session) {
 
   state.session = session;
   state.profile = profile;
+  if (!restoreSessionActivity()) {
+    await supabase.auth.signOut().catch(() => {});
+    throw new Error(t('session.expired'));
+  }
   // Only admins may switch to Arabic; employees always see English.
   setLanguageLock(profile.role === 'admin' ? null : 'en');
   // Arabic strings are downloaded only now, and only for an admin who uses Arabic.
   await ensureLanguageLoaded(getCurrentLanguage()).catch(() => {});
   applyDocumentLanguage();
-  updateSessionActivity();
   state.profileMap.set(profile.id, profile);
   syncShell();
   showAppShell();
@@ -1431,6 +1468,8 @@ async function handleLogin(event) {
   elements.loginBtn.textContent = t('login.signingIn');
 
   try {
+    // A password sign-in starts a new idle clock (an old timestamp would expire it at once).
+    markFreshSignIn();
     const { error, data } = await supabase.auth.signInWithPassword({
       email: elements.loginEmail.value.trim(),
       password: elements.loginPassword.value,

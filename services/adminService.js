@@ -283,12 +283,21 @@ async function updateEmployee(id, payload, actorProfile) {
     excludeId: id,
   });
 
+  // The status chosen in the form decides sign-in access, like the activate/deactivate
+  // button does. Spreading existingProfile used to carry the old is_active through, so
+  // "Inactive" in the form left the account able to sign in (and "Active" stayed locked).
+  const nextIsActive = payload.status ? nextStatus !== 'inactive' : existingProfile.is_active;
+  if (actorProfile.id === id && !nextIsActive) {
+    throw new AppError('You cannot deactivate your own account', 400);
+  }
+
   const profilePayload = buildProfilePayload(id, {
     ...existingProfile,
     ...payload,
     email: nextEmail,
     role: nextRole,
     status: nextStatus,
+    is_active: nextIsActive,
   }, existingProfile);
 
   await assertActiveAdminWillRemain(existingProfile, profilePayload);
