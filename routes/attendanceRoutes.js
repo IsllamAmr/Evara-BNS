@@ -14,8 +14,8 @@ const attendanceContextValidators = [
     .isLength({ min: 16, max: 128 }).withMessage('Scan the office QR code to record attendance'),
 ];
 
-router.post('/checkin', attendanceActionLimiter, protect, attendanceContextValidators, handleValidation, checkIn);
-router.post('/checkout', attendanceActionLimiter, protect, [
+router.post('/checkin', protect, attendanceActionLimiter, attendanceContextValidators, handleValidation, checkIn);
+router.post('/checkout', protect, attendanceActionLimiter, [
   ...attendanceContextValidators,
   body('work_notes').isString().withMessage('Daily work notes are required').bail().trim().isLength({ min: 1, max: 4000 }).withMessage('Daily work notes must contain 1 to 4000 characters'),
   body('work_place').optional({ nullable: true }).isString().bail().trim().isLength({ max: 120 }).withMessage('Workplace must be at most 120 characters'),
@@ -23,9 +23,9 @@ router.post('/checkout', attendanceActionLimiter, protect, [
 ], handleValidation, checkOut);
 router.post(
   '/manual',
-  adminWriteLimiter,
   protect,
   requireAdmin,
+  adminWriteLimiter,
   [
     body('user_id').isUUID().withMessage('user_id must be a valid UUID'),
     body('attendance_date').isISO8601({ strict: true, strictSeparator: true }).withMessage('attendance_date must be a valid date'),

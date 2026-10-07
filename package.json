@@ -15,6 +15,7 @@
     "test:qr-scanner": "node scripts/test-qr-scanner.mjs",
     "test:reminders": "node scripts/test-checkout-reminders.cjs",
     "test:requests": "node scripts/test-work-from-home.cjs",
+    "test:access": "node scripts/test-rate-limits.cjs && node scripts/test-employee-status.cjs",
     "test:speed": "node scripts/test-static-assets.cjs && node scripts/test-i18n-loading.mjs"
   },
   "dependencies": {

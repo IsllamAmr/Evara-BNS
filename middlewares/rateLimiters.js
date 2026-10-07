@@ -1,4 +1,4 @@
-﻿const rateLimit = require('express-rate-limit');
+﻿const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
 const { createClient } = require('redis');
 
@@ -59,13 +59,20 @@ function initializeRedisStore() {
 
 const sharedStore = initializeRedisStore();
 
-function buildLimiter({ windowMs, max, message }) {
+// Attendance only works from the office network, so everyone in the office shares one
+// public IP. Per-IP limits therefore pooled the whole office into one quota and locked
+// everybody out at 9:00. Limits are now per signed-in user (falling back to the IP for
+// anonymous requests), plus one generous per-IP ceiling against floods.
+// The name keeps each limiter's counters separate when they share a Redis store.
+function buildLimiter({ name, windowMs, max, message, perUser = true }) {
   const limiterOptions = {
     windowMs,
     max,
     standardHeaders: true,
     legacyHeaders: false,
-    ipv6Subnet: resolveIpv6Subnet(),
+    keyGenerator: (req) => (perUser && req.user?.id
+      ? `${name}:user:${req.user.id}`
+      : `${name}:ip:${ipKeyGenerator(req.ip || '', resolveIpv6Subnet())}`),
     message: {
       success: false,
       message,
@@ -81,31 +88,46 @@ function buildLimiter({ windowMs, max, message }) {
 
 const baseWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000;
 
+// Whole office behind one IP: a ceiling for flooding, not for normal use.
 const apiLimiter = buildLimiter({
+  name: 'api-ip',
+  perUser: false,
+  windowMs: baseWindowMs,
+  max: Number(process.env.RATE_LIMIT_IP_MAX) || 2000,
+  message: 'Too many requests. Please try again later.',
+});
+
+// Each signed-in person's own budget (applied by `protect` once the user is known).
+const userApiLimiter = buildLimiter({
+  name: 'api-user',
   windowMs: baseWindowMs,
   max: Number(process.env.RATE_LIMIT_MAX_REQUESTS || process.env.RATE_LIMIT_MAX) || 200,
   message: 'Too many requests. Please try again later.',
 });
 
 const adminWriteLimiter = buildLimiter({
+  name: 'admin-write',
   windowMs: baseWindowMs,
   max: Number(process.env.ADMIN_RATE_LIMIT_MAX || 80),
   message: 'Too many admin actions. Please wait and try again.',
 });
 
 const employeeCreationLimiter = buildLimiter({
+  name: 'employee-create',
   windowMs: 60 * 1000, // 1 minute window
   max: 5, // Max 5 employee creations per minute
   message: 'Too many employee creations. Please wait 1 minute and try again.',
 });
 
 const attendanceActionLimiter = buildLimiter({
+  name: 'attendance',
   windowMs: Number(process.env.ATTENDANCE_RATE_LIMIT_WINDOW_MS) || 5 * 60 * 1000,
   max: Number(process.env.ATTENDANCE_RATE_LIMIT_MAX || 30),
   message: 'Too many attendance requests. Please slow down.',
 });
 
 const passwordChangeLimiter = buildLimiter({
+  name: 'password-change',
   windowMs: Number(process.env.PASSWORD_CHANGE_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
   max: Number(process.env.PASSWORD_CHANGE_RATE_LIMIT_MAX || 8),
   message: 'Too many password change attempts. Please wait and try again.',
@@ -122,4 +144,5 @@ module.exports = {
   employeeCreationLimiter,
   passwordChangeLimiter,
   rateLimitBackend,
+  userApiLimiter,
 };
